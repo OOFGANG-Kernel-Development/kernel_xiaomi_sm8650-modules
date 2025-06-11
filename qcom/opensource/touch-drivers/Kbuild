@@ -210,6 +210,24 @@ ifeq ($(CONFIG_TOUCHSCREEN_SYNAPTICS_TCM), y)
 
 endif
 
+ifeq ($(CONFIG_TOUCHSCREEN_FOCALTECH_3683G), y)
+
+	focaltech_3683g-y := \
+		 ./focaltech_3683g/focaltech_core.o \
+		 ./focaltech_3683g/focaltech_ex_fun.o \
+		 ./focaltech_3683g/focaltech_ex_mode.o \
+		 ./focaltech_3683g/focaltech_gesture.o \
+		 ./focaltech_3683g/focaltech_esdcheck.o \
+		 ./focaltech_3683g/focaltech_point_report_check.o \
+		 ./focaltech_3683g/focaltech_spi_v2.o \
+		 ./focaltech_3683g/focaltech_debug.o \
+		 ./focaltech_3683g/focaltech_flash.o \
+		 ./focaltech_3683g/focaltech_flash/focaltech_upgrade_ft3681.o \
+		 ./focaltech_3683g/focaltech_flash/focaltech_upgrade_ft3683g.o
+
+	obj-$(CONFIG_MSM_TOUCH) += focaltech_3683g.o
+endif
+
 ifneq ($(CONFIG_ARCH_PINEAPPLE), y)
 	ifeq ($(CONFIG_TOUCHSCREEN_PARADE), y)
 		LINUX_INC += -include $(TOUCH_ROOT)/pt/pt_regs.h
