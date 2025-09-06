@@ -1734,6 +1734,14 @@ static int fts_power_source_ctrl(struct fts_ts_data *ts_data, int enable)
 						ret);
 				}
 			}
+			if (!IS_ERR_OR_NULL(ts_data->vdd)) {
+				ret = regulator_enable(ts_data->vdd);
+				if (ret) {
+					FTS_ERROR(
+						"enable vdd regulator failed,ret=%d",
+						ret);
+				}
+			}
 			fts_msleep(2);
 			fts_set_reset(ts_data, 1);
 			ts_data->power_disabled = false;
@@ -1770,6 +1778,12 @@ static int fts_power_source_ctrl(struct fts_ts_data *ts_data, int enable)
 			if (ret) {
 				FTS_ERROR(
 					"disable iovdd regulator failed,ret=%d",
+					ret);
+			}
+			ret = regulator_disable(ts_data->vdd);
+			if (ret) {
+				FTS_ERROR(
+					"disable vdd regulator failed,ret=%d",
 					ret);
 			}
 			ts_data->power_disabled = true;
@@ -1860,6 +1874,21 @@ static int fts_power_source_init(struct fts_ts_data *ts_data)
 		}
 	}
 
+	ts_data->vdd = regulator_get(ts_data->dev, "vdd");
+	if (!IS_ERR_OR_NULL(ts_data->vdd)) {
+		if (regulator_count_voltages(ts_data->vdd) > 0) {
+			ret = regulator_set_voltage(ts_data->vdd,
+						    FTS_IOVCC_VTG_MIN_UV,
+						    FTS_IOVCC_VTG_MAX_UV);
+			if (ret) {
+				FTS_ERROR(
+					"vdd regulator set_vtg failed,ret=%d",
+					ret);
+				regulator_put(ts_data->vdd);
+			}
+		}
+	}
+
 	ret = fts_power_source_ctrl(ts_data, ENABLE);
 	if (ret) {
 		FTS_ERROR("fail to enable power(regulator)");
@@ -1895,6 +1924,12 @@ static int fts_power_source_exit(struct fts_ts_data *ts_data)
 			regulator_set_voltage(ts_data->iovdd, 0,
 					      FTS_IOVCC_VTG_MAX_UV);
 		regulator_put(ts_data->iovdd);
+	}
+	if (!IS_ERR_OR_NULL(ts_data->vdd)) {
+		if (regulator_count_voltages(ts_data->vdd) > 0)
+			regulator_set_voltage(ts_data->vdd, 0,
+					      FTS_IOVCC_VTG_MAX_UV);
+		regulator_put(ts_data->vdd);
 	}
 
 	return 0;

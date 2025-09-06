@@ -298,6 +298,7 @@ struct fts_ts_data {
 	struct regulator *vddio;
 	struct regulator *avdd;
 	struct regulator *iovdd;
+	struct regulator *vdd;
 #if FTS_PINCTRL_EN
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *pins_active;
