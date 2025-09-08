@@ -26,6 +26,17 @@ enum {
 	MI2S_TDM_AUXPCM_MAX,
 };
 
+//add for smartpa compatible begin
+enum {
+	SMARTPA_NONE = 0,
+	SMARTPA_AW882XX,
+	SMARTPA_FS19XX,
+	SMARTPA_SIA91XX,
+	SMARTPA_MAX,
+};
+int get_smartpa_type(void);
+//add for smartpa compatibe end
+
 typedef enum snd_card_status_t {
 	SND_CARD_STATUS_OFFLINE = 0,
 	SND_CARD_STATUS_ONLINE  = 1,

@@ -4228,6 +4228,8 @@ static void wcd9378_dt_parse_micbias_info(struct device *dev,
 						  &prop_val);
 		if (!rc)
 			mb->micb2_mv = prop_val;
+		else
+		    mb->micb2_mv = 1800;
 	} else {
 		dev_info(dev, "%s: Micbias2 DT property not found\n",
 			__func__);

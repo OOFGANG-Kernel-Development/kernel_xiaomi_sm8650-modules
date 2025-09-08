@@ -482,8 +482,10 @@ static int audio_pkt_srvc_callback(struct gpr_device *adev,
 		__func__,hdr_size, pkt_size);
 
 	skb = alloc_skb(pkt_size, GFP_ATOMIC);
-	if (!skb)
+	if (!skb) {
+		AUDIO_PKT_ERR("[TF-STABILITY]:alloc skb pkt_size %d failed\n", pkt_size);
 		return -ENOMEM;
+	}
 
 	skb_put_data(skb, data, pkt_size);
 

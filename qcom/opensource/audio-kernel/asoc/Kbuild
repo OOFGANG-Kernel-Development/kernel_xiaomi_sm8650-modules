@@ -267,6 +267,54 @@ CDEFINES +=	-DANI_LITTLE_BYTE_ENDIAN \
 		-Werror\
 		-D__linux__
 
+ifneq (, $(filter $(word 2,$(subst _, ,$(TARGET_PRODUCT))), shennong))
+	CDEFINES += -DCONFIG_TARGET_PRODUCT_SHENNONG
+endif
+
+ifneq (, $(filter $(word 2,$(subst _, ,$(TARGET_PRODUCT))), houji))
+	CDEFINES += -DCONFIG_TARGET_PRODUCT_HOUJI
+endif
+
+ifneq (, $(filter $(word 2,$(subst _, ,$(TARGET_PRODUCT))), manet))
+	CDEFINES += -DCONFIG_TARGET_PRODUCT_MANET
+endif
+
+ifneq (, $(filter $(word 2,$(subst _, ,$(TARGET_PRODUCT))), aurora))
+	CDEFINES += -DCONFIG_TARGET_PRODUCT_AURORA
+endif
+
+ifneq (, $(filter $(word 2,$(subst _, ,$(TARGET_PRODUCT))), goku))
+	CDEFINES += -DCONFIG_TARGET_PRODUCT_GOKU
+endif
+
+ifneq (, $(filter $(word 2,$(subst _, ,$(TARGET_PRODUCT))), ruyi))
+	CDEFINES += -DCONFIG_TARGET_PRODUCT_RUYI
+endif
+
+ifneq (, $(filter $(word 2,$(subst _, ,$(TARGET_PRODUCT))), chenfeng))
+	CDEFINES += -DCONFIG_TARGET_PRODUCT_CHENFENG
+endif
+
+ifneq (, $(filter $(word 2,$(subst _, ,$(TARGET_PRODUCT))), muyu))
+	CDEFINES += -DCONFIG_TARGET_PRODUCT_MUYU
+endif
+
+ifneq (, $(filter $(word 2,$(subst _, ,$(TARGET_PRODUCT))), peridot))
+	CDEFINES += -DCONFIG_TARGET_PRODUCT_PERIDOT
+endif
+
+ifneq (, $(filter $(word 2,$(subst _, ,$(TARGET_PRODUCT))), uke))
+	CDEFINES += -DCONFIG_TARGET_PRODUCT_UKE
+endif
+
+ifneq (, $(filter $(word 2,$(subst _, ,$(TARGET_PRODUCT))), amethyst))
+	CDEFINES += -DCONFIG_TARGET_PRODUCT_AMETHYST
+endif
+
+ifneq (, $(filter $(word 2,$(subst _, ,$(TARGET_PRODUCT))), zorn))
+	CDEFINES += -DCONFIG_TARGET_PRODUCT_ZORN
+endif
+
 KBUILD_CPPFLAGS += $(CDEFINES)
 
 # Currently, for versions of gcc which support it, the kernel Makefile

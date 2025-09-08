@@ -24,6 +24,7 @@
 #include <linux/kobject.h>
 #include "wcd939x-registers.h"
 #include "internal.h"
+#include "hwid.h"
 #if IS_ENABLED(CONFIG_QCOM_WCD_USBSS_I2C)
 #include <linux/soc/qcom/wcd939x-i2c.h>
 #endif
@@ -36,6 +37,8 @@
 #define WCD939X_ZDET_VAL_100K           100000000
 /* Z floating defined in ohms */
 #define WCD939X_ZDET_FLOATING_IMPEDANCE 0x0FFFFFFE
+#define ZDET_300_LMT_MOHMS 100000
+#define ZDET_32_LMT_MOHMS 33443
 
 #define WCD939X_ZDET_NUM_MEASUREMENTS   900
 #define WCD939X_MBHC_GET_C1(c)          ((c & 0xC000) >> 14)
@@ -44,6 +47,10 @@
 #define WCD939X_MBHC_IS_SECOND_RAMP_REQUIRED(z) false
 #define WCD939X_MBHC_ZDET_CONST         (1071 * 1024)
 #define WCD939X_MBHC_MOISTURE_RREF      R_24_KOHM
+#define RDOWN_TIMER_PERIOD_MSEC 100
+
+#define RESIDUAL_AUD_FACTOR_MOHMS 0
+#define RESIDUAL_GND_FACTOR_MOHMS 0
 
 #define OHMS_TO_MILLIOHMS 1000
 #define SLOPE_FACTOR_SCALER 10000
@@ -1524,6 +1531,7 @@ static void wcd939x_wcd_mbhc_calc_impedance(struct wcd_mbhc *mbhc, uint32_t *zl,
 	wcd939x_mbhc_zdet_ramp(component, zdet_param_ptr, &z1L, NULL, d1);
 	if ((z1L == WCD939X_ZDET_FLOATING_IMPEDANCE) || (z1L > WCD939X_ZDET_VAL_100K)) {
 		*zl = WCD939X_ZDET_FLOATING_IMPEDANCE;
+		pdata->usbcss_hs.aud.l.zval = *zl;
 	} else {
 		*zl = z1L;
 		wcd939x_wcd_mbhc_qfuse_cal(component, zl, 0);
@@ -1547,6 +1555,7 @@ static void wcd939x_wcd_mbhc_calc_impedance(struct wcd_mbhc *mbhc, uint32_t *zl,
 	wcd939x_mbhc_zdet_ramp(component, zdet_param_ptr, NULL, &z1R, d1);
 	if ((z1R == WCD939X_ZDET_FLOATING_IMPEDANCE) || (z1R > WCD939X_ZDET_VAL_100K)) {
 		*zr = WCD939X_ZDET_FLOATING_IMPEDANCE;
+		pdata->usbcss_hs.aud.r.zval = *zr;
 	} else {
 		*zr = z1R;
 		wcd939x_wcd_mbhc_qfuse_cal(component, zr, 4);
@@ -2341,11 +2350,12 @@ int wcd939x_mbhc_init(struct wcd939x_mbhc **mbhc,
 	}
 
 	(*mbhc) = wcd939x_mbhc;
+/*
 	snd_soc_add_component_controls(component, impedance_detect_controls,
 				   ARRAY_SIZE(impedance_detect_controls));
 	snd_soc_add_component_controls(component, hph_type_detect_controls,
 				   ARRAY_SIZE(hph_type_detect_controls));
-
+*/
 	wcd939x = dev_get_drvdata(component->dev);
 	if (!wcd939x) {
 		dev_err(component->dev, "%s: wcd939x pointer is NULL\n", __func__);

@@ -413,6 +413,13 @@ int msm_common_snd_hw_params(struct snd_pcm_substream *substream,
 		return -EINVAL;
 	}
 
+#if !defined(CONFIG_TARGET_PRODUCT_UKE)
+	if (get_smartpa_type() == SMARTPA_FS19XX) {
+		slot_width = 16;
+		dev_info(rtd->card->dev, "%s: SMARTPA_FS19XX slot_width overwrite to 16.\n", __func__);
+	}
+#endif
+
 	if (index >= 0) {
 		mutex_lock(&pdata->lock[index]);
 		if (atomic_read(&pdata->lpass_intf_clk_ref_cnt[index]) == 0) {
