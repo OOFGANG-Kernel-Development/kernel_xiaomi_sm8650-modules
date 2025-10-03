@@ -335,6 +335,7 @@ ifeq ($(KERNEL_BUILD), 1)
 	obj-y	+= cs35l41/
 	obj-y	+= cs35l43/
 	obj-y	+= pa_combine/
+	obj-y	+= fs19xx/
 	obj-y	+= ./
 endif
 # Module information used by KBuild framework
