@@ -447,4 +447,25 @@ int cam_common_mem_kdup(void **dst, void *src, size_t size);
  * @memory:                Address of memory
  */
 void cam_common_mem_free(void *memory);
+
+// xiaomi add cam_retry_kcalloc
+/**
+ * cam_retry_kcalloc()
+ *
+ * @brief                  retry kcalloc
+ *
+ * @func:                  the name of the function that called this function.
+ * @line:                  line of code.
+ * @n:                     how many bytes of memory are required.
+ * @s:                     how many bytes of memory are required.
+ * @flags:                 the type of memory to allocate (see kmalloc).
+ *
+ */
+void *cam_retry_kcalloc(
+	const char *func,
+	int line,
+	size_t n,
+	size_t s,
+	gfp_t gfp);
+
 #endif /* _CAM_COMMON_UTIL_H_ */

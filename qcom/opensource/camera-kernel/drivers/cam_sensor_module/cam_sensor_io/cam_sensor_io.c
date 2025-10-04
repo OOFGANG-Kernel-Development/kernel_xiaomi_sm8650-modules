@@ -9,6 +9,9 @@
 #include "cam_sensor_i3c.h"
 #include <linux/pm_runtime.h>
 
+static int cam_cci_io_protect = 0;
+module_param(cam_cci_io_protect, int, 0644);
+
 int32_t camera_io_dev_poll(struct camera_io_master *io_master_info,
 	uint32_t addr, uint16_t data, uint32_t data_mask,
 	enum camera_sensor_i2c_type addr_type,
@@ -247,4 +250,119 @@ int32_t camera_io_release(struct camera_io_master *io_master_info)
 	}
 
 	return -EINVAL;
+}
+
+void cam_cci_add_io_fail_count(struct cci_error_info *error_info)
+{
+	if (cam_cci_io_protect == 1)
+		atomic_add(1, &error_info->io_fail_count);
+}
+
+void cam_cci_reset_io_fail_count(struct cci_error_info *error_info)
+{
+	if (cam_cci_io_protect == 1)
+		atomic_set(&error_info->io_fail_count, 0);
+}
+
+int cam_cci_read_io_fail_count(struct cci_error_info *error_info)
+{
+	return atomic_read(&error_info->io_fail_count);
+}
+
+bool cam_check_cci_is_error(struct cci_error_info *error_info)
+{
+	// Hardware exception protection not enabled
+	if (cam_cci_io_protect != 1) {
+		return false;
+	}
+
+	if (atomic_read(&error_info->damage_count) >= MAX_DAMAGE_COUNT ||
+		atomic_read(&error_info->io_fail_count) >= MAX_IO_FAIL_COUNT) {
+		return true;
+	}
+
+	return false;
+}
+
+void cam_cci_set_init_fail(struct cci_error_info *error_info)
+{
+	if (cam_cci_io_protect == 1)
+		atomic_set(&error_info->init_fail_flag, 1);
+}
+
+void cam_cci_clear_init_fail(struct cci_error_info *error_info)
+{
+	if (cam_cci_io_protect == 1)
+		atomic_set(&error_info->init_fail_flag, 0);
+}
+
+int cam_cci_read_damage_count(struct cci_error_info *error_info)
+{
+	return atomic_read(&error_info->damage_count);
+}
+
+bool cam_check_cci_is_damage(struct cci_error_info *error_info)
+{
+	struct timespec64 curr_timestamp;
+	struct tm ts_damage;
+	struct tm ts_curr;
+
+	// Hardware exception protection not enabled
+	if (cam_cci_io_protect != 1) {
+		return false;
+	}
+
+	// Continuous initialization failure or read/write failure
+	if (MAX_IO_FAIL_COUNT <= atomic_read(&error_info->io_fail_count) ||
+		1 == atomic_read(&error_info->init_fail_flag)) {
+		if (MAX_DAMAGE_COUNT > atomic_read(&error_info->damage_count)) {
+			atomic_add(1, &error_info->damage_count);
+
+			if (1 == atomic_read(&error_info->damage_count))
+				ktime_get_clocktai_ts64(&error_info->frist_damage_timestamp);
+
+			/* If the time difference between the last and first damages is greater than 24 hours,
+			   it will not be considered as hardware damage
+			*/
+			if (MAX_DAMAGE_COUNT == atomic_read(&error_info->damage_count)) {
+				time64_to_tm(error_info->frist_damage_timestamp.tv_sec, 0, &ts_damage);
+				CAM_INFO(CAM_SENSOR, "frist damage time,year of day:%d time: %d-%d %d:%d:%d",
+					ts_damage.tm_yday, ts_damage.tm_mon + 1, ts_damage.tm_mday, ts_damage.tm_hour,
+					ts_damage.tm_min, ts_damage.tm_sec);
+
+				ktime_get_clocktai_ts64(&curr_timestamp);
+				time64_to_tm(curr_timestamp.tv_sec, 0, &ts_curr);
+				CAM_INFO(CAM_SENSOR, "current damage time,year of day:%d time: %d-%d %d:%d:%d",
+					ts_curr.tm_yday, ts_curr.tm_mon + 1, ts_curr.tm_mday, ts_curr.tm_hour,
+					ts_curr.tm_min, ts_curr.tm_sec);
+
+				if (ts_curr.tm_yday != ts_damage.tm_yday) {
+					// In the same year, a damage event occurred the next day
+					if (ts_curr.tm_yday > ts_damage.tm_yday &&
+						((ts_curr.tm_yday-ts_damage.tm_yday)*24+ts_curr.tm_hour-ts_damage.tm_hour) > 24)
+						atomic_set(&error_info->damage_count, 0);
+
+					// If crossing the New Year, start counting from the starting point of the new year
+					if (ts_curr.tm_yday < ts_damage.tm_yday &&
+						(ts_curr.tm_yday*24+ts_curr.tm_hour-ts_damage.tm_hour) > 24)
+						atomic_set(&error_info->damage_count, 0);
+
+					CAM_INFO(CAM_SENSOR, "current time:device damage count reset:%d",
+						atomic_read(&error_info->damage_count));
+				}
+			}
+
+			CAM_ERR(CAM_SENSOR, "device damage count:%d",
+				atomic_read(&error_info->damage_count));
+
+			return true;
+		}
+	}//If the number of damages has not been reached and no abnormalities have occurred, reset to zero
+	else if (MAX_DAMAGE_COUNT > atomic_read(&error_info->damage_count)){
+		atomic_set(&error_info->damage_count, 0);
+		CAM_DBG(CAM_SENSOR, "device damage count reset:%d",
+			atomic_read(&error_info->damage_count));
+	}
+
+	return false;
 }

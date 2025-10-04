@@ -651,4 +651,28 @@ int cam_isp_context_init(struct cam_isp_context *ctx,
  */
 int cam_isp_context_deinit(struct cam_isp_context *ctx);
 
+/*xiaomi added detect framerate begin*/
+/**
+ * cam_isp_detect_framerate()
+ *
+ * @brief                function to detect framerate - xiaomi added
+ *
+ * @ctx:                 ISP context
+ * @interval:            frame interval num to calculate framerate
+ *
+ */
+void cam_isp_detect_framerate(struct cam_isp_context *ctx,
+     uint interval);
+
+/**
+ * @brief                 function to get frame batchsize of HFR - xiaomi add
+ *
+ * @ctx:                  ISP context obj to be detected
+ * @cpkt:                 camera packet
+ *
+ */
+void cam_isp_get_frame_batchsize(struct cam_context *ctx,
+     struct cam_packet *cpkt);
+/*xiaomi added detect framerate end*/
+
 #endif  /* __CAM_ISP_CONTEXT_H__ */

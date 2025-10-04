@@ -1,12 +1,5 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
-/*
- * Copyright (c) 2017-2019, 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
- */
-
-
-#ifndef _CAM_ACTUATOR_DEV_H_
-#define _CAM_ACTUATOR_DEV_H_
+#ifndef _CAM_APERTURE_DEV_H_
+#define _CAM_APERTURE_DEV_H_
 
 #include <cam_sensor_io.h>
 #include <linux/delay.h>
@@ -27,55 +20,53 @@
 #include "cam_soc_util.h"
 #include "cam_debug_util.h"
 #include "cam_context.h"
-#include "cam_parklens_thread.h" //xiaomi add
 
 #define NUM_MASTERS 2
 #define NUM_QUEUES 2
 
-#define ACTUATOR_DRIVER_I2C                    "cam-i2c-actuator"
-#define CAMX_ACTUATOR_DEV_NAME                 "cam-actuator-driver"
-#define ACTUATOR_DRIVER_I3C                    "i3c_camera_actuator"
+#define APERTURE_DRIVER_I2C                    "cam-i2c-aperture"
+#define CAMX_APERTURE_DEV_NAME                 "cam-aperture-driver"
+#define APERTURE_DRIVER_I3C                    "i3c_camera_aperture"
 
 
-#define MSM_ACTUATOR_MAX_VREGS (10)
-#define ACTUATOR_MAX_POLL_COUNT 10
+#define MSM_APERTURE_MAX_VREGS (10)
+#define APERTURE_MAX_POLL_COUNT 10
 
-enum cam_actuator_apply_state_t {
-	ACT_APPLY_SETTINGS_NOW,
-	ACT_APPLY_SETTINGS_LATER,
+enum cam_aperture_apply_state_t {
+	APT_APPLY_SETTINGS_NOW,
+	APT_APPLY_SETTINGS_LATER,
 };
 
-enum cam_actuator_state {
-	CAM_ACTUATOR_INIT,
-	CAM_ACTUATOR_ACQUIRE,
-	CAM_ACTUATOR_CONFIG,
-	CAM_ACTUATOR_START,
-	CAM_ACTUATOR_PARKLENS, //xiaomi add
+enum cam_aperture_state {
+	CAM_APERTURE_INIT,
+	CAM_APERTURE_ACQUIRE,
+	CAM_APERTURE_CONFIG,
+	CAM_APERTURE_START,
 };
 
 /**
- * struct cam_actuator_i2c_info_t - I2C info
+ * struct cam_aperture_i2c_info_t - I2C info
  * @slave_addr      :   slave address
  * @i2c_freq_mode   :   i2c frequency mode
  */
-struct cam_actuator_i2c_info_t {
+struct cam_aperture_i2c_info_t {
 	uint16_t slave_addr;
 	uint8_t i2c_freq_mode;
 };
 
-struct cam_actuator_soc_private {
-	struct cam_actuator_i2c_info_t i2c_info;
+struct cam_aperture_soc_private {
+	struct cam_aperture_i2c_info_t i2c_info;
 	struct cam_sensor_power_ctrl_t power_info;
 };
 
 /**
- * struct actuator_intf_params
+ * struct aperture_intf_params
  * @device_hdl: Device Handle
  * @session_hdl: Session Handle
  * @ops: KMD operations
  * @crm_cb: Callback API pointers
  */
-struct actuator_intf_params {
+struct aperture_intf_params {
 	int32_t device_hdl;
 	int32_t session_hdl;
 	int32_t link_hdl;
@@ -84,18 +75,18 @@ struct actuator_intf_params {
 };
 
 /**
- * struct cam_actuator_ctrl_t
+ * struct cam_aperture_ctrl_t
  * @device_name: Device name
  * @i2c_driver: I2C device info
  * @pdev: Platform device
  * @cci_i2c_master: I2C structure
  * @io_master_info: Information about the communication master
- * @actuator_mutex: Actuator mutex
- * @is_i3c_device : A Flag to indicate whether this actuator is I3C device
- * @act_apply_state: Actuator settings aRegulator config
+ * @aperture_mutex: Aperture mutex
+ * @is_i3c_device : A Flag to indicate whether this aperture is I3C device
+ * @act_apply_state: Aperture settings aRegulator config
  * @id: Cell Index
- * @res_apply_state: Actuator settings apply state
- * @cam_act_state:   Actuator state
+ * @res_apply_state: Aperture settings apply state
+ * @cam_act_state:   Aperture state
  * @gconf: GPIO config
  * @pinctrl_info: Pinctrl information
  * @v4l2_dev_str: V4L2 device structure
@@ -106,39 +97,38 @@ struct actuator_intf_params {
  * @cci_debug: Sensor debugfs info and entry
  * @cci_err_info: device error info
  */
-struct cam_actuator_ctrl_t {
+struct cam_aperture_ctrl_t {
 	char device_name[CAM_CTX_DEV_NAME_MAX_LENGTH];
 	struct i2c_driver *i2c_driver;
 	enum cci_i2c_master_t cci_i2c_master;
 	enum cci_device_num cci_num;
 	struct camera_io_master io_master_info;
 	struct cam_hw_soc_info soc_info;
-	struct mutex actuator_mutex;
+	struct mutex aperture_mutex;
 	bool is_i3c_device;
 	uint32_t id;
-	enum cam_actuator_apply_state_t setting_apply_state;
-	enum cam_actuator_state cam_act_state;
+	enum cam_aperture_apply_state_t setting_apply_state;
+	enum cam_aperture_state cam_act_state;
 	uint8_t cam_pinctrl_status;
 	struct cam_subdev v4l2_dev_str;
 	struct i2c_data_settings i2c_data;
-	struct cam_actuator_query_cap act_info;
-	struct actuator_intf_params bridge_intf;
+	struct cam_aperture_query_cap act_info;
+	struct aperture_intf_params bridge_intf;
 	uint32_t last_flush_req;
-	/* xiaomi add for cci debug start */
 	void *cci_debug;
-	/* xiaomi add for cci debug end */
-	struct cam_actuator_parklens_ctrl_t parklens_ctrl; //xiaomi add
-	struct cci_error_info cci_err_info; // xiaomi add
+	struct cci_error_info cci_err_info;
 };
 
 /**
- * @brief : API to register Actuator hw to platform framework.
+ * @brief : API to register Aperture hw to platform framework.
  * @return struct platform_device pointer on on success, or ERR_PTR() on error.
  */
-int cam_actuator_driver_init(void);
+int cam_aperture_driver_init(void);
 
 /**
- * @brief : API to remove Actuator Hw from platform framework.
+ * @brief : API to remove Aperture Hw from platform framework.
  */
-void cam_actuator_driver_exit(void);
-#endif /* _CAM_ACTUATOR_DEV_H_ */
+void cam_aperture_driver_exit(void);
+
+
+#endif /* _CAM_APERTURE_DEV_H_ */
