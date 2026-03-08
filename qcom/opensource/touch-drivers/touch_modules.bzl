@@ -161,3 +161,19 @@ module_entry(
             "raydium/chip_raydium/ic_drv_interface.c"
     ]
 )
+
+#define ddk_module() for xiaomi_touch
+module_entry(
+    name = "xiaomi_touch",
+    config_option = "CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE",
+    srcs = [
+            "xiaomi/xiaomi_touch_core.c",
+            "xiaomi/xiaomi_touch_device.c",
+            "xiaomi/xiaomi_touch_evdev.c",
+            "xiaomi/xiaomi_touch_knock_data.c",
+            "xiaomi/xiaomi_touch_mode.c",
+            "xiaomi/xiaomi_touch_operations.c",
+            "xiaomi/xiaomi_touch_proc.c",
+            "xiaomi/xiaomi_touch_sys.c"
+    ]
+)

@@ -153,7 +153,13 @@ def define_pineapple(t, v, lt=None):
             "wcd939x_dlkm",
             "wcd939x_slave_dlkm",
             "wcd9378_dlkm",
-            "wcd9378_slave_dlkm"
+            "wcd9378_slave_dlkm",
+            "lpass_bt_swr_dlkm",
+            "bolero_cdc_dlkm",
+            "va_macro_dlkm",
+            "rx_macro_dlkm",
+            "tx_macro_dlkm",
+            "wsa881x_analog_dlkm",
         ],
         config_options = [
             "CONFIG_SND_SOC_PINEAPPLE",
@@ -169,6 +175,12 @@ def define_pineapple(t, v, lt=None):
             "CONFIG_SND_SOC_WCD9XXX_V2",
             "CONFIG_SND_SOC_WCD_MBHC_ADC",
             "CONFIG_MSM_EXT_DISPLAY",
+            "CONFIG_LPASS_BT_SWR",
+            "CONFIG_SND_SOC_BOLERO",
+            "CONFIG_VA_MACRO",
+            "CONFIG_RX_MACRO",
+            "CONFIG_TX_MACRO",
+            "CONFIG_SND_SOC_WSA881X_ANALOG",
         ],
         lunch_target = lt,
     )

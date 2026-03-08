@@ -9,6 +9,7 @@ def define_pineapple():
             "radio-i2c-rtc6226-qca",
             "bt_fm_swr",
             "btfmcodec",
+            "btfm_slim_codec",
         ],
         config_options = [
             "CONFIG_MSM_BT_POWER",
@@ -17,6 +18,7 @@ def define_pineapple():
             "CONFIG_BTFM_SWR",
             "CONFIG_BTFM_CODEC",
             "CONFIG_BT_HW_SECURE_DISABLE",
+            "CONFIG_SLIM_BTFM_CODEC",
         ]
     )
 

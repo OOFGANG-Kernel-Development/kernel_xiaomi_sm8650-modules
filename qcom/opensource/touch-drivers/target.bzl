@@ -13,7 +13,15 @@ def define_pineapple(t,v):
             "dummy_ts",
             "goodix_ts",
             "focaltech_fts",
-	    "qts"
+            "qts",
+            "synaptics_tcm_ts",
+            "glink_comm",
+            "pt_ts",
+            "pt_i2c",
+            "pt_device_access",
+            "pt_debug",
+            "raydium_ts",
+            "xiaomi_touch",
         ],
         config_options = [
             "TOUCH_DLKM_ENABLE",
@@ -24,7 +32,15 @@ def define_pineapple(t,v):
             "CONFIG_TOUCHSCREEN_ATMEL_MXT",
             "CONFIG_TOUCHSCREEN_DUMMY",
             "CONFIG_TOUCH_FOCALTECH",
-	    "CONFIG_QTS_ENABLE"
+            "CONFIG_QTS_ENABLE",
+            "CONFIG_TOUCHSCREEN_SYNAPTICS_TCM",
+            "CONFIG_TOUCHSCREEN_MSM_GLINK",
+            "CONFIG_TOUCHSCREEN_PARADE",
+            "CONFIG_TOUCHSCREEN_PARADE_I2C",
+            "CONFIG_TOUCHSCREEN_PARADE_DEVICE_ACCESS",
+            "CONFIG_TOUCHSCREEN_PARADE_DEBUG_MDL",
+            "CONFIG_TOUCHSCREEN_RM_TS",
+            "CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE",
         ],
 )
 
