@@ -34,6 +34,9 @@ ifeq ($(CONFIG_ARCH_PINEAPPLE), y)
 	else ifeq ($(CONFIG_TARGET_PRODUCT_MANET), y)
 		include $(TOUCH_ROOT)/config/gki_manettouch.conf
 		LINUX_INC += -include $(TOUCH_ROOT)/config/gki_manettouchconf.h
+	else ifeq ($(CONFIG_TARGET_PRODUCT_PERIDOT), y)
+		include $(TOUCH_ROOT)/config/gki_peridottouchconf.conf
+		LINUX_INC += -include $(TOUCH_ROOT)/config/gki_peridottouchconf.h
 	else
 		include $(TOUCH_ROOT)/config/gki_pineappletouch.conf
 		LINUX_INC += -include $(TOUCH_ROOT)/config/gki_pineappletouchconf.h
