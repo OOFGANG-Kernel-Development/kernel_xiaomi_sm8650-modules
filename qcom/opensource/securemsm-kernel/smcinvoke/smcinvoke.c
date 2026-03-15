@@ -3163,7 +3163,7 @@ static int smcinvoke_probe(struct platform_device *pdev)
 	unsigned int count = 1;
 	int rc = 0;
 
-	rc = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
+	rc = dma_set_mask_and_coherent(&pdev->dev, ~0ULL);
 	if (rc) {
 		pr_err("dma_set_mask_and_coherent failed %d\n", rc);
 		return rc;
