@@ -2567,12 +2567,12 @@ static long bt_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return -EINVAL;
 		}
 		break;
-	case BT_CMD_GETVAL_POWER_SRCS:
-		pr_err("BT_CMD_GETVAL_POWER_SRCS\n");
-
+	case BT_CMD_GETVAL_POWER_SRCS: {
 		int stored_size = 0;
 
-		// First, safely read the size from the beginning of the userspace struct
+		pr_err("BT_CMD_GETVAL_POWER_SRCS\n");
+
+		/* First, safely read the size from the beginning of the userspace struct */
 		if (copy_from_user(&stored_size, (void __user *)arg, sizeof(int))) {
 			pr_err("%s: Failed to read size from userspace\n", __func__);
 			return -EFAULT;
@@ -2602,6 +2602,7 @@ static long bt_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			ret = -EFAULT;
 		}
 		break;
+	}
 	case BT_CMD_SET_IPA_TCS_INFO:
 		pr_err("%s: BT_CMD_SET_IPA_TCS_INFO\n", __func__);
 		btpower_enable_ipa_vreg(pwr_data);
