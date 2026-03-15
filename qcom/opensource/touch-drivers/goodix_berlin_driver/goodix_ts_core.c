@@ -1985,7 +1985,7 @@ static int goodix_ts_suspend(struct goodix_ts_core *core_data)
 out:
 	goodix_ts_release_connects(core_data);
 	core_data->suspend = 1;
-	enable_temperature_detection_func(false, SEC_TOUCH_ID);
+	enable_temperature_detection_func(false);
 	pm_relax(core_data->bus->dev);
 	ts_info("Suspend end");
 	return 0;
@@ -2085,7 +2085,7 @@ out:
 		goodix_orientation_update((u8)orientation);
 	}
 
-	enable_temperature_detection_func(true, SEC_TOUCH_ID);
+	enable_temperature_detection_func(true);
 	goodix_set_thermal_temp(0, true);
 
 	/* print version and ic info */

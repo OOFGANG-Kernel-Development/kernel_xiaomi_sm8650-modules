@@ -1405,7 +1405,7 @@ exit:
 	if(tcm->palm_sensor_enable)
 		syna_tcm_palm_area_change_setting(1);
 #endif
-	enable_temperature_detection_func(true, TOUCH_ID);
+	enable_temperature_detection_func(true);
 	syna_set_thermal_temp(0, true);
 
 	return retval;
@@ -1461,7 +1461,7 @@ static int syna_dev_suspend(struct device *dev, unsigned char gesture_type)
 	tcm->pwr_state = PWR_OFF;
 #endif
 
-	enable_temperature_detection_func(false, TOUCH_ID);
+	enable_temperature_detection_func(false);
 
 	/* once lpwg is enabled, irq should be alive.
 	 * otherwise, disable irq in suspend.
