@@ -13,6 +13,13 @@ _target_chipset_map = {
 	"qca6750",
 	"wcn6450",
     ],
+    "peridot": [
+	"peach-v2",
+	"peach",
+	"kiwi-v2",
+	"qca6750",
+	"wcn6450",
+    ],
     "sun": [
 	"peach-v2",
         "peach",
