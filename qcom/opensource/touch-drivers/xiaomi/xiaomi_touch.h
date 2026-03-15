@@ -353,4 +353,39 @@ int report_touch_event(s8 touch_id, u8 event_count);
 dma_addr_t get_report_point_info_phy_addr(void);
 void enable_temperature_detection_func(bool is_resume);
 int get_bms_temp_common(void);
+
+/* Touch mode enum used by driver interface callbacks */
+enum touch_mode {
+	TOUCH_MODE_DOUBLETAP_GESTURE = 0,
+	TOUCH_MODE_SINGLETAP_GESTURE,
+	TOUCH_MODE_FOD_PRESS_GESTURE,
+	TOUCH_MODE_NONUI_MODE,
+	TOUCH_MODE_REPORT_RATE,
+	TOUCH_MODE_MAX,
+};
+
+/* Driver-facing interface struct for gesture/mode callbacks */
+struct xiaomi_touch_interface {
+	int (*set_mode_value)(void *private, enum touch_mode mode, int value);
+	int (*get_mode_value)(void *private, enum touch_mode mode);
+	void *private;
+};
+
+/* Primary touch panel ID */
+#define TOUCH_ID_PRIMARY	0
+
+/* Oneshot sensor type identifiers */
+enum oneshot_sensor_type {
+	ONESHOT_SENSOR_SINGLE_TAP = 0,
+	ONESHOT_SENSOR_DOUBLE_TAP,
+	ONESHOT_SENSOR_FOD_PRESS,
+	ONESHOT_SENSOR_MAX,
+};
+
+/* Client registration and sensor notification APIs */
+int register_xiaomi_touch_client(s8 touch_id,
+				  struct xiaomi_touch_interface *interface);
+void unregister_xiaomi_touch_client(s8 touch_id);
+void notify_oneshot_sensor(enum oneshot_sensor_type type, int event);
+
 #endif
