@@ -225,6 +225,7 @@ int syna_tcm_switch_fw_mode(struct tcm_dev *tcm_dev,
  */
 int syna_tcm_get_boot_info(struct tcm_dev *tcm_dev,
 		struct tcm_boot_info *boot_info);
+void syna_tcm_print_boot_info(struct tcm_boot_info boot_info);
 
 /**
  * syna_tcm_get_app_info()
@@ -280,6 +281,22 @@ int syna_tcm_get_static_config(struct tcm_dev *tcm_dev,
  */
 int syna_tcm_set_static_config(struct tcm_dev *tcm_dev,
 		unsigned char *config_data, unsigned int config_data_size);
+
+/**
+ * syna_tcm_get_capfold_status()
+ *
+ * Implement the application fw command code to get the capfold status
+ *
+ * @param
+ *    [ in] tcm_dev:  the device handle
+ *    [out] value:    the value returned
+ *    [ in] delay_ms_resp: delay time for response reading.
+ *                         a positive value presents the time for polling;
+ *                         or, set '0' or 'RESP_IN_ATTN' for ATTN driven
+ * @return
+ *    on success, 0 or positive value; otherwise, negative value on error.
+ */
+int syna_tcm_get_capfold_status(struct tcm_dev *tcm_dev,unsigned short *value,unsigned int delay_ms_resp);
 
 /**
  * syna_tcm_get_dynamic_config()

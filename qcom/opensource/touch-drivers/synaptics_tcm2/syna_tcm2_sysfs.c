@@ -38,11 +38,13 @@
 #include <linux/string.h>
 
 #include "syna_tcm2.h"
-#include "tcm/synaptics_touchcom_core_dev.h"
-#include "tcm/synaptics_touchcom_func_base.h"
+#include "synaptics_touchcom_core_dev.h"
+#include "synaptics_touchcom_func_base.h"
 #ifdef HAS_TESTING_FEATURE
 #include "syna_tcm2_testing.h"
 #endif
+
+bool debug_log_flag = false;
 
 /* g_sysfs_dir represents the root directory of sysfs nodes being created
  */
@@ -390,7 +392,7 @@ static ssize_t syna_sysfs_reset_store(struct kobject *kobj,
 			goto exit;
 		}
 
-		tcm->hw_if->ops_hw_reset(tcm->hw_if, 0);
+		tcm->hw_if->ops_hw_reset(tcm->hw_if,0);
 
 		/* enable the interrupt to process the identify report
 		 * after the hardware reset.
@@ -431,6 +433,56 @@ exit:
 static struct kobj_attribute kobj_attr_reset =
 	__ATTR(reset, 0220, NULL, syna_sysfs_reset_store);
 
+/**
+ * syna_sysfs_debug_store()
+ *
+ * Attribute to disable/enable the debug log
+ *
+ * @param
+ *    [ in] kobj:  an instance of kobj
+ *    [ in] attr:  an instance of kobj attribute structure
+ *    [ in] buf:   string buffer input
+ *    [ in] count: size of buffer input
+ *
+ * @return
+ *    on success, return count; otherwise, return 0
+ */
+static ssize_t syna_sysfs_debug_store(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int retval = 0;
+	unsigned int input;
+	struct device *p_dev;
+	struct kobject *p_kobj;
+	struct syna_tcm *tcm;
+
+	p_kobj = g_sysfs_dir->parent;
+	p_dev = container_of(p_kobj, struct device, kobj);
+	tcm = dev_get_drvdata(p_dev);
+
+	if (kstrtouint(buf, 10, &input))
+		return -EINVAL;
+
+	if (!tcm->is_connected) {
+		LOGW("Device is NOT connected\n");
+		return count;
+	}
+
+	if (input == 0) {
+		debug_log_flag = false;
+	} else if (input == 1) {
+		debug_log_flag = true;
+	} else {
+		LOGW("Unknown option %d (0:disable / 1:enable)\n", input);
+		goto exit;
+	}
+	retval = count;
+
+exit:
+	return retval;
+}
+static struct kobj_attribute kobj_attr_debug =
+	__ATTR(debug, 0220, NULL, syna_sysfs_debug_store);
 
 /**
  * syna_sysfs_pwr_store()
@@ -465,10 +517,10 @@ static ssize_t syna_sysfs_pwr_store(struct kobject *kobj,
 
 	if (strncmp(buf, "resume", 6) == 0) {
 		if (tcm->dev_resume)
-			tcm->dev_resume(p_dev);
+			tcm->dev_resume(p_dev, xiaomi_get_gesture_type(PRI_TOUCH_ID));
 	} else if (strncmp(buf, "suspend", 7) == 0) {
 		if (tcm->dev_suspend)
-			tcm->dev_suspend(p_dev);
+			tcm->dev_suspend(p_dev, xiaomi_get_gesture_type(PRI_TOUCH_ID));
 	} else {
 		LOGW("Unknown option %s\n", buf);
 		retval = -EINVAL;
@@ -484,6 +536,155 @@ exit:
 static struct kobj_attribute kobj_attr_pwr =
 	__ATTR(power_state, 0220, NULL, syna_sysfs_pwr_store);
 
+static ssize_t syna_open_close_store(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int retval = 0;
+	struct device *p_dev;
+	struct kobject *p_kobj;
+	struct syna_tcm *tcm;
+	bool enable = false;
+	unsigned short value = 0;
+	p_kobj = g_sysfs_dir->parent;
+	p_dev = container_of(p_kobj, struct device, kobj);
+	tcm = dev_get_drvdata(p_dev);
+
+	if (!tcm->is_connected) {
+		LOGW("Device is NOT connected\n");
+		return count;
+	}
+
+	if (strncmp(buf, "enable", 1) == 0) {
+		enable = true;
+	} else {
+		enable = false;
+	}
+
+	value = enable ? 0:1;
+	LOGI("syna_open_close_store %d",value);
+	retval = syna_tcm_set_dynamic_config(tcm->tcm_dev,
+			DC_DISABLE_OPEN_CLOSE_REPORT,
+			value,
+			RESP_IN_ATTN);
+	if (retval < 0) {
+		LOGE("Fail to set open_colse report via DC command value:%d\n",value);
+	}
+
+	return count;
+}
+
+static struct kobj_attribute kobj_attr_open_close =
+	__ATTR(open_close, 0644, NULL, syna_open_close_store);
+
+static ssize_t syna_sysfs_enable_touch_scan_store(struct kobject *kobj,
+		struct kobj_attribute *attr,const char *buf, size_t count)
+{
+	int retval = 0;
+	struct device *p_dev;
+	struct kobject *p_kobj;
+	struct syna_tcm *tcm;
+	unsigned short value = 0;
+
+
+	p_kobj = g_sysfs_dir->parent;
+	p_dev = container_of(p_kobj, struct device, kobj);
+	tcm = dev_get_drvdata(p_dev);
+
+	if (!tcm->is_connected) {
+		LOGW("Device is NOT connected\n");
+		return count;
+	}
+
+	if (strncmp(buf, "enable", 1) == 0) {
+		value = 0x00;
+	} else {
+		value = 0x03;
+	}
+
+	retval = syna_tcm_set_dynamic_config(tcm->tcm_dev,
+				DC_ENABLE_WAKEUP_GESTURE_MODE,
+				value,
+				RESP_IN_ATTN);
+	if (retval < 0) {
+		LOGE("Failed to set dynamic_config, retval=%d\n", retval);
+
+	}	
+	return count;
+}
+static struct kobj_attribute kobj_attr_enable_touch_scan =
+	__ATTR(enable_touch_scan, 0644, NULL, syna_sysfs_enable_touch_scan_store);
+
+static ssize_t syna_sysfs_disable_trans_abs_capfold(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int retval = 0;
+	unsigned short value = 0;
+	struct kobject *p_kobj;
+	struct device *p_dev;
+	struct syna_tcm *tcm;
+
+	p_kobj = g_sysfs_dir->parent;
+	p_dev = container_of(p_kobj, struct device, kobj);
+	tcm = dev_get_drvdata(p_dev);
+
+	if (!tcm->is_connected) {
+		LOGE("Device is NOT connected\n");
+		return count;
+	}
+
+	if (strncmp(buf, "0", 1) == 0) {
+		value = 0x00;
+	} else if(strncmp(buf, "1", 1) == 0){
+		value = 0x01;
+	}else if(strncmp(buf, "2", 1) == 0){
+		value = 0x02;
+	}else if(strncmp(buf, "3", 1) == 0){
+		value = 0x8000;
+	}
+
+	retval = syna_tcm_set_dynamic_config(tcm->tcm_dev,
+				DC_DISABLE_CAPFOLD,
+				value,
+				RESP_IN_ATTN);
+	if (retval < 0) {
+		LOGE("Failed to set dynamic_config, retval=%d\n", retval);
+		goto exit;
+	}
+	LOGI("Set dynamic_config successful!\n");
+exit:
+	return count;
+}
+
+static struct kobj_attribute kobj_attr_capfold_disable =
+	__ATTR(capfold_disable, 0220, NULL, syna_sysfs_disable_trans_abs_capfold);
+
+static ssize_t syna_capfold_status_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+	unsigned short status;
+	int retval = 0;
+	struct kobject *p_kobj;
+	struct device *p_dev;
+	struct syna_tcm *tcm;
+	struct tcm_dev *tcm_dev;
+
+	p_kobj = g_sysfs_dir->parent;
+	p_dev = container_of(p_kobj, struct device, kobj);
+	tcm = dev_get_drvdata(p_dev);
+	tcm_dev = tcm->tcm_dev;
+	
+	
+	retval = syna_tcm_get_capfold_status(tcm_dev, &status, 0);
+	if(retval < 0) {
+		retval = snprintf(buf, PAGE_SIZE, "Fail to get capfold_status\n");
+		return retval;
+	}
+	retval = snprintf(buf, PAGE_SIZE, "capfold_status: %d\n", status);
+	return retval;
+}
+
+static struct kobj_attribute kobj_attr_capfold_status =
+	__ATTR(capfold_status, 0644, syna_capfold_status_show, NULL);
+
 /**
  * declaration of sysfs attributes
  */
@@ -492,6 +693,11 @@ static struct attribute *attrs[] = {
 	&kobj_attr_irq_en.attr,
 	&kobj_attr_reset.attr,
 	&kobj_attr_pwr.attr,
+	&kobj_attr_capfold_disable.attr,
+	&kobj_attr_debug.attr,
+	&kobj_attr_enable_touch_scan.attr,
+	&kobj_attr_open_close.attr,
+	&kobj_attr_capfold_status.attr,
 	NULL,
 };
 

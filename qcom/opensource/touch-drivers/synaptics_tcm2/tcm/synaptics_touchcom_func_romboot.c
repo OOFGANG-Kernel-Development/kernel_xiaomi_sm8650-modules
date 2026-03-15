@@ -38,7 +38,6 @@
 
 #include "synaptics_touchcom_func_base.h"
 #include "synaptics_touchcom_func_romboot.h"
-#include <linux/wait.h>
 
 #define JEDEC_STATUS_CHECK_US_MIN 5000
 #define JEDEC_STATUS_CHECK_US_MAX 10000
@@ -1235,7 +1234,7 @@ int syna_tcm_romboot_do_ihex_update(struct tcm_dev *tcm_dev,
 	if (!is_multichip) {
 		header = (unsigned short *)ihex_info->bin;
 		if (*header != BINARY_FILE_MAGIC_VALUE) {
-			LOGE("Incorrect image header 0x%04X\n", *header);
+			LOGE("[DIS-TF-TOUCH] Incorrect image header 0x%04X\n", *header);
 			goto exit;
 		}
 	}
@@ -1252,7 +1251,6 @@ int syna_tcm_romboot_do_ihex_update(struct tcm_dev *tcm_dev,
 	LOGN("Start of ihex update\n");
 
 	ATOMIC_SET(tcm_dev->firmware_flashing, 1);
-	reinit_completion(&tcm_dev->fw_update_completion);
 
 	/* for single-chip, mass erase will affect the
 	 * entire flash memory, so it just takes once
@@ -1332,7 +1330,6 @@ exit:
 	syna_pal_mem_free((void *)ihex_info->bin);
 
 	ATOMIC_SET(tcm_dev->firmware_flashing, 0);
-	complete_all(&tcm_dev->fw_update_completion);
 
 	syna_tcm_buf_release(&romboot_data->out);
 
@@ -1465,7 +1462,7 @@ int syna_tcm_romboot_do_multichip_reflash(struct tcm_dev *tcm_dev,
 	}
 
 	if (!IS_ROM_BOOTLOADER_MODE(tcm_dev->dev_mode)) {
-		LOGE("Incorrect device mode 0x%02x, expected:0x%02x\n",
+		LOGE("[DIS-TF-TOUCH]Incorrect device mode 0x%02x, expected:0x%02x\n",
 			tcm_dev->dev_mode, MODE_ROMBOOTLOADER);
 		retval = -ERR_INVAL;
 		goto reset;
@@ -1474,7 +1471,6 @@ int syna_tcm_romboot_do_multichip_reflash(struct tcm_dev *tcm_dev,
 	LOGN("Start of reflash\n");
 
 	ATOMIC_SET(tcm_dev->firmware_flashing, 1);
-	reinit_completion(&tcm_dev->fw_update_completion);
 
 	/* Traverse through all blocks in the image file,
 	 * then erase the corresponding block area
@@ -1570,7 +1566,6 @@ reset:
 
 exit:
 	ATOMIC_SET(tcm_dev->firmware_flashing, 0);
-	complete_all(&tcm_dev->fw_update_completion);
 
 	syna_tcm_buf_release(&romboot_data->out);
 

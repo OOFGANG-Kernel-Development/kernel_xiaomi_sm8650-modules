@@ -31,7 +31,7 @@ static int xiaomi_touch_dev_open(struct inode *inode, struct file *file)
 	init_waitqueue_head(&client_private_data->poll_wait_queue_head_for_raw);
 
 	file->private_data = client_private_data;
-	LOG_DEBUG("open xiaomi_touch sucess! private data is %p, open count %d", client_private_data, xiaomi_touch->use_count);
+	LOG_VERBOSE("open xiaomi_touch sucess! private data is %p, open count %d", client_private_data, xiaomi_touch->use_count);
 	return 0;
 }
 
@@ -70,7 +70,7 @@ static ssize_t xiaomi_touch_dev_read(struct file *file, char __user *buf, size_t
 	}
 
 	mutex_lock(&xiaomi_touch_data->common_data_buf_lock);
-	LOG_DEBUG("index %d, buf index %d", atomic_read(&client_private_data->common_data_index),
+	LOG_VERBOSE("index %d, buf index %d", atomic_read(&client_private_data->common_data_index),
 		atomic_read(&xiaomi_touch_data->common_data_buf_index));
 	if (atomic_read(&client_private_data->common_data_index) == atomic_read(&xiaomi_touch_data->common_data_buf_index)) {
 		LOG_DEBUG("empty common data!");
@@ -78,7 +78,7 @@ static ssize_t xiaomi_touch_dev_read(struct file *file, char __user *buf, size_t
 		goto read_common_data_end;
 	}
 
-	LOG_DEBUG("start read common data! count = %zu", count);
+	LOG_VERBOSE("start read common data! count = %zu", count);
 	copy_size = copy_to_user((void __user *)buf,
 		&xiaomi_touch_data->common_data_buf[atomic_read(&client_private_data->common_data_index)], count);
 	if (copy_size) {
@@ -93,7 +93,7 @@ static ssize_t xiaomi_touch_dev_read(struct file *file, char __user *buf, size_t
 	}
 
 read_common_data_end:
-	LOG_DEBUG("end read common data! count = %zu", count);
+	LOG_VERBOSE("end read common data! count = %zu", count);
 	mutex_unlock(&xiaomi_touch_data->common_data_buf_lock);
 	return count;
 }
@@ -124,7 +124,6 @@ static ssize_t xiaomi_touch_dev_write(struct file *file, const char __user *buf,
 		} else if (temp_buf[21] == '0') {
 			release_input_event_timeline();
 		}
-		add_common_data_to_buf(0, SET_CUR_VALUE, DATA_MODE_133, 1, &value);
 		return count;
 	}
 
@@ -162,7 +161,7 @@ static unsigned int xiaomi_touch_dev_poll(struct file *file, poll_table *wait)
 	if (atomic_read(&client_private_data->raw_data_index) != atomic_read(&xiaomi_touch_data->raw_data_buf_index)) {
 		mask |= POLLRDBAND;
 	}
-	LOG_DEBUG("poll mask is %d", mask);
+	LOG_VERBOSE("poll mask is 0x%x", mask);
 	return mask;
 }
 
@@ -221,14 +220,14 @@ static long xiaomi_touch_dev_ioctl(struct file *file, unsigned int cmd, unsigned
 
 	if (IOCTL_MAGIC_NUMBER != user_magic_number)
 		return -EINVAL;
-	LOG_DEBUG("user cmd %d, user size %d, user magic number %d", user_cmd, user_size, user_magic_number);
+	LOG_VERBOSE("user cmd %d, user size %d, user magic number %d", user_cmd, user_size, user_magic_number);
 	switch (user_cmd) {
 	case RAW_DATA_INDEX:
 		xiaomi_touch_data = get_xiaomi_touch_data(client_private_data->touch_id);
 		if (!xiaomi_touch_data)
 			return -1;
 		if (_IOC_DIR(cmd) == _IOC_WRITE) {
-			LOG_DEBUG("raw data update, buf index is %d", atomic_read(&xiaomi_touch_data->raw_data_buf_index));
+			LOG_VERBOSE("raw data update, buf index is %d", atomic_read(&xiaomi_touch_data->raw_data_buf_index));
 			atomic_inc(&xiaomi_touch_data->raw_data_buf_index);
 			if (atomic_read(&xiaomi_touch_data->raw_data_buf_index) >= xiaomi_touch_data->raw_data_buf_size)
 				atomic_set(&xiaomi_touch_data->raw_data_buf_index, 0);
@@ -257,7 +256,7 @@ static long xiaomi_touch_dev_ioctl(struct file *file, unsigned int cmd, unsigned
 		atomic_inc(&client_private_data->frame_data_index);
 		if (atomic_read(&client_private_data->frame_data_index) >= xiaomi_touch_data->frame_data_buf_size)
 			atomic_set(&client_private_data->frame_data_index, 0);
-		LOG_DEBUG("get frame data index is %d", temp_index);
+		LOG_VERBOSE("get frame data index is %d", temp_index);
 		return temp_index;
 
 	case SELECT_MMAP_CMD:
@@ -286,7 +285,7 @@ static long xiaomi_touch_dev_ioctl(struct file *file, unsigned int cmd, unsigned
 			list_add_tail_rcu(&client_private_data->node, &xiaomi_touch_data->private_data_list);
 			spin_unlock(&xiaomi_touch_data->private_data_lock);
 		} else {
-			LOG_INFO("touch id has set, don't select again!");
+			LOG_WARNING("touch id has set, don't select again!");
 		}
 		return 0;
 	case HARDWARE_PARAM_CMD:

@@ -9,13 +9,33 @@
 #include <linux/workqueue.h>
 #include <linux/kernel.h>
 #include <linux/string.h>
+
+#if defined(CONFIG_DRM)
+#if defined(TOUCH_PLATFORM_XRING)
+#include <linux/err.h>
+#include <linux/errno.h>
+#include <linux/types.h>
+#include <drm/drm_panel.h>
+#include <soc/xring/xr_timestamp.h>
+#include <soc/xring/display/panel_event_notifier.h>
+#include <soc/xring/sensorhub/ipc/shub_ipc_drv.h>
+#include <soc/xring/sensorhub/shub_boot_prepare.h>
+#include <soc/xring/sensorhub/shub_notifier.h>
+#include <dt-bindings/xring/platform-specific/ipc_resource.h>
+#include <dt-bindings/xring/platform-specific/ipc_tags_sh_ap.h>
+#else
+#include <linux/soc/qcom/panel_event_notifier.h>
+#endif
+#endif
+
 #include "xiaomi_touch_type_common.h"
 
-#define XIAOMI_TOUCH_VERSION    "2024.08.07-01"
+
+#define XIAOMI_TOUCH_VERSION    "2024.08.30-01"
 
 #define BTN_INFO 0x152
 
-#define LOG_TAG					"[MI_TP"
+#define LOG_TAG						"[MI_TP"
 #define COMMON_DATA_BUF_SIZE    10
 #define MAX_TOUCH_PANEL_COUNT   2
 #define MAX_TOUCH_ID 10
@@ -24,9 +44,17 @@
 #define GESTURE_LONGPRESS_EVENT 0x01
 #define GESTURE_SINGLETAP_EVENT 0x02
 #define GESTURE_DOUBLETAP_EVENT 0x04
+#ifdef TOUCH_STYLUS_SUPPORT
+#define GESTURE_STYLUS_SINGLETAP_EVENT 0x08
+#define GESTURE_PAD_SINGLETAP_EVENT 0x10
+#endif
 #ifdef TOUCH_SENSORHUB_SUPPORT
 #define GESTURE_ID_SENSORHUB_ERR 0x100
 #endif
+/*
+ * DFS TEST NODE
+ */
+//#define DFS_DEBUG_TEST 1
 
 /*
  * If the temperature >= 100 degrees or <= -100 degrees,
@@ -61,8 +89,6 @@ enum MI_TP_LOG_LEVEL {
 	MI_TP_LOG_DEBUG,
 	MI_TP_LOG_VERBOSE,
 };
-
-
 enum charge_status {
 	NOT_CHARGING = 0,
 	CHARGING = 1,
@@ -82,6 +108,20 @@ typedef enum {
 	NVT_PRI = 0x0050,
 	HIMAX_PRI = 0x0060,
 } ic_product_code;
+
+#if defined(TOUCH_PLATFORM_XRING)
+typedef enum {
+	SYNA_IPC_RESP_OK = 0,
+	SYNA_IPC_RESP_ERROR,
+	SYNA_IPC_DO_RESUME,
+	SYNA_IPC_DO_SUSPEND,
+	SYNA_IPC_SWITCH_MODE_START,
+	SYNA_IPC_SWITCH_MODE_FINISH,
+	SYNA_IPC_REPORT_TAP_EVENT,
+	SYNA_IPC_REPORT_HOLD_EVENT,
+	SYNA_IPC_MAX_NUM,
+} syna_shub_ipc_cmd_type_t;
+#endif
 
 extern enum MI_TP_LOG_LEVEL current_log_level;
 
@@ -128,15 +168,23 @@ extern enum MI_TP_LOG_LEVEL current_log_level;
 		} while (0)
 
 
+#if defined(TOUCH_PLATFORM_XRING)
+#define xiaomi_touch_get_ktime xr_timestamp_gettime
+#else
+#define xiaomi_touch_get_ktime ktime_get
+#endif
+
 #define XIAOMI_TOUCH_UTC_PRINT(tag) \
 	do { \
 		struct timespec64 ts; \
 		struct tm tm; \
+		ktime_t time_ns = xiaomi_touch_get_ktime(); \
 		ktime_get_real_ts64(&ts); \
 		time64_to_tm(ts.tv_sec, 0, &tm); \
-		LOG_INFO("%s [xiaomi_touch_utc] [%ld-%02d-%02d %02d:%02d:%02d.%06lu]\n", \
-			tag, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, \
-			tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec/1000); \
+		LOG_INFO("%s[ktime:utc] [%llu.%llu : %ld-%02d-%02d %02d:%02d:%02d.%06lu]\n", \
+			tag, time_ns / 1000000000, (time_ns % 1000000000) / 1000, \
+			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, \
+			tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec / 1000); \
 	} while(0)
 
 enum poll_notify_type {
@@ -212,7 +260,7 @@ typedef struct hardware_operation {
 	void (*reset_mode)(common_data_t *common_data);
 	void (*ic_switch_mode)(u8 gesture_type);
 	void (*ic_enable_irq)(bool enable);
-	void (*cmd_update_func)(long mode_update_flag, int mode_value[DATA_MODE_33]);
+	void (*cmd_update_func)(long mode_update_flag, int mode_value[DATA_MODE_35]);
 	void (*set_mode_long_value)(s32 value[], int length);
 
 	int (*palm_sensor_write)(int on);
@@ -225,6 +273,7 @@ typedef struct hardware_operation {
 	int (*touch_doze_analysis)(int value);
 	int (*touch_log_level_control)(bool value);
 	int (*touch_log_level_control_v2)(int value);
+	void (*set_nfc_to_touch_event)(u8 val);
 	int (*htc_ic_setModeValue)(common_data_t *common_data);
 	int (*htc_ic_getModeValue)(common_data_t *common_data);
 
@@ -282,7 +331,9 @@ typedef struct htc_ic_polldata {
 #pragma pack()
 
 /* export for other module and xiaomi_touch module */
-int notify_gesture_double_tap(void);
+#ifdef TOUCH_STYLUS_SUPPORT
+int update_stylus_connect_status_value(int value);
+#endif
 #ifdef TOUCH_FOD_SUPPORT
 int update_fod_press_status(int value);
 #endif
@@ -297,7 +348,7 @@ void xiaomi_register_panel_notifier(struct device *dev, s8 touch_id,
 		int panel_event_notifier_tag, int panel_event_notifier_client);
 void xiaomi_unregister_panel_notifier(struct device *dev, s8 touch_id);
 void schedule_resume_suspend_work(s8 touch_id, bool resume_work);
-void driver_update_touch_mode(s8 touch_id, int touch_mode[DATA_MODE_33], long update_mode_mask);
+void driver_update_touch_mode(s8 touch_id, int touch_mode[DATA_MODE_35], long update_mode_mask);
 u8 xiaomi_get_gesture_type(s8 touch_id);
 int driver_get_touch_mode(s8 touch_id, int mode);
 #ifdef TOUCH_SENSORHUB_SUPPORT
@@ -351,41 +402,13 @@ struct input_dev *register_xiaomi_stylus_input_dev(s8 touch_id, int max_x, int m
 void unregister_xiaomi_stylus_input_dev(s8 touch_id);
 int report_touch_event(s8 touch_id, u8 event_count);
 dma_addr_t get_report_point_info_phy_addr(void);
+
+#if defined(FLIP_STATE)
+void enable_temperature_detection_func(bool is_resume, s8 touch_id);
+#else
 void enable_temperature_detection_func(bool is_resume);
+#endif
+
 int get_bms_temp_common(void);
-
-/* Touch mode enum used by driver interface callbacks */
-enum touch_mode {
-	TOUCH_MODE_DOUBLETAP_GESTURE = 0,
-	TOUCH_MODE_SINGLETAP_GESTURE,
-	TOUCH_MODE_FOD_PRESS_GESTURE,
-	TOUCH_MODE_NONUI_MODE,
-	TOUCH_MODE_REPORT_RATE,
-	TOUCH_MODE_MAX,
-};
-
-/* Driver-facing interface struct for gesture/mode callbacks */
-struct xiaomi_touch_interface {
-	int (*set_mode_value)(void *private, enum touch_mode mode, int value);
-	int (*get_mode_value)(void *private, enum touch_mode mode);
-	void *private;
-};
-
-/* Primary touch panel ID */
-#define TOUCH_ID_PRIMARY	0
-
-/* Oneshot sensor type identifiers */
-enum oneshot_sensor_type {
-	ONESHOT_SENSOR_SINGLE_TAP = 0,
-	ONESHOT_SENSOR_DOUBLE_TAP,
-	ONESHOT_SENSOR_FOD_PRESS,
-	ONESHOT_SENSOR_MAX,
-};
-
-/* Client registration and sensor notification APIs */
-int register_xiaomi_touch_client(s8 touch_id,
-				  struct xiaomi_touch_interface *interface);
-void unregister_xiaomi_touch_client(s8 touch_id);
-void notify_oneshot_sensor(enum oneshot_sensor_type type, int event);
-
+void nfc_to_touch_event(s8 touch_id,u8 val);
 #endif

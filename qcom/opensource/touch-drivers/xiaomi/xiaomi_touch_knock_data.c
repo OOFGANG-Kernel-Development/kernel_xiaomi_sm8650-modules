@@ -132,9 +132,6 @@ end_set_value:
 		knock_data.need_frame_count_change_listener(knock_data.need_frame_count);
 	}
 
-	/* send frame count to thp */
-	add_common_data_to_buf(0, SET_CUR_VALUE, DATA_MODE_57, 1, &knock_data.need_frame_count);
-
 	return count;
 }
 

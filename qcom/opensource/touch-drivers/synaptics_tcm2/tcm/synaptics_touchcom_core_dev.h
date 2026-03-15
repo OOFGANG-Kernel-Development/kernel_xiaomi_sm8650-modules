@@ -41,11 +41,16 @@
 #define _SYNAPTICS_TOUCHCOM_CORE_DEV_H_
 
 
-#include "../syna_tcm2_platform.h"
+#include "syna_tcm2_platform.h"
 
 
 #define SYNA_TCM_CORE_LIB_VERSION 0x0126
 
+/* debug info */
+#define TOUCH_DEBUG_INFO_BYTES_MAX 8
+#define TOUCH_DEBUG_INFO_SHORTS_MAX ((TOUCH_DEBUG_INFO_BYTES_MAX + 1)/2)
+#define TOUCH_DEBUG_INFO_PRINT_SIZE 64
+#define TOUCH_DEBUG_INFO_PRINT_MASK 0x8000
 
 /**
  * @section: Parameters pre-defined
@@ -143,8 +148,6 @@
 
 #define TCM_MSG_CRC_LENGTH (2)
 #define TCM_EXTRA_RC_LENGTH (1)
-#define TOUCH_FOD_INVALID_ID (-1)
-#define TOUCH_FOD_ID 9
 
 /**
  * @section: Macro to show string in log
@@ -260,8 +263,17 @@ enum dynamic_tcm_config_id {
 	DC_INHIBIT_ACTIVE_GESTURE = 0x0f,
 	DC_DISABLE_PROXIMITY = 0x10,
 	DC_CONTROL_LBP_HBP = 0x11,
-	DC_ENABLE_TOUCH_AND_HOLD = 0xD4,
+	DC_DISABLE_CAPFOLD = 0xc6,
+  	DC_ENABLE_TOUCH_AND_HOLD = 0xD4,
+  	DC_GAME_MODE_CTRL = 0xD5,
+  	DC_SPEED_TOUCH_MODE = 0xD6,
+  	DC_SUPPER_JITTER_FILTER = 0xD7,
+  	DC_SWIPE_IIRFILTER = 0xD8,
+  	DC_TAP_JITTER = 0xDB,
+  	DC_PALM_AREA_CHANGE = 0xDC,
 	DC_GESTURE_TYPE_ENABLE = 0xFE,
+	DC_DISABLE_ANGLE_REPORT= 0xC4,
+	DC_DISABLE_OPEN_CLOSE_REPORT = 0xC6,
 };
 
 /**
@@ -316,7 +328,6 @@ enum tcm_command {
 	CMD_GET_DISPLAY_APP_INFO = 0x50,
 	CMD_REBOOT_TO_DISPLAY_ROM_BOOTLOADER = 0x51,
 	CMD_MultiFunction = 0xC7,
-	CMD_NO_RESPONSE   = 0xC8,
 };
 
 /**
@@ -368,8 +379,7 @@ enum tcm_report_type {
 	REPORT_TOUCH = 0x11,
 	REPORT_DELTA = 0x12,
 	REPORT_RAW = 0x13,
-	REPORT_THP = 0xC0,
-	REPORT_RT163 = 0xA3,
+	REPORT_RID161 = 0xA1,
 };
 
 /**
@@ -410,18 +420,16 @@ enum tcm_test_code {
 	TEST_PID18_HYBRID_ABS_RAW = 0x12,
 	TEST_PID22_TRANS_CAP_RAW = 0x16,
 	TEST_GAP_DIFF = 0x17,
+	TEST_PID25_EXTENDED_TRX_SHORT_MAX = 0x19,
 	TEST_PID29_HYBRID_ABS_NOISE = 0x1D,
 	TEST_PID30_BSC_CALIB = 0x1E,
 	TEST_PID44_MULTI_Gear_NOISE_TEST = 0x2c,
-	/*PID81 mask code is set to 0x18*/
 	TEST_PID81_PIXEL_UNIFORMITY = 0x51,
-	/*PID84，included in PT05*/
-	TEST_PID84_FREQRAWTEST = 0x54,
 	/* switch screen */
 	TEST_PID85_RAWSHIFTTEST = 0x55,
 	/* switch frequency */
 	TEST_PID86_RAWSHIFTTEST = 0x56,
-
+	TEST_PID130_CAPFOLD_RAW = 0x82,
 	TEST_PID_MAX,
 };
 
@@ -579,13 +587,9 @@ struct tcm_gesture_data_blob {
 			unsigned char swipe_y[2];
 			unsigned char swipe_direction[2];
 		};
-		struct {
-			unsigned char x_pos[2];
-			unsigned char y_pos[2];
-			unsigned char area[2];
-		};
 		unsigned char data[MAX_SIZE_GESTURE_DATA];
 	};
+	unsigned char isOpen;
 };
 struct tcm_knob_data_blob {
 	unsigned short angle;
@@ -605,6 +609,7 @@ struct tcm_touch_data_blob {
 	/* for gesture */
 	unsigned int gesture_id;
 	struct tcm_gesture_data_blob gesture_data;
+	unsigned short debug_info_data[TOUCH_DEBUG_INFO_SHORTS_MAX];
 
 	/* various data */
 	unsigned int timestamp;
@@ -785,6 +790,7 @@ struct tcm_dev {
 	struct tcm_application_info app_info;
 	struct tcm_boot_info boot_info;
 
+	unsigned char isOpen;
 	/* internal buffers
 	 *   report: record the TouchComm report to caller
 	 *   resp  : record the command response to caller
@@ -798,7 +804,7 @@ struct tcm_dev {
 	unsigned int end_config_loop;
 	unsigned int bits_config_loop;
 	unsigned int bits_config_tailing;
-
+	unsigned int pre_resp_data_length;
 	/* TouchComm message handling wrapper */
 	struct tcm_message_data_blob msg_data;
 
@@ -847,7 +853,9 @@ struct tcm_dev {
 			unsigned int length_total, unsigned int length,
 			unsigned char *resp_code, unsigned int delay_ms_resp);
 
-
+	int (*write_message_without_response)(struct tcm_dev *tcm_dev,
+			unsigned char command, unsigned char *payload,
+			unsigned int payload_len);
 	/* abstraction to set up the maximum read/write size.
 	 *
 	 * Typically, the maximum read/write size is assigned after calling
@@ -873,7 +881,6 @@ struct tcm_dev {
 	void *cbdata_gesture;
 	tcm_reset_occurrence_callback_t cb_reset_occurrence;
 	void *cbdata_reset;
-	struct completion fw_update_completion;
 };
 /* end of structure syna_tcm_dev */
 

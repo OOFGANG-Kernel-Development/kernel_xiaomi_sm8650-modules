@@ -39,9 +39,9 @@
 
 #define TCM_V1_MESSAGE_MARKER 0xa5
 #define TCM_V1_MESSAGE_PADDING 0x5a
+#define PAYLOAD_MAX_LENGTH 2500
 
 static unsigned int tcm_read_max_length = 0;
-
 /**
  * @section: Header of TouchComm v1 Message Packet
  *
@@ -338,16 +338,18 @@ static void syna_tcm_v1_dispatch_report(struct tcm_dev *tcm_dev)
 				ATOMIC_SET(tcm_msg->command_status,
 					CMD_STATE_ERROR);
 				syna_pal_completion_complete(cmd_completion);
+				/* invoke callback to handle unexpected reset if doesn't result from command
+				*/
+				if (tcm_dev->cb_reset_occurrence)
+					tcm_dev->cb_reset_occurrence(tcm_dev->cbdata_reset);
 				goto exit;
 			}
 		} else {
 			LOGN("Device has been reset\n");
-			/* invoke callback to handle unexpected reset if doesn't
-			 * result from command
-			 */
+			/* invoke callback to handle unexpected reset if doesn't result from command
+			*/
 			if (tcm_dev->cb_reset_occurrence)
-				tcm_dev->cb_reset_occurrence(
-					tcm_dev->cbdata_reset);
+				tcm_dev->cb_reset_occurrence(tcm_dev->cbdata_reset);
 		}
 	}
 
@@ -420,7 +422,7 @@ static void syna_tcm_v1_dispatch_response(struct tcm_dev *tcm_dev)
 	}
 
 	tcm_dev->resp_buf.data_length = tcm_msg->payload_length;
-
+	tcm_dev->pre_resp_data_length = tcm_dev->resp_buf.data_length;
 	syna_tcm_buf_unlock(&tcm_msg->in);
 	syna_tcm_buf_unlock(&tcm_dev->resp_buf);
 
@@ -479,7 +481,7 @@ static int syna_tcm_v1_read(struct tcm_dev *tcm_dev, unsigned int rd_length,
 	/* read in the message header from device
 	 * will do retry if the packet is not expected
 	 */
-	for (retry = 0; retry < 20; retry++) {
+	for (retry = 0; retry < 10; retry++) {
 		retval = syna_tcm_read(tcm_dev,
 				buf,
 				rd_length
@@ -493,7 +495,7 @@ static int syna_tcm_v1_read(struct tcm_dev *tcm_dev, unsigned int rd_length,
 		if (buf[0] == TCM_V1_MESSAGE_MARKER)
 			break;
 
-		LOGE("Incorrect header marker, 0x%02x (retry:%d)\n",
+		LOGE("[DIS-TF-TOUCH] Incorrect header marker, 0x%02x (retry:%d)\n",
 			buf[0], retry);
 
 		retval = -ERR_TCMMSG;
@@ -626,6 +628,30 @@ exit:
 
 	return retval;
 }
+
+static int syna_tcm_v1_write_message_without_response(struct tcm_dev *tcm_dev, unsigned char command,
+			unsigned char *payload, unsigned int payload_len)
+{
+	int retval = 0;
+	struct tcm_message_data_blob *tcm_msg = NULL;
+	syna_pal_mutex_t *cmd_mutex = NULL;
+	syna_pal_mutex_t *rw_mutex = NULL;
+
+	tcm_msg = &tcm_dev->msg_data;
+	cmd_mutex = &tcm_msg->cmd_mutex;
+	rw_mutex = &tcm_msg->rw_mutex;
+
+	syna_pal_mutex_lock(cmd_mutex);
+	syna_pal_mutex_lock(rw_mutex);
+	retval = syna_tcm_v1_write(tcm_dev, command, payload,payload_len,false,0);
+	if (retval < 0) {
+		LOGE("Fail to send %x command\n",command);
+	}
+	syna_pal_mutex_unlock(rw_mutex);
+	syna_pal_mutex_unlock(cmd_mutex);
+	return retval;
+}
+
 
 /**
  * syna_tcm_v1_continued_read()
@@ -761,7 +787,7 @@ static int syna_tcm_v1_continued_read(struct tcm_dev *tcm_dev,
 		code = tcm_msg->temp.buf[1];
 
 		if (code != STATUS_CONTINUED_READ) {
-			LOGE("Incorrect status code 0x%02x at %d out of %d\n",
+			LOGE("[DIS-TF-TOUCH] Incorrect status code 0x%02x at %d out of %d\n",
 					code, idx, chunks);
 			retval = -ERR_TCMMSG;
 			goto exit;
@@ -814,6 +840,10 @@ static int syna_tcm_v1_read_message(struct tcm_dev *tcm_dev,
 	unsigned int len = 0;
 	bool do_predict = false;
 	unsigned int tmp_len;
+	int retryCount = 10;
+	int i = 0;
+	int count = 0;
+
 
 	if (!tcm_dev) {
 		LOGE("Invalid tcm device handle\n");
@@ -833,6 +863,41 @@ static int syna_tcm_v1_read_message(struct tcm_dev *tcm_dev,
 	syna_pal_mutex_lock(rw_mutex);
 
 	syna_tcm_buf_lock(&tcm_msg->in);
+
+   	/* If we have abnormally large payload_length*, we do this to avoid abnormal memory copy */
+	if (tcm_msg->payload_length > PAYLOAD_MAX_LENGTH) {
+		count = tcm_msg->payload_length / tcm_read_max_length + 1;
+		LOGE("receive abnormal length, payload_length = %d, tcm_read_max_length = %d, read count = %d, try to clear ic spi buffer\n",
+																				tcm_msg->payload_length, tcm_read_max_length, count);
+		/* ensure the size of in.buf, do re-allocate if needed */
+		if (tcm_read_max_length > tcm_msg->in.buf_size) {
+			retval = syna_tcm_buf_alloc(&tcm_msg->in, tcm_read_max_length);
+			if (retval < 0) {
+				LOGE("Fail to allocate memory for buf_in\n");
+				syna_tcm_buf_unlock(&tcm_msg->in);
+				goto exit;
+			}
+		}
+
+		for (i = 0; i < count; i++) {
+			/* read in the message from device */
+			retval = syna_tcm_v1_read(tcm_dev,
+					tcm_read_max_length,
+					tcm_msg->in.buf,
+					tcm_msg->in.buf_size,
+					false);
+			if (retval < 0) {
+				LOGE("Fail to clear ic spi buffer\n");
+			} else {
+				LOGE("buffer data:%x %x %x %x %x %x %x %x %x %x\n", tcm_msg->in.buf[0], tcm_msg->in.buf[1], tcm_msg->in.buf[2], tcm_msg->in.buf[3], tcm_msg->in.buf[4],
+																	tcm_msg->in.buf[5], tcm_msg->in.buf[6], tcm_msg->in.buf[7], tcm_msg->in.buf[8], tcm_msg->in.buf[9]);
+				if(tcm_msg->in.buf[0] == TCM_V1_MESSAGE_MARKER && (tcm_msg->in.buf[1] == 0 || tcm_msg->in.buf[1] == TCM_V1_MESSAGE_PADDING)) {
+					LOGE("ic spi buffer is empty!\n");
+					break;
+				}
+			}
+		}
+ 	}
 
 	/* read in the message header */
 	len = MESSAGE_HEADER_SIZE;
@@ -922,6 +987,7 @@ static int syna_tcm_v1_read_message(struct tcm_dev *tcm_dev,
 		tcm_msg->payload_length = tcm_read_max_length;
 		len = tcm_read_max_length;
 	}
+
 	/* retrieve the remaining data, if any */
 	retval = syna_tcm_v1_continued_read(tcm_dev, len);
 	if (retval < 0) {
@@ -985,7 +1051,7 @@ do_dispatch:
 			retval = 0;
 			goto exit;
 		default:
-			LOGE("Incorrect Status code, 0x%02x\n",
+			LOGE("[DIS-TF-TOUCH] Incorrect Status code, 0x%02x\n",
 				tcm_msg->status_report_code);
 			break;
 		}
@@ -1012,6 +1078,46 @@ do_dispatch:
 		if (tcm_msg->status_report_code < REPORT_IDENTIFY)
 			tcm_msg->predict_length = 0;
 	}
+
+	if (tcm_msg->status_report_code == STATUS_PREVIOUS_COMMAND_PENDING)
+	{
+		syna_tcm_buf_lock(&tcm_msg->in);
+
+		LOGE("receive pending code,try to clear ic spi buffer\n");
+
+		/* ensure the size of in.buf, do re-allocate if needed */
+		if (tcm_read_max_length > tcm_msg->in.buf_size)
+		{
+			retval = syna_tcm_buf_alloc(&tcm_msg->in, tcm_read_max_length);
+			if (retval < 0) {
+				LOGE("Fail to allocate memory for buf_in\n");
+				syna_tcm_buf_unlock(&tcm_msg->in);
+				goto exit;
+			}
+		}
+
+		for (i = 0;i < retryCount; i++)
+		{
+			/* read in the message from device */
+			retval = syna_tcm_v1_read(tcm_dev,
+					tcm_read_max_length,
+					tcm_msg->in.buf,
+					tcm_msg->in.buf_size,
+					false);
+			if (retval < 0) {
+				LOGE("Fail to clear ic spi buffer\n");
+			} else {
+				LOGE("buffer data:%x %x %x\n",tcm_msg->in.buf[0],tcm_msg->in.buf[1],tcm_msg->in.buf[2]);
+				if (tcm_msg->in.buf[0] == TCM_V1_MESSAGE_MARKER && (tcm_msg->in.buf[1] == 0 || tcm_msg->in.buf[1] == TCM_V1_MESSAGE_PADDING))
+				{
+					LOGE("ic spi buffer is empty!\n");
+					break;
+				}
+			}
+		}
+		syna_tcm_buf_unlock(&tcm_msg->in);
+	}
+
 
 	retval = 0;
 
@@ -1078,6 +1184,14 @@ static int syna_tcm_v1_write_message(struct tcm_dev *tcm_dev,
 		return -ERR_INVAL;
 	}
 
+#ifdef TOUCH_SYNA_BOOTLOADER_RECOVERY
+	/* check fw reflash status */
+	if (ATOMIC_GET(tcm_dev->firmware_flashing) && command != CMD_IDENTIFY && command != CMD_GET_BOOT_INFO && command != CMD_RESET && command != CMD_ERASE_FLASH && command != CMD_WRITE_FLASH && command != CMD_RUN_BOOTLOADER_FIRMWARE) {
+		LOGE("ic is updating , %x command is invalid now\n", command);
+		return -ERR_INVAL;
+	}
+#endif
+
 	tcm_msg = &tcm_dev->msg_data;
 	cmd_mutex = &tcm_msg->cmd_mutex;
 	rw_mutex = &tcm_msg->rw_mutex;
@@ -1085,6 +1199,7 @@ static int syna_tcm_v1_write_message(struct tcm_dev *tcm_dev,
 
 	if (resp_code)
 		*resp_code = STATUS_INVALID;
+
 	/* indicate which mode is used */
 	in_polling = (delay_ms_resp != RESP_IN_ATTN);
 
@@ -1098,9 +1213,6 @@ static int syna_tcm_v1_write_message(struct tcm_dev *tcm_dev,
 	/* disable irq when using polling mode */
 	if (has_irq_ctrl && in_polling && tcm_dev->hw_if->ops_enable_irq)
 		tcm_dev->hw_if->ops_enable_irq(tcm_dev->hw_if, false);
-	/*enable irq when using int mode*/
-	if (!has_irq_ctrl && !in_polling && tcm_dev->hw_if->ops_enable_irq)
-		tcm_dev->hw_if->ops_enable_irq(tcm_dev->hw_if, true);
 
 	syna_pal_mutex_lock(cmd_mutex);
 
@@ -1210,6 +1322,12 @@ static int syna_tcm_v1_write_message(struct tcm_dev *tcm_dev,
 		/* break the loop once a resp was ready */
 		if (ATOMIC_GET(tcm_msg->command_status) == CMD_STATE_IDLE)
 			goto check_response;
+
+#ifdef TOUCH_SYNA_BOOTLOADER_RECOVERY
+		if (ATOMIC_GET(tcm_dev->firmware_flashing) == 1 && command != CMD_IDENTIFY && command != CMD_GET_BOOT_INFO && command != CMD_RESET && command != CMD_ERASE_FLASH && command != CMD_WRITE_FLASH && command != CMD_RUN_BOOTLOADER_FIRMWARE) {
+			goto check_response;
+		}
+#endif
 		/* otherwise, keep in polling */
 		if (in_polling) {
 			ATOMIC_SET(tcm_msg->command_status, CMD_STATE_BUSY);
@@ -1265,9 +1383,6 @@ exit:
 	/* recovery the irq if using polling mode */
 	if (has_irq_ctrl && in_polling && tcm_dev->hw_if->ops_enable_irq)
 		tcm_dev->hw_if->ops_enable_irq(tcm_dev->hw_if, true);
-	/*recovery the irq when using int mode*/
-	if (!has_irq_ctrl && !in_polling && tcm_dev->hw_if->ops_enable_irq)
-		tcm_dev->hw_if->ops_enable_irq(tcm_dev->hw_if, false);
 
 	return retval;
 }
@@ -1294,6 +1409,7 @@ void syna_tcm_v1_set_ops(struct tcm_dev *tcm_dev)
 	tcm_dev->write_message = syna_tcm_v1_write_message;
 	tcm_dev->set_max_rw_size = syna_tcm_v1_set_max_rw_size;
 
+	tcm_dev->write_message_without_response = syna_tcm_v1_write_message_without_response;
 	tcm_dev->msg_data.predict_length = 0;
 	tcm_dev->protocol = TOUCHCOMM_V1;
 }

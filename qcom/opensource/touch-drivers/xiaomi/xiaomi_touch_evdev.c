@@ -375,7 +375,7 @@ int xiaomi_touch_evdev_init(xiaomi_touch_t *_xiaomi_touch)
 {
 	int ret;
 
-	LOG_ERROR("enter");
+	LOG_ALWAYS("enter");
 	xiaomi_touch = _xiaomi_touch;
 	ret = input_register_handler(&xiaomitouch_input_handler);
 	/* create last_touch_events */

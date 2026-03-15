@@ -562,7 +562,7 @@ exit:
  * @return
  *     none.
  */
-static void syna_i2c_hw_reset(struct syna_hw_interface *hw_if, int reset_delay_ms)
+static void syna_i2c_hw_reset(struct syna_hw_interface *hw_if)
 {
 	struct syna_hw_rst_data *rst = &hw_if->bdata_rst;
 
@@ -570,15 +570,12 @@ static void syna_i2c_hw_reset(struct syna_hw_interface *hw_if, int reset_delay_m
 		return;
 
 	LOGD("Prepare to toggle reset, hold:%d delay:%d\n",
-		rst->reset_active_ms, (reset_delay_ms != 0) ? reset_delay_ms : rst->reset_delay_ms);
+		rst->reset_active_ms, rst->reset_delay_ms);
 
 	gpio_set_value(rst->reset_gpio, (rst->reset_on_state & 0x01));
 	syna_pal_sleep_ms(rst->reset_active_ms);
 	gpio_set_value(rst->reset_gpio, ((!rst->reset_on_state) & 0x01));
-	if (reset_delay_ms != 0)
-		syna_pal_sleep_ms(reset_delay_ms);
-	else
-		syna_pal_sleep_ms(rst->reset_delay_ms);
+	syna_pal_sleep_ms(rst->reset_delay_ms);
 }
 
 

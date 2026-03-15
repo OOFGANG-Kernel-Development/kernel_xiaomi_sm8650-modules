@@ -59,6 +59,8 @@
 #include <linux/uaccess.h>
 #include <linux/crc32.h>
 #include <linux/firmware.h>
+#include <linux/time.h>
+#include <linux/rtc.h>
 #ifdef CONFIG_DRM_PANEL
 #include <drm/drm_panel.h>
 #elif CONFIG_FB
@@ -67,9 +69,6 @@
 #endif
 #include <linux/fs.h>
 #include <linux/moduleparam.h>
-#include <linux/pm_runtime.h>
-#include <linux/proc_fs.h>
-#include <linux/seq_file.h>
 
 /**
  * @brief: DEV_MANAGED_API
@@ -104,16 +103,53 @@ extern struct device *syna_request_managed_device(void);
  *         Output the error message
  */
 extern bool debug_log_flag;
+extern bool coord_log_flag;
 #define LOGD(log, ...) {if (debug_log_flag) pr_info("[syna debug] %s: " log, __func__, ##__VA_ARGS__);}
+#define LOGCOORD(log, ...) {if (coord_log_flag) pr_info("[syna coord] %s: " log, __func__, ##__VA_ARGS__);}
 
-#define LOGI(log, ...) \
-	pr_info("[syna info] %s: " log, __func__, ##__VA_ARGS__)
-#define LOGN(log, ...) \
-	pr_notice("[syna info] %s: " log, __func__, ##__VA_ARGS__)
-#define LOGW(log, ...) \
-	pr_warn("[syna warning] %s: " log, __func__, ##__VA_ARGS__)
-#define LOGE(log, ...) \
-	pr_err("[syna error] %s: " log, __func__, ##__VA_ARGS__)
+#define LOGI(log, ...)\
+do { \
+	struct rtc_time tm; \
+	struct timespec64 tv; \
+	unsigned long local_time; \
+	ktime_get_real_ts64(&tv); \
+	local_time = (u32)(tv.tv_sec - (sys_tz.tz_minuteswest * 60)); \
+	rtc_time64_to_tm(local_time, &tm); \
+	pr_info("[TP-Driver][%02d:%02d:%02d.%03zu][syna info] %s %d: " log, tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_nsec/1000000, __func__, __LINE__, ##__VA_ARGS__); \
+} while(0)
+	
+#define LOGN(log, ...)\
+do { \
+	struct rtc_time tm; \
+	struct timespec64 tv; \
+	unsigned long local_time; \
+	ktime_get_real_ts64(&tv); \
+	local_time = (u32)(tv.tv_sec - (sys_tz.tz_minuteswest * 60)); \
+	rtc_time64_to_tm(local_time, &tm); \
+	pr_notice("[TP-Driver][%02d:%02d:%02d.%03zu][syna info] %s %d: " log, tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_nsec/1000000, __func__, __LINE__, ##__VA_ARGS__); \
+} while(0)
+
+#define LOGW(log, ...)\
+do { \
+	struct rtc_time tm; \
+	struct timespec64 tv; \
+	unsigned long local_time; \
+	ktime_get_real_ts64(&tv); \
+	local_time = (u32)(tv.tv_sec - (sys_tz.tz_minuteswest * 60)); \
+	rtc_time64_to_tm(local_time, &tm); \
+	pr_warn("[TP-Driver][%02d:%02d:%02d.%03zu][syna warning] %s %d: " log, tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_nsec/1000000, __func__, __LINE__, ##__VA_ARGS__); \
+} while(0)
+
+#define LOGE(log, ...)\
+do { \
+	struct rtc_time tm; \
+	struct timespec64 tv; \
+	unsigned long local_time; \
+	ktime_get_real_ts64(&tv); \
+	local_time = (u32)(tv.tv_sec - (sys_tz.tz_minuteswest * 60)); \
+	rtc_time64_to_tm(local_time, &tm); \
+	pr_err("[TP-Driver][%02d:%02d:%02d.%03zu][syna error] %s %d: " log, tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_nsec/1000000, __func__, __LINE__, ##__VA_ARGS__); \
+} while(0)
 
 
 

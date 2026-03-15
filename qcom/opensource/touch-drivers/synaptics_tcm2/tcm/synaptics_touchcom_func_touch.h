@@ -70,9 +70,8 @@ enum gesture_classification {
 	GESTURE_ID_ACTIVE_SINGLE_TAP = 6,
 	GESTURE_ID_ACTIVE_TAP_AND_HOLD = 7,
 	GESTURE_ID_SINGLE_TAP = 0x10,
-	GESTURE_TOUCH_AND_HOLD_DOWN_EVENT = 0x80,
-	GESTURE_TOUCH_AND_HOLD_UP_EVENT   = 0x81,
-	GESTURE_TOUCH_AND_HOLD_MOVE_EVENT = 0x83,
+	GESTURE_ID_CAPFOLD_OPEN = 0x90,
+	GESTURE_ID_CAPFOLD_CLOSE = 0x91,
 };
 
 /**
@@ -116,6 +115,8 @@ enum touch_report_code {
 	TOUCH_REPORT_SENSING_MODE = 0x1e,
 	TOUCH_REPORT_KNOB_DATA = 0x24,
 	TOUCH_REPORT_KNOB_CALIB = 0x86,
+	TOUCH_REPORT_DEBUG_INFO = 0xCC,
+	TOUCH_REPORT_ANGLE = 0XD9,
 };
 
 /**
@@ -178,6 +179,23 @@ int syna_tcm_set_touch_report_config(struct tcm_dev *tcm_dev,
  */
 int syna_tcm_preserve_touch_report_config(struct tcm_dev *tcm_dev);
 
+
+static unsigned char default_touch_format[] = {
+	/* entity code */                    /* bits */
+	TOUCH_REPORT_GESTURE_ID,				8,		//$10(016): Gesture ID (natively 8 bits)
+	TOUCH_REPORT_GESTURE_DATA,				48, 	//$1B(027): Gesture data (natively 16-48 bits)
+	TOUCH_REPORT_DEBUG_INFO,				64,		//$CC(204): Debug info for trouble shooting (natively 64 bits)
+	TOUCH_REPORT_FOREACH_ACTIVE_OBJECT,				//$01(001): Begin for each active object loop
+	TOUCH_REPORT_OBJECT_N_INDEX,			4,		//$06(006): Current object index (natively 4 bits)
+	TOUCH_REPORT_OBJECT_N_CLASSIFICATION,	4, 	  	//$07(007): Current object classification (natively 4 bits)
+	TOUCH_REPORT_OBJECT_N_X_POSITION,		16,		//$08(008): Current object X position in display pixels (natively 16 bits)
+	TOUCH_REPORT_OBJECT_N_Y_POSITION,		16,		//$09(009): Current object Y position in display pixels (natively 16 bits)
+	TOUCH_REPORT_OBJECT_N_Z,				16, 	//$0A(010): Current object Z (natively 16 bits)
+	TOUCH_REPORT_OBJECT_N_X_WIDTH,			8,		//$0B(011): Current object X width (natively 8 bits)
+	TOUCH_REPORT_OBJECT_N_Y_WIDTH,			8,		//$0C(012): Current object Y width (natively 8 bits)
+	TOUCH_REPORT_FOREACH_END, 						//$03(003): End for each loop
+	TOUCH_REPORT_END 								//$00(000): End report
+};
 
 /**
  * syna_tcm_get_touch_data()

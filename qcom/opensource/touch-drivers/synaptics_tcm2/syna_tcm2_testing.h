@@ -76,6 +76,8 @@ struct testing_hcd {
 	bool buffer_flag;
 	int (*collect_reports)(enum report_type report_type,
 			unsigned int num_of_reports);
+	struct work_struct self_test_work;
+	struct completion self_test_completion;
 };
 
 /**

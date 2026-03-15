@@ -17,7 +17,6 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/spi/spi.h>
-#include <linux/version.h>
 
 #include "goodix_ts_core.h"
 #define TS_DRIVER_NAME		"gtx8_spi"
@@ -33,7 +32,7 @@
 #define SPI_READ_FLAG   0xF1
 
 static struct platform_device *goodix_pdev;
-struct goodix_bus_interface goodix_spi_bus[MAX_SUPPORTED_TOUCH_PANELS];
+struct goodix_bus_interface goodix_spi_bus;
 
 /**
  * goodix_spi_read_bra- read device register through spi bus
@@ -190,27 +189,18 @@ static void goodix_pdev_release(struct device *dev)
 	kfree(goodix_pdev);
 }
 
-#ifdef CONFIG_OF
-static const struct of_device_id spi_matchs[] = {
-	{.compatible = "goodix,gt9897S",},
-	{.compatible = "goodix,gt9897T",},
-	{.compatible = "goodix,gt9966S",},
-	{.compatible = "goodix,gt9916S",},
-	{.compatible = "goodix,gt9916S2",},
-	{},
-};
-#endif
-
 static int goodix_spi_probe(struct spi_device *spi)
 {
-	int ret = 0, idx;
+	int ret = 0;
 
 	ts_info("goodix spi probe in");
 
 	/* init spi_device */
-	spi->mode          = SPI_MODE_0;
-	spi->bits_per_word = 8;
+	spi->mode            = SPI_MODE_0;
+	spi->bits_per_word   = 8;
 
+	ts_info("spi_info: speed[%d] mode[%d] bits_per_word[%d]",
+			spi->max_speed_hz, spi->mode, spi->bits_per_word);
 	ret = spi_setup(spi);
 	if (ret) {
 		ts_err("failed set spi mode, %d", ret);
@@ -218,34 +208,23 @@ static int goodix_spi_probe(struct spi_device *spi)
 	}
 
 	/* get ic type */
-	ret = goodix_get_ic_type(spi->dev.of_node, spi_matchs);
+	ret = goodix_get_ic_type(spi->dev.of_node, &goodix_spi_bus);
 	if (ret < 0)
 		return ret;
 
-	idx = goodix_get_touch_type(spi->dev.of_node);
-	if (idx < 0 || idx >= MAX_SUPPORTED_TOUCH_PANELS) {
-		ts_err("unsupported touch type idx:%d", idx);
-		return -ENODEV;
-	}
-
-	goodix_spi_bus[idx].ic_type = ret;
-	goodix_spi_bus[idx].bus_type = GOODIX_BUS_TYPE_SPI;
-	goodix_spi_bus[idx].dev = &spi->dev;
-	if (goodix_spi_bus[idx].ic_type == IC_TYPE_BERLIN_A)
-		goodix_spi_bus[idx].read = goodix_spi_read_bra;
+	goodix_spi_bus.bus_type = GOODIX_BUS_TYPE_SPI;
+	goodix_spi_bus.dev = &spi->dev;
+	if (goodix_spi_bus.ic_type == IC_TYPE_BERLIN_A)
+		goodix_spi_bus.read = goodix_spi_read_bra;
 	else
-		goodix_spi_bus[idx].read = goodix_spi_read;
-	goodix_spi_bus[idx].write = goodix_spi_write;
+		goodix_spi_bus.read = goodix_spi_read;
+	goodix_spi_bus.write = goodix_spi_write;
 	/* ts core device */
 	goodix_pdev = kzalloc(sizeof(struct platform_device), GFP_KERNEL);
 	if (!goodix_pdev)
 		return -ENOMEM;
 
-	if (idx)
-		goodix_pdev->name = GOODIX_CORE_DEVICE_2_NAME;
-	else
-		goodix_pdev->name = GOODIX_CORE_DEVICE_NAME;
-
+	goodix_pdev->name = GOODIX_CORE_DRIVER_NAME;
 	goodix_pdev->id = 0;
 	goodix_pdev->num_resources = 0;
 	/*
@@ -253,11 +232,10 @@ static int goodix_spi_probe(struct spi_device *spi)
 	 * /sys/devices/platfrom/goodix_ts.0
 	 * goodix_pdev->dev.parent = &client->dev;
 	 */
-	goodix_pdev->dev.platform_data = &goodix_spi_bus[idx];
+	goodix_pdev->dev.platform_data = &goodix_spi_bus;
 	goodix_pdev->dev.release = goodix_pdev_release;
 
-	/*
-	 * register platform device, then the goodix_ts_core
+	/* register platform device, then the goodix_ts_core
 	 * module will probe the touch deivce.
 	 */
 	ret = platform_device_register(goodix_pdev);
@@ -275,17 +253,21 @@ err_pdev:
 	return ret;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0))
-	static void goodix_spi_remove(struct spi_device *spi)
-	{
+static void goodix_spi_remove(struct spi_device *spi)
+{
 	platform_device_unregister(goodix_pdev);
-	}
-#else
-	static int goodix_spi_remove(struct spi_device *spi)
-	{
-	platform_device_unregister(goodix_pdev);
-	return 0;
-	}
+	//return 0;
+}
+
+#ifdef CONFIG_OF
+static const struct of_device_id spi_matchs[] = {
+	{.compatible = "goodix,brl-a",},
+	{.compatible = "goodix,brl-b",},
+	{.compatible = "goodix,brl-d",},
+	{.compatible = "goodix,nottingham",},
+	{.compatible = "goodix,marseille",},
+	{},
+};
 #endif
 
 static const struct spi_device_id spi_id_table[] = {

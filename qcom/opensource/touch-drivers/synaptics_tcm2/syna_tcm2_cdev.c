@@ -36,11 +36,12 @@
  */
 
 #include <linux/string.h>
+#include <linux/proc_fs.h>
 
 #include "syna_tcm2.h"
 #include "syna_tcm2_cdev.h"
-#include "tcm/synaptics_touchcom_core_dev.h"
-#include "tcm/synaptics_touchcom_func_base.h"
+#include "synaptics_touchcom_core_dev.h"
+#include "synaptics_touchcom_func_base.h"
 
 #if (KERNEL_VERSION(5, 9, 0) <= LINUX_VERSION_CODE) || \
 	defined(HAVE_UNLOCKED_IOCTL)
@@ -59,6 +60,12 @@
 /* #define ENABLE_PID_TASK */
 
 #define SIG_ATTN (46)
+#define REPORT_TIMEOUT_MS 5000
+
+#define FORMAT_4D	"%4hd "
+#define FORMAT_5D	"%5hd "
+#define FORMAT_4U	"%4hu "
+#define FORMAT_5U	"%5hu "
 
 /* structure for IOCTLs
  */
@@ -785,9 +792,6 @@ static int syna_cdev_ioctl_send_message(struct syna_tcm *tcm,
 		return -EINVAL;
 	}
 
-	/* init a buffer for the response data */
-	syna_tcm_buf_init(&resp_data_buf);
-
 	caller = &g_cdev_data.buffer;
 	syna_tcm_buf_lock(caller);
 
@@ -822,6 +826,9 @@ static int syna_cdev_ioctl_send_message(struct syna_tcm *tcm,
 	if (length_in_header != actual_length)
 		LOGD("Size of payload to write:%d (size in header:%d)\n",
 			actual_length, length_in_header);
+
+	/* init a buffer for the response data */
+	syna_tcm_buf_init(&resp_data_buf);
 
 	if (g_cdev_data.io_polling_interval == RESP_IN_ATTN)
 		delay_ms_resp = RESP_IN_ATTN;
@@ -1466,7 +1473,7 @@ static int syna_cdev_ioctl_dispatch(struct syna_tcm *tcm,
 		retval = syna_cdev_ioctl_store_pid(tcm,
 				ubuf_ptr, ubuf_size, *data_size);
 		break;
-	case STD_ENABLE_IRQ_ID:
+	case STD_TOUCH_2_ID:
 		retval = syna_cdev_ioctl_enable_irq(tcm,
 				ubuf_ptr, ubuf_size, *data_size);
 		break;
@@ -2079,7 +2086,7 @@ exit:
  * @return
  *    the string of devtmpfs
  */
-static char *syna_cdev_devnode(struct device *dev, umode_t *mode)
+static char *syna_cdev_devnode(const struct device *dev, umode_t *mode)
 {
 	if (!mode)
 		return NULL;
@@ -2089,6 +2096,140 @@ static char *syna_cdev_devnode(struct device *dev, umode_t *mode)
 
 	return kasprintf(GFP_KERNEL, "%s", dev_name(dev));
 }
+
+static inline unsigned int le2_to_uint(const unsigned char *src)
+{
+	return (unsigned int)src[0] +
+			(unsigned int)src[1] * 0x100;
+}
+
+static int syna_xiaomi_print_report_data(unsigned char report_type, char *buf)
+{
+	int retval;
+	int data;
+	unsigned int row;
+	unsigned int col;
+	unsigned int rows;
+	unsigned int cols;
+	unsigned int has_hybrid;
+	unsigned int idx;
+	unsigned int cnt, offset;
+	unsigned char *data_buf = NULL;
+	char *pfmt = NULL;
+	struct tcm_application_info *app_info;
+	struct syna_tcm *tcm = platform_get_drvdata(g_cdev_data.dev);
+	struct tcm_dev *tcm_dev = tcm->tcm_dev;
+
+	app_info = &tcm_dev->app_info;
+	rows = le2_to_uint(app_info->num_of_image_rows);
+	cols = le2_to_uint(app_info->num_of_image_cols);
+	has_hybrid = le2_to_uint(app_info->has_hybrid_data);
+
+	/* print data */
+	pfmt = (report_type == REPORT_RID161) ? (FORMAT_4U) : (FORMAT_4D);
+	offset = 0;
+	cnt = snprintf(buf + offset, PAGE_SIZE - offset, "RID%d: Rows=%d Cols=%d\n", report_type, rows, cols);
+	offset += cnt;
+	data_buf = tcm->tcm_data_dump.data_dump_report.buf;
+
+	idx = 0;
+	for (row = 0; row < rows; row++) {
+		cnt = 0;
+		for (col = 0; col < cols; col++) {
+			data = (int)((unsigned short)(data_buf[idx] & 0xff) |
+					(unsigned short)(data_buf[idx+1] << 8));
+			cnt = snprintf(buf + offset, PAGE_SIZE - offset, pfmt, data);
+			offset += cnt;
+
+			idx += 2;
+		}
+
+		cnt = snprintf(buf + offset, PAGE_SIZE - offset, "\n");
+		offset += cnt;
+	}
+
+	if (has_hybrid) {
+		pfmt = (report_type == REPORT_RID161) ? (FORMAT_5U) : (FORMAT_5D);
+		/* print hybrid-x data */
+		cnt = snprintf(buf + offset, PAGE_SIZE - offset, "Hybird-X:\n");
+		offset += cnt;
+		for (col =0; col < cols; col++) {
+			data = (int)((unsigned short)(data_buf[idx] & 0xff) |
+					(unsigned short)(data_buf[idx+1] << 8));
+			cnt = snprintf(buf + offset, PAGE_SIZE - offset, pfmt, data);
+			offset += cnt;
+
+			idx += 2;
+		}
+		cnt = snprintf(buf + offset, PAGE_SIZE - offset, "\n");
+		offset += cnt;
+
+		/* print hybrid-y data */
+		cnt = snprintf(buf + offset, PAGE_SIZE - offset, "Hybird-Y:\n");
+		offset += cnt;
+		for (row = 0; row < rows; row++) {
+			data = (int)((unsigned short)(data_buf[idx] & 0xff) |
+					(unsigned short)(data_buf[idx+1] << 8));
+			cnt = snprintf(buf + offset, PAGE_SIZE - offset, pfmt, data);
+			offset += cnt;
+
+			idx += 2;
+		}
+		cnt = snprintf(buf + offset, PAGE_SIZE - offset, "\n");
+		offset += cnt;
+	}
+
+	retval = offset;
+
+	return retval;
+}
+
+
+int syna_xiaomi_report_data(unsigned char report_type, char *buf)
+{
+	int retval;
+	bool completed;
+	struct syna_tcm *tcm = platform_get_drvdata(g_cdev_data.dev);
+
+	syna_tcm_buf_lock(&tcm->tcm_data_dump.data_dump_report);
+	reinit_completion(&tcm->tcm_data_dump.data_dump_completion);
+
+	LOGI("collect RID %d start...\n", report_type);
+
+	tcm->tcm_data_dump.data_dump_report_type = report_type;
+	retval = syna_tcm_enable_report(tcm->tcm_dev,report_type,1);
+	if (retval < 0) {
+		LOGE("Fail to enable RT163 report\n");
+		goto exit;
+	}
+
+	completed = false;
+	retval = wait_for_completion_timeout(&tcm->tcm_data_dump.data_dump_completion, msecs_to_jiffies(REPORT_TIMEOUT_MS));
+	if (retval == 0) {
+		LOGE("Timed out waiting for report collection\n");
+	} else {
+		completed = true;
+	}
+
+	tcm->tcm_data_dump.data_dump_report_type = 0;
+	retval = syna_tcm_enable_report(tcm->tcm_dev,report_type,0);
+	if (retval < 0) {
+		LOGE("Fail to enable RT163 report\n");
+		goto exit;
+	}
+
+	LOGI("collect RID %d done\n", report_type);
+
+	if(completed == true){
+		retval = syna_xiaomi_print_report_data(report_type, buf);
+		LOGI("retval=%d, PAGE_SIZE=%ld\n", retval, PAGE_SIZE);
+	}
+exit:
+	tcm->tcm_data_dump.data_dump_report_type = 0;
+	syna_tcm_buf_unlock(&tcm->tcm_data_dump.data_dump_report);
+	return retval;
+}
+
 /**
  * syna_cdev_create()
  *
@@ -2123,7 +2264,7 @@ int syna_cdev_create(struct syna_tcm *tcm,
 	syna_pal_mutex_alloc(&g_cdev_data.queue_mutex);
 #endif
 	syna_tcm_buf_init(&g_cdev_data.buffer);
-
+	syna_tcm_buf_init(&tcm->tcm_data_dump.data_dump_report);
 	if (cdev_major_num) {
 		tcm->char_dev_num = MKDEV(cdev_major_num, 0);
 		retval = register_chrdev_region(tcm->char_dev_num, 1,
@@ -2152,7 +2293,7 @@ int syna_cdev_create(struct syna_tcm *tcm,
 		goto err_add_chardev;
 	}
 
-	device_class = class_create(THIS_MODULE, PLATFORM_DRIVER_NAME);
+	device_class = class_create(PLATFORM_DRIVER_NAME);
 	if (IS_ERR(device_class)) {
 		LOGE("Fail to create device class\n");
 		retval = PTR_ERR(device_class);
@@ -2193,6 +2334,7 @@ int syna_cdev_create(struct syna_tcm *tcm,
 		goto err_create_dir;
 	}
 #endif
+	init_completion(&tcm->tcm_data_dump.data_dump_completion);
 	return 0;
 
 #ifdef HAS_SYSFS_INTERFACE
@@ -2246,7 +2388,7 @@ void syna_cdev_remove(struct syna_tcm *tcm)
 	}
 
 	syna_tcm_buf_release(&g_cdev_data.buffer);
-
+	syna_tcm_buf_release(&tcm->tcm_data_dump.data_dump_report);
 	syna_pal_mutex_free(&g_cdev_data.mutex);
 
 	tcm->device_class = NULL;

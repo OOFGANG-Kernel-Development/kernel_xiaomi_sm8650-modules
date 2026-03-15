@@ -58,7 +58,7 @@
 /* Standard IOCTLs in TCM2 driver */
 #define STD_IOCTL_BEGIN             (0x10)
 #define STD_SET_PID_ID              (0x11)
-#define STD_ENABLE_IRQ_ID           (0x12)
+#define STD_TOUCH_2_ID           (0x12)
 #define STD_RAW_READ_ID             (0x13)
 #define STD_RAW_WRITE_ID            (0x14)
 #define STD_GET_FRAME_ID            (0x15)
@@ -75,7 +75,7 @@
 
 #define IOCTL_STD_IOCTL_BEGIN       _IOR(IOCTL_MAGIC, STD_IOCTL_BEGIN)
 #define IOCTL_STD_SET_PID           _IOW(IOCTL_MAGIC, STD_SET_PID_ID, struct syna_ioctl_data *)
-#define IOCTL_STD_ENABLE_IRQ        _IOW(IOCTL_MAGIC, STD_ENABLE_IRQ_ID, struct syna_ioctl_data *)
+#define IOCTL_STD_TOUCH_2        _IOW(IOCTL_MAGIC, STD_TOUCH_2_ID, struct syna_ioctl_data *)
 #define IOCTL_STD_RAW_READ          _IOR(IOCTL_MAGIC, STD_RAW_READ_ID, struct syna_ioctl_data *)
 #define IOCTL_STD_RAW_WRITE         _IOW(IOCTL_MAGIC, STD_RAW_WRITE_ID, struct syna_ioctl_data *)
 #define IOCTL_STD_GET_FRAME         _IOWR(IOCTL_MAGIC, STD_GET_FRAME_ID, struct syna_ioctl_data *)
@@ -265,7 +265,7 @@ static inline char *syna_cdev_ioctl_get_name(unsigned int code)
 		return "IOCTL_QUERY_STD_SUPPORT";
 	case STD_SET_PID_ID:
 		return "IOCTL_STD_SET_PID";
-	case STD_ENABLE_IRQ_ID:
+	case STD_TOUCH_2_ID:
 		return "IOCTL_STD_CONFIG_IRQ";
 	case STD_RAW_READ_ID:
 		return "IOCTL_STD_RAW_READ";
@@ -294,7 +294,7 @@ static inline char *syna_cdev_ioctl_get_name(unsigned int code)
 	}
 	return "";
 }
-
+int syna_xiaomi_report_data(unsigned char report_type, char *buf);
 
 #endif /* end of _SYNAPTICS_TCM2_CDEV_H_ */
 

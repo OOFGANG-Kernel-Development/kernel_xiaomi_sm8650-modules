@@ -26,8 +26,9 @@ struct {
 	bool full_flag;
 	abnormal_event_t abnormal_event[SENSITIVE_EVENT_BUF_SIZE];
 } abnormal_event_buf;
-
-static DEFINE_MUTEX(gesture_double_tap_mutex);
+#ifdef TOUCH_STYLUS_SUPPORT
+static DEFINE_MUTEX(stylus_connect_status_mutex);
+#endif
 #ifdef TOUCH_FOD_SUPPORT
 static DEFINE_MUTEX(fod_press_status_mutex);
 #endif
@@ -44,6 +45,10 @@ static struct attribute_group xiaomi_touch_attrs;
 
 #ifdef TOUCH_FOD_SUPPORT
 static int fod_press_status_value = 0;
+#endif
+
+#ifdef TOUCH_STYLUS_SUPPORT
+static int stylus_connect_status_value = 0;
 #endif
 
 static int doze_analysis_result;
@@ -92,16 +97,23 @@ static int analy_poll_data(char* poll_data_buf, char* buf)
 
 	return count;
 }
-
-int notify_gesture_double_tap(void)
+#ifdef TOUCH_STYLUS_SUPPORT
+int update_stylus_connect_status_value(int value)
 {
-	mutex_lock(&gesture_double_tap_mutex);
-	sysfs_notify(&xiaomi_touch_dev->kobj, NULL, "gesture_double_tap_state");
-	mutex_unlock(&gesture_double_tap_mutex);
+	mutex_lock(&stylus_connect_status_mutex);
+
+	if (stylus_connect_status_value != value) {
+		LOG_INFO("value: %d", value);
+		stylus_connect_status_value = value;
+		/* notify surfaceflinger */
+		sysfs_notify(&xiaomi_touch_dev->kobj, NULL, "pen_connect_strategy");
+	}
+
+	mutex_unlock(&stylus_connect_status_mutex);
 	return 0;
 }
-EXPORT_SYMBOL_GPL(notify_gesture_double_tap);
-
+EXPORT_SYMBOL_GPL(update_stylus_connect_status_value);
+#endif
 #ifdef TOUCH_FOD_SUPPORT
 int update_fod_press_status(int value)
 {
@@ -139,58 +151,19 @@ struct class *get_xiaomi_touch_class(void)
 }
 EXPORT_SYMBOL_GPL(get_xiaomi_touch_class);
 
-CREATE_ATTR(gesture_double_tap_enabled, {
-		return snprintf(buf, PAGE_SIZE, "%d\n", driver_get_touch_mode(TOUCH_ID, DATA_MODE_14));
-	},
-	{
-		int input;
-
-		if (sscanf(buf, "%d", &input) < 0)
-			return -EINVAL;
-
-		int new_modes[DATA_MODE_33] = {0};
-		new_modes[DATA_MODE_14] = input;
-		driver_update_touch_mode(TOUCH_ID, new_modes, (1L << DATA_MODE_14));
-
-		return count;
-	});
-CREATE_ATTR(gesture_double_tap_state, {
-		return snprintf(buf, PAGE_SIZE, "%d\n", 1);
+#ifdef TOUCH_STYLUS_SUPPORT
+CREATE_ATTR(pen_connect_strategy, {
+		return snprintf(buf, PAGE_SIZE, "%d\n", stylus_connect_status_value);
 	},
 	{
 		return count;
 	});
-
+#endif
 #ifdef TOUCH_FOD_SUPPORT
 CREATE_ATTR(fod_press_status, {
 		return snprintf(buf, PAGE_SIZE, "%d\n", fod_press_status_value);
 	},
 	{
-		return count;
-	});
-CREATE_ATTR(fod_longpress_gesture_enabled, {
-		return snprintf(buf, PAGE_SIZE, "%d\n", driver_get_touch_mode(TOUCH_ID, DATA_MODE_10));
-	},
-	{
-		int input;
-
-		if (sscanf(buf, "%d", &input) < 0)
-			return -EINVAL;
-
-		int new_modes[DATA_MODE_33] = {0};
-		new_modes[DATA_MODE_10] = input;
-		driver_update_touch_mode(TOUCH_ID, new_modes, (1L << DATA_MODE_10));
-
-		/* Manually set finger up to clear touch event */
-		if (!input) {
-			xiaomi_touch_driver_param_t *xiaomi_touch_driver_param = get_xiaomi_touch_driver_param(TOUCH_ID);
-			if (xiaomi_touch_driver_param && xiaomi_touch_driver_param->hardware_operation.ic_set_fod_value) {
-				s32 info[FOD_VALUE_LEN];
-				info[0] = 0x81; // GESTURE_TOUCH_AND_HOLD_UP_EVENT
-				xiaomi_touch_driver_param->hardware_operation.ic_set_fod_value(info, FOD_VALUE_LEN);
-			}
-		}
-
 		return count;
 	});
 #endif
@@ -247,10 +220,10 @@ CREATE_ATTR(touch_doze_analysis, {
 			if (xiaomi_touch_driver_param == NULL)
 				continue;
 			if (xiaomi_touch_driver_param && xiaomi_touch_driver_param->hardware_operation.touch_doze_analysis) {
-                		doze_analysis_result = xiaomi_touch_driver_param->hardware_operation.touch_doze_analysis(input);
-                	}
+				doze_analysis_result = xiaomi_touch_driver_param->hardware_operation.touch_doze_analysis(input);
+			}
 		}
-		
+
 		LOG_INFO("value:%d", input);
 		return count;
 	});
@@ -424,7 +397,7 @@ CREATE_ATTR(touch_thp_ic_cmd, {
 		thp_ic_cmd_data_common_data.cmd = (u8)input[0];
 		thp_ic_cmd_data_common_data.mode = (u16)input[1];
 		thp_ic_cmd_data_common_data.data_buf[0] = input[2];
-		
+
 		if (thp_ic_cmd_data_common_data.mode == IC_MODE_44) {
 			/* transport mode, databuf for send to driver is [s32 addr][u8 data0][u8 data1]... */
 			for (i = 3; i < para_cnt - 1; ++i) {
@@ -551,6 +524,27 @@ CREATE_ATTR(fod_test, {
 	});
 #endif
 
+#ifdef DFS_DEBUG_TEST
+CREATE_ATTR(touch_dfs_test,
+	{
+		return 0;
+	},
+	{
+		xiaomi_touch_driver_param_t *xiaomi_touch_driver_param = NULL;
+		int input;
+		s8 touch_id = 0;
+		if (sscanf(buf, "%d", &input) < 0)
+			return -EINVAL;
+		for (touch_id = 0; touch_id < MAX_TOUCH_PANEL_COUNT; touch_id++) {
+			xiaomi_touch_driver_param = get_xiaomi_touch_driver_param(touch_id);
+			if (xiaomi_touch_driver_param && xiaomi_touch_driver_param->hardware_operation.touch_dfs_test) {
+                		xiaomi_touch_driver_param->hardware_operation.touch_dfs_test(input);
+                	}
+		}
+		return count;
+	});
+#endif
+
 CREATE_ATTR(touch_log_level, {
 		return snprintf(buf, PAGE_SIZE,
 				"echo [value0] [value1] > touch_log_level\n"
@@ -582,11 +576,11 @@ CREATE_ATTR(touch_log_level, {
 static struct attribute *touch_attr_group[] = {
 #ifdef TOUCH_FOD_SUPPORT
 	&dev_attr_fod_press_status.attr,
-	&dev_attr_fod_longpress_gesture_enabled.attr,
 	&dev_attr_fod_test.attr,
 #endif
-	&dev_attr_gesture_double_tap_enabled.attr,
-	&dev_attr_gesture_double_tap_state.attr,
+#ifdef TOUCH_STYLUS_SUPPORT
+	&dev_attr_pen_connect_strategy.attr,
+#endif
 	&dev_attr_panel_vendor.attr,
 	&dev_attr_panel_color.attr,
 	&dev_attr_panel_display.attr,
@@ -601,14 +595,17 @@ static struct attribute *touch_attr_group[] = {
 	&dev_attr_touch_thp_ic_cmd.attr,
 	&dev_attr_touch_finger_status.attr,
 	&dev_attr_touch_log_level.attr,
+#ifdef DFS_DEBUG_TEST
+	&dev_attr_touch_dfs_test.attr,
+#endif
 	NULL,
 };
 
 int xiaomi_touch_sys_init(void)
 {
 	int ret = 0;
-	LOG_ERROR("enter");
-	xiaomi_touch_class = class_create(THIS_MODULE, "touch");
+	LOG_ALWAYS("enter");
+	xiaomi_touch_class = class_create("touch");
 
 	if (!xiaomi_touch_class) {
 		LOG_ERROR("create device class err");

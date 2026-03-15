@@ -36,16 +36,18 @@
  */
 #include "syna_tcm2_testing.h"
 #include "syna_tcm2_testing_limits.h"
-#include "tcm/synaptics_touchcom_core_dev.h"
-#include "tcm/synaptics_touchcom_func_base.h"
-
+#include "synaptics_touchcom_core_dev.h"
+#include "synaptics_touchcom_func_base.h"
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
+#include <linux/fs.h>
 /* g_testing_dir represents the root folder of testing sysfs
  */
 static struct kobject *g_testing_dir;
 static struct syna_tcm *g_tcm_ptr;
 static struct testing_hcd *testing_hcd;
-static struct proc_dir_entry *proc_selftest = NULL;
-char *g_save_buf = NULL;
+static struct proc_dir_entry *proc_selftest;
+char *save_buf = NULL;
 static short rawMin[720] = {0};
 static short rawMax[720] = {0};
 static short rawDiffPT85[720] = {0};
@@ -67,9 +69,10 @@ static bool result_pt86 = true;
 #define CSV_PT18_TESTING_LIMITS_MAX        "PT18_Abs_raw_cap_test_max"
 #define CSV_PT22_TESTING_LIMITS_MIN        "PT22_Trans_raw_cap_test_min"
 #define CSV_PT22_TESTING_LIMITS_MAX        "PT22_Trans_raw_cap_test_max"
+#define CSV_PT25_EXTENDED_TRX_SHORT_MAX    "PT25_Extended_TRx_Short_max"
 #define CSV_GAP_DIFF_TESTING_LIMITS_MAX    "Gap_Diff_test_max"
-#define CSV_PT44_TESTING_LIMITS            "PT44_(Mutal)_noise_test"
 #define CSV_PT81_TESTING_RX_STDEV_LIMITS   "PT81_Pixel_uniformity_test_Rx_stdev"
+#define CSV_PT44_TESTING_LIMITS            "PT44_(Mutal)_noise_test"
 #define CSV_PT81_TESTING_SUM_STDEV_LIMITS  "PT81_Pixel_uniformity_test_sum_stdev"
 #define CSV_PT85_TESTING_RAW_SHIFT_LIMITS  "PT85_Switch_screen_Raw_shift_max"
 #define CSV_PT86_TESTING_RAW_SHIFT_LIMITS  "PT86_Switch_frequency_Raw_shift_max"
@@ -78,6 +81,10 @@ static bool result_pt86 = true;
 #define ABS(x)           (((x) < 0) ? (-(x)) : (x))
 #define SAVE_BUF_SIZE    (4096*5)
 #define RESULT_INFO_LEN  (300)
+
+#ifdef TESTING_RESULT_IN_CSV
+#define SYNA_TCM_TESTING_RESULT_SAVE_PATH  "/data/syna_tp_test_result.csv"
+#endif
 
 static inline void uint_to_le1(unsigned char *dest, unsigned int val)
 {
@@ -142,6 +149,11 @@ static int testing_get_limits_bytes(unsigned int *row, unsigned int *col, enum t
 			*row = rows;
 			*col = cols;
 			size = rows*cols*2;
+			break;
+		case TEST_PID25_EXTENDED_TRX_SHORT_MAX:
+			*row = 1;
+			*col = rows + cols;
+			size = (rows + cols)*2;
 			break;
 		case TEST_PID44_MULTI_Gear_NOISE_TEST:
 			*row = 1;
@@ -219,7 +231,7 @@ static int testing_copy_valid_data(struct tcm_buffer *dest_buffer, char *src_buf
 	}
 
 	if (buf_size_bytes > dest_buffer->buf_size) {
-		LOGE("Incorrect buf_size[%d] for PT%d, expected buf bytes size[%d]\n",
+		LOGE("[DIS-TF-TOUCH]Incorrect buf_size[%d] for PT%d, expected buf bytes size[%d]\n",
 				dest_buffer->buf_size, code, buf_size_bytes);
 		retval = -EINVAL;
 		goto exit;
@@ -380,6 +392,11 @@ static int testing_load_testlimits(enum tcm_test_code testcode, unsigned int gap
 				dest_buffer1 = &testing_hcd->pt_hi_limits;
 			}
 			break;
+		case TEST_PID25_EXTENDED_TRX_SHORT_MAX:
+			sprintf(test_name0, "%s", CSV_PT25_EXTENDED_TRX_SHORT_MAX);
+			dest_buffer0 = &testing_hcd->pt_hi_limits;
+			dest_buffer1 = NULL;
+			break;
 		case TEST_PID44_MULTI_Gear_NOISE_TEST:
 			sprintf(test_name0, "%s", CSV_PT44_TESTING_LIMITS);
 			dest_buffer0 = &testing_hcd->pt_hi_limits;
@@ -523,6 +540,72 @@ static void testing_get_frame_size_words(unsigned int *size, bool image_only)
 	return;
 }
 
+#ifdef CONFIG_TOUCH_FACTORY_BUILD
+#ifdef TESTING_RESULT_IN_CSV
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
+// static ssize_t fs_write(const void *buf, size_t size, struct file *fp)
+// {
+// 	ssize_t len = -1;
+// 	loff_t pos;
+
+// 	pos = fp->f_pos;
+// 	len = __kernel_write(fp, buf, size, &pos);
+// 	fp->f_pos = pos;
+
+// 	return len;
+// }
+// #else
+// static ssize_t fs_write(const void *buf, size_t size, struct file *fp)
+// {
+// 	mm_segment_t old_fs;
+// 	loff_t pos;
+// 	ssize_t len;
+
+// 	pos = fp->f_pos;
+// 	old_fs = get_fs();
+// 	set_fs(KERNEL_DS);
+// 	len = vfs_write(fp, buf, size, &pos);
+// 	set_fs(old_fs);
+// 	fp->f_pos = pos;
+
+// 	return len;
+// }
+#endif
+
+// static int testing_result_save_csv(char *buf, unsigned int size)
+// {
+// 	int retval = 0;
+// 	char save_path[100] = {0};
+// 	struct file *fp = NULL;
+
+// 	/* open save file */
+// 	sprintf(save_path, "%s", SYNA_TCM_TESTING_RESULT_SAVE_PATH);
+// 	LOGI("save_path:%s. Save result data, starting...\n", save_path);
+// 	fp = filp_open(save_path, O_CREAT | O_WRONLY | O_TRUNC, 0666);
+// 	if (IS_ERR(fp)) {
+// 		LOGE("open file:%s failed. fp:%ld\n", save_path, PTR_ERR(fp));
+// 			retval = -EIO;
+// 			return retval;
+// 	}
+
+// 	if ((buf != NULL) && size > 0) {
+// 		/* save data to csv file */
+// 		if (fp != NULL) {
+// 			retval = fs_write(buf, size, fp);
+// 			if (retval < 0) {
+// 				LOGE("Failed to write data to file\n");
+// 				goto exit;
+// 			}
+// 		}
+// 	}
+// 	LOGI("save_path:%s. Save result data, completed\n", save_path);
+// exit:
+// 	filp_close(fp, NULL);
+// 	return retval;
+// }
+#endif
+#endif
+
 static unsigned int testing_save_output(char *out_buf, unsigned int offset, char *pstr)
 {
 	unsigned int data_len;
@@ -604,12 +687,15 @@ static unsigned int testing_save_output(char *out_buf, unsigned int offset, char
 	} else if (data_len <= ((rows + cols)*2)) {
 		idx = 0;
 		cnt = 0;
-		if (testing_hcd->test_item == TEST_PID81_PIXEL_UNIFORMITY) {
-			for (col = 0; col < cols; col++) {
-        			data = (unsigned short)(buf[idx] & 0xff) |
+
+        if(testing_hcd->test_item == TEST_PID81_PIXEL_UNIFORMITY)
+        {
+        	for (col = 0; col < cols; col++) {
+        		data = (unsigned short)(buf[idx] & 0xff) |
 					(unsigned short)(buf[idx+1] << 8);
 				cnt = snprintf(out_buf + sum, SAVE_BUF_SIZE - sum, "%d,", data);
 				sum += cnt;
+
 				idx+=2;
 			}
 			cnt = snprintf(out_buf + sum, SAVE_BUF_SIZE - sum, "\n");
@@ -617,7 +703,7 @@ static unsigned int testing_save_output(char *out_buf, unsigned int offset, char
 			idx = 0;
 			cnt = 0;
 			for (col = 0; col < cols - 2; col++) {
-        			data = (unsigned short)(buf[idx] & 0xff) |
+        		data = (unsigned short)(buf[idx] & 0xff) |
 					(unsigned short)(buf[idx+1] << 8);
 				data += (unsigned short)(buf[idx+ 2] & 0xff) |
 					(unsigned short)(buf[idx+3] << 8);
@@ -627,6 +713,19 @@ static unsigned int testing_save_output(char *out_buf, unsigned int offset, char
 				sum += cnt;
 
 				idx+=2;
+			}
+			cnt = snprintf(out_buf + sum, SAVE_BUF_SIZE - sum, "\n");
+			sum += cnt;
+		} else if (testing_hcd->test_item == TEST_PID25_EXTENDED_TRX_SHORT_MAX) {
+			idx = 0;
+			cnt = 0;
+			for (col = 0; col < data_len / 2; col++) {
+				data = ((unsigned short)(buf[idx] & 0xff) |
+						(unsigned short)(buf[idx+1] << 8));
+				cnt = snprintf(out_buf + sum, SAVE_BUF_SIZE - sum, "%d,", data);
+				sum += cnt;
+
+				idx += 2;
 			}
 
 			cnt = snprintf(out_buf + sum, SAVE_BUF_SIZE - sum, "\n");
@@ -642,30 +741,7 @@ static unsigned int testing_save_output(char *out_buf, unsigned int offset, char
 			cnt = snprintf(out_buf + sum, SAVE_BUF_SIZE - sum, "\n");
 			sum += cnt;
 		}
-	} else if (data_len == ((rows + 1) * cols * 2)) {
-		/* pt05+rt163 */
-		idx = 0;
-		for (row = 0; row < rows + 1; row++) {
-			cnt = 0;
-			for (col = 0; col < cols; col++) {
-				data = (short)((unsigned short)(buf[idx] & 0xff) |
-						(unsigned short)(buf[idx+1] << 8));
-				cnt = snprintf(out_buf + sum, SAVE_BUF_SIZE - sum, "%d,", data);
-				sum += cnt;
-
-				idx += 2;
-			}
-
-			cnt = snprintf(out_buf + sum, SAVE_BUF_SIZE - sum, "\n");
-			sum += cnt;
-
-			if(row == rows - 1)
-			{
-				cnt = snprintf(out_buf + sum, SAVE_BUF_SIZE - sum, "PT84:\n");
-				sum += cnt;
-			}
-		}
-	} else{
+	} else {
 		LOGE("Invalid data\n");
 	}
 
@@ -1245,55 +1321,6 @@ static struct kobj_attribute kobj_attr_pt03 =
 	__ATTR(pt03, 0444, syna_testing_pt03_show, NULL);
 
 
-static void testing_copy_resp_to_output_PT05(struct tcm_buffer *resp_pt05,struct tcm_buffer *report_rt163)
-{
-	int retval;
-	unsigned int output_size;
-
-	output_size = resp_pt05->data_length + report_rt163->data_length;
-
-	LOGI("output_size:%d,resp_pt05.data_length:%d,report_rt163.data_length:%d\n",output_size, resp_pt05->data_length, report_rt163->data_length);
-
-	LOCK_BUFFER(testing_hcd->output);
-
-	retval = syna_tcm_buf_alloc(&testing_hcd->output,output_size);
-	if (retval < 0) {
-		LOGE("Failed to allocate memory for testing_hcd->output.buf\n");
-		UNLOCK_BUFFER(testing_hcd->output);
-		return;
-	}
-
-	retval = syna_pal_mem_cpy(testing_hcd->output.buf,
-			testing_hcd->output.buf_size,
-			resp_pt05->buf,
-			resp_pt05->buf_size,
-			resp_pt05->data_length);
-	if (retval < 0) {
-		LOGE("Fail to copy PT05 data to output, size: %d\n",
-			resp_pt05->data_length);
-		UNLOCK_BUFFER(testing_hcd->output);
-		return;
-	}
-
-	retval = syna_pal_mem_cpy(testing_hcd->output.buf + resp_pt05->data_length,
-			testing_hcd->output.buf_size - resp_pt05->data_length,
-			report_rt163->buf,
-			report_rt163->buf_size,
-			report_rt163->data_length);
-	if (retval < 0) {
-		LOGE("Fail to copy RT163 data to output, size: %d\n",
-			resp_pt05->data_length);
-		UNLOCK_BUFFER(testing_hcd->output);
-		return;
-	}
-
-	testing_hcd->output.data_length = output_size;
-
-	UNLOCK_BUFFER(testing_hcd->output);
-
-	return;
-}
-
 /**
  * syna_testing_pt05()
  *
@@ -1323,8 +1350,7 @@ static int syna_testing_pt05(struct syna_tcm *tcm)
 	char *pt5_hi_limits;
 	char *pt5_lo_limits;
 	struct tcm_application_info *app_info;
-	struct tcm_buffer report_rt163;
-
+	
 	testing_hcd->result = false;
 
 	LOGI("Start testing pt05\n");
@@ -1407,15 +1433,7 @@ static int syna_testing_pt05(struct syna_tcm *tcm)
 		}
 	}
 
-	retval = syna_tcm_run_production_test(tcm->tcm_dev,
-			TEST_PID84_FREQRAWTEST,
-			&report_rt163);
-	if (retval < 0) {
-		LOGE("Fail to run test %d %d\n",TEST_PID84_FREQRAWTEST,report_rt163.buf_size);
-		testing_copy_resp_to_output();
-	} else {
-		testing_copy_resp_to_output_PT05(&testing_hcd->resp,&report_rt163);
-	}
+	testing_copy_resp_to_output();
 
 	UNLOCK_BUFFER(testing_hcd->resp);
 
@@ -1476,7 +1494,6 @@ static struct kobj_attribute kobj_attr_pt05 =
  * @param
  *    [ in] tcm: the driver handle
  *    [ casenum] casenum: test case
- *
  * @return
  *    on success, 0; otherwise, negative value on error.
  */
@@ -1929,6 +1946,134 @@ exit:
 static struct kobj_attribute kobj_attr_pt22 =
 	__ATTR(pt22, 0444, syna_testing_pt22_show, NULL);
 
+static int syna_testing_pt25(struct syna_tcm *tcm)
+{
+	int retval;
+	unsigned char *buf;
+	unsigned int idx;
+	unsigned int col;
+	unsigned int rows, cols;
+	unsigned int limits_size;
+	unsigned int limits_rows;
+	unsigned int limits_cols;
+	unsigned int frame_size;
+	unsigned short data,pt25_hi;
+	char *pt25_max_limits;
+	struct tcm_application_info *app_info;
+
+	testing_hcd->result = false;
+
+	LOGI("Start testing pt25\n");
+
+	LOCK_BUFFER(testing_hcd->pt_hi_limits);
+	LOCK_BUFFER(testing_hcd->pt_lo_limits);
+
+	retval = testing_load_testlimits(TEST_PID25_EXTENDED_TRX_SHORT_MAX, 0);
+	if (retval < 0) {
+		LOGE("Failed to load PT%d limits from csv file\n", TEST_PID25_EXTENDED_TRX_SHORT_MAX);
+		retval = -EINVAL;
+		goto exit;
+	}
+
+	app_info = &g_tcm_ptr->tcm_dev->app_info;
+
+	rows = le2_to_uint(app_info->num_of_image_rows);
+	cols = le2_to_uint(app_info->num_of_image_cols);
+
+	frame_size =  (rows+cols)*2;
+
+	limits_size = testing_get_limits_bytes(&limits_rows, &limits_cols, TEST_PID25_EXTENDED_TRX_SHORT_MAX);
+
+	LOCK_BUFFER(testing_hcd->resp);
+
+	testing_hcd->test_item = TEST_PID25_EXTENDED_TRX_SHORT_MAX;
+	retval = syna_tcm_run_production_test(tcm->tcm_dev,
+			TEST_PID25_EXTENDED_TRX_SHORT_MAX,
+			&testing_hcd->resp);
+	if (retval < 0) {
+		LOGE("Fail to run test %d\n", TEST_PID25_EXTENDED_TRX_SHORT_MAX);
+		UNLOCK_BUFFER(testing_hcd->resp);
+		goto exit;
+	}
+
+	LOGE( "pt_hi_limits length:%d %x %x %x %x\n",testing_hcd->pt_hi_limits.data_length,testing_hcd->pt_hi_limits.buf[0],testing_hcd->pt_hi_limits.buf[1],testing_hcd->pt_hi_limits.buf[2],testing_hcd->pt_hi_limits.buf[3]);
+
+	if ((frame_size != limits_size) ||
+		(limits_size != testing_hcd->pt_hi_limits.data_length)){
+		LOGE( "Mismatching limits size frame_size:%d limits_size:%d pt_hi_limits length:%d \n",frame_size
+			,limits_size,testing_hcd->pt_hi_limits.data_length);
+	}
+
+
+	if (frame_size != testing_hcd->resp.data_length) {
+		LOGE("Frame size mismatch frame_size %d resp.data_length: %d\n",frame_size,testing_hcd->resp.data_length);
+		UNLOCK_BUFFER(testing_hcd->resp);
+		retval = -EINVAL;
+		goto exit;
+	}
+
+	buf = testing_hcd->resp.buf;
+	pt25_max_limits = testing_hcd->pt_hi_limits.buf;
+	testing_hcd->result = true;
+
+	idx = 0;
+	for (col = 0; col < (rows+cols); col++) {
+		data = (int)(buf[idx] & 0xff) |
+				(int)(buf[idx+1] << 8);
+
+		pt25_hi = (int)(pt25_max_limits[idx] & 0xff) |
+				(int)(pt25_max_limits[idx+1] << 8);
+
+		if (data > pt25_hi) {
+			testing_hcd->result = false;
+			LOGE("fail at index = %-2d. data = %d, limit = [%d]\n",
+					col, data, pt25_hi);
+		}
+		idx+=2;
+	}
+
+	testing_copy_resp_to_output();
+
+	UNLOCK_BUFFER(testing_hcd->resp);
+
+	retval = 0;
+exit:
+	LOGI("Result = %s\n", (testing_hcd->result)?"pass":"fail");
+
+	UNLOCK_BUFFER(testing_hcd->pt_lo_limits);
+	UNLOCK_BUFFER(testing_hcd->pt_hi_limits);
+
+	return retval;
+}
+
+
+static ssize_t syna_testing_pt25_show(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+	int retval;
+	unsigned int count = 0;
+	struct syna_tcm *tcm = g_tcm_ptr;
+
+	if (!tcm->is_connected) {
+		count = snprintf(buf, PAGE_SIZE,
+				"Device is NOT connected\n");
+		goto exit;
+	}
+
+	retval = syna_testing_pt25(tcm);
+
+	count = snprintf(buf, PAGE_SIZE,
+			"TEST PT$25: %s\n", testing_hcd->result? "Passed" : "Failed");
+
+exit:
+	return count;
+}
+
+
+static struct kobj_attribute kobj_attr_pt25 =
+	__ATTR(pt25, 0444, syna_testing_pt25_show, NULL);
+
+
 static int syna_testing_pt81(struct syna_tcm *tcm)
 {
 	int retval;
@@ -2004,10 +2149,8 @@ static int syna_testing_pt81(struct syna_tcm *tcm)
 	}
 
 	buf = testing_hcd->resp.buf;
-	/* CSV_PT81_TESTING_SUM_STDEV_LIMITS */
-	pt81_sum_limits = testing_hcd->pt_hi_limits.buf;
-	/* CSV_PT81_TESTING_RX_STDEV_LIMITS */
-	pt81_rx_stdev_limits = testing_hcd->pt_lo_limits.buf;
+	pt81_sum_limits = testing_hcd->pt_hi_limits.buf;  //CSV_PT81_TESTING_SUM_STDEV_LIMITS
+	pt81_rx_stdev_limits = testing_hcd->pt_lo_limits.buf;  //CSV_PT81_TESTING_RX_STDEV_LIMITS
 	testing_hcd->result = true;
 
 	/* check PT81 limits */
@@ -2064,6 +2207,7 @@ exit:
 
 	return retval;
 }
+
 
 static ssize_t syna_testing_pt81_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
@@ -2233,7 +2377,7 @@ static int syna_testing_pt86(struct syna_tcm *tcm, unsigned int casenum)
 
 	if (casenum == 2) {
 		LOCK_BUFFER(testing_hcd->pt_hi_limits);
-
+		
 		retval = testing_load_testlimits(TEST_PID86_RAWSHIFTTEST, 0);
 		if (retval < 0) {
 			LOGE("Failed to load PT%d limits from csv file\n", TEST_PID86_RAWSHIFTTEST);
@@ -2247,7 +2391,7 @@ static int syna_testing_pt86(struct syna_tcm *tcm, unsigned int casenum)
 
 		limits_size = testing_get_limits_bytes(&limits_rows, &limits_cols, TEST_PID86_RAWSHIFTTEST);
 		pt86_hi_limits = testing_hcd->pt_hi_limits.buf;
-
+		
 		if ((frame_size != limits_size) ||
 				(limits_size != testing_hcd->pt_hi_limits.data_length)){
 			LOGE( "Mismatching limits size\n");
@@ -2267,7 +2411,7 @@ static int syna_testing_pt86(struct syna_tcm *tcm, unsigned int casenum)
 			retval = -EINVAL;
 			goto exit;
 		}
-
+		
 		result_pt86 = true;
 
 
@@ -2698,6 +2842,8 @@ static int syna_testing_HwReset(struct syna_tcm *tcm)
 
 	LOGI("Start testing HwReset\n");
 
+	testing_hcd->result = false;
+
 	if (!tcm->hw_if->ops_hw_reset){
 		LOGE("No hardware reset support\n");
 		goto exit;
@@ -2709,7 +2855,7 @@ static int syna_testing_HwReset(struct syna_tcm *tcm)
 		goto exit;
 	}
 
-	tcm->hw_if->ops_hw_reset(tcm->hw_if, 0);
+	tcm->hw_if->ops_hw_reset(tcm->hw_if,0);
 
 	for ( ; i < retrytimes; i++){
 		retval = syna_tcm_get_event_data(tcm->tcm_dev,
@@ -2725,6 +2871,8 @@ static int syna_testing_HwReset(struct syna_tcm *tcm)
 			break;
 		}
 	}
+
+	testing_hcd->result = true;
 
 	retval = tcm->hw_if->ops_enable_irq(tcm->hw_if, true);
 	if (retval < 0) {
@@ -2774,27 +2922,131 @@ exit:
 static struct kobj_attribute kobj_attr_ptHwReset =
 	__ATTR(ptHwReset, 0444, syna_testing_HwReset_show, NULL);
 
-static int syna_testing_self_test(char *buf, char *save_buf, unsigned int *length)
+static int syna_testing_get_capfold_raw(struct syna_tcm *tcm, unsigned short *capfold_raw)
+{
+	int retval;
+	int i;
+	unsigned char *buf;
+	unsigned int idx;
+
+	testing_hcd->result = false;
+
+
+	LOGI("Start testing capfold raw\n");
+
+	LOCK_BUFFER(testing_hcd->resp);
+
+	testing_hcd->test_item = TEST_PID130_CAPFOLD_RAW;
+	retval = syna_tcm_run_production_test(tcm->tcm_dev,
+			TEST_PID130_CAPFOLD_RAW, 
+			&testing_hcd->resp);
+	if (retval < 0) {
+		LOGE("Fail to run test %d\n", TEST_PID130_CAPFOLD_RAW);
+		UNLOCK_BUFFER(testing_hcd->resp);
+		goto exit;
+	}
+
+	buf = testing_hcd->resp.buf;
+
+	idx = 0;
+	for (i = 0; i < 5; i++) {
+			LOGI("buf: %x %x\n",buf[idx],buf[idx+1]);
+			capfold_raw[i] = (unsigned short)(buf[idx] & 0xff) |
+					(unsigned short)(buf[idx+1] << 8);
+			idx += 2;
+	}
+	
+	UNLOCK_BUFFER(testing_hcd->resp);
+	testing_hcd->result = true;
+
+	retval = 0;
+exit:
+	if (retval == 0) {
+		LOGI("Result = %s\n", (testing_hcd->result)?"pass":"fail");
+	} else {
+		LOGE("capfold_raw testing : get capfold raw failed!");
+	}
+	return retval;
+
+}
+
+static ssize_t syna_testing_get_capfold_raw_show(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+	int retval;
+	unsigned int count = 0;
+	struct syna_tcm *tcm = g_tcm_ptr;
+	unsigned short capfold_raw[5]={0};
+
+	if (!tcm->is_connected) {
+		count = snprintf(buf, PAGE_SIZE,
+				"Device is NOT connected\n");
+		goto exit;
+	}
+	retval = syna_testing_get_capfold_raw(tcm,capfold_raw);
+	if (retval < 0){
+		LOGE("get capfold raw failed, retval:%d\n", retval);
+		goto exit;
+	}
+
+	count = snprintf(buf, PAGE_SIZE,
+				"capfold raw: 0x%x 0x%x 0x%x 0x%x 0x%x\n", capfold_raw[0],capfold_raw[1],capfold_raw[2],capfold_raw[3],capfold_raw[4]);
+
+exit:
+	return count;
+}
+
+static struct kobj_attribute kobj_attr_capfold_raw =
+	__ATTR(capfold_raw, 0444, syna_testing_get_capfold_raw_show, NULL);
+
+
+static ssize_t syna_testing_get_capfold_status_show(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+	int retval;
+	unsigned int count = 0;
+	struct syna_tcm *tcm = g_tcm_ptr;
+	unsigned short capfoldStaus;
+
+	if (!tcm->is_connected) {
+		count = snprintf(buf, PAGE_SIZE,
+				"Device is NOT connected\n");
+		goto exit;
+	}
+	retval = syna_tcm_get_capfold_status(tcm->tcm_dev,&capfoldStaus,0);
+	if (retval < 0){
+		LOGE("get capfold status failed, retval:%d\n", retval);
+		goto exit;
+	}
+
+	count = snprintf(buf, PAGE_SIZE,
+				"capfold status:%d\n", capfoldStaus);
+
+exit:
+	return count;
+}
+
+static struct kobj_attribute kobj_attr_capfold_status =
+	__ATTR(capfold_status, 0444, syna_testing_get_capfold_status_show, NULL);
+
+static int syna_testing_self_test(char *buf,char *save_buf,unsigned int *length)
 {
 
-	int retval;
+	int retval, i;
 	int result_hwreset = 0;
 	char result_info[RESULT_INFO_LEN] = {0};
 	unsigned int offset = 0;
 	unsigned int cnt;
 	u64 result_flag = 0;
-	u64 mask_base = 1;
 	u64 mask;
+	u64 mask_base = 1;
 	struct syna_tcm *tcm = g_tcm_ptr;
-#ifdef CONFIG_TOUCH_FACTORY_BUILD
-	int i;
-#endif
 
 	/*
 	description for mask:
 		TEST_PID44_MULTI_Gear_NOISE_TEST: gear0-0x2c; gear1-0x13; gear2-0x14; gearFF-0x15
 		TEST_PID81_PIXEL_UNIFORMITY: 0x18
-		TEST_PID85_RAWSHIFTTEST: 0x19
+		TEST_PID85_RAWSHIFTTEST: 0x20
 		TEST_PID86_RAWSHIFTTEST: 0x1a
 	*/
 
@@ -2809,7 +3061,8 @@ static int syna_testing_self_test(char *buf, char *save_buf, unsigned int *lengt
 			(mask_base<<0x14) |
 			(mask_base<<0x15) |
 			(mask_base<<0x18) |
-			(mask_base<<0x19) |
+			(mask_base<<TEST_PID25_EXTENDED_TRX_SHORT_MAX) |
+			(mask_base<<0x20) |
 			(mask_base<<0x1a) ;
 
 	testing_hcd->result = false;
@@ -2865,6 +3118,14 @@ static int syna_testing_self_test(char *buf, char *save_buf, unsigned int *lengt
 	result_flag |= (testing_hcd->result) ? (mask_base<<TEST_GAP_DIFF) : 0;
 	offset = testing_save_output(save_buf, offset, "GAP_DIFF");
 
+	/* Extended_TRx_Short_max */
+	retval = syna_testing_pt25(tcm);
+	if (retval < 0) {
+		goto exit;
+	}
+	result_flag |= (testing_hcd->result) ? (mask_base<<TEST_PID25_EXTENDED_TRX_SHORT_MAX) : 0;
+	offset = testing_save_output(save_buf, offset, "PT25_Extended_TRx_Short_max");
+
 	/* PT44 Test gear0*/
 	retval = syna_testing_pt44(tcm, 0);
 	if (retval < 0) {
@@ -2908,23 +3169,22 @@ static int syna_testing_self_test(char *buf, char *save_buf, unsigned int *lengt
 	result_flag |= (testing_hcd->result) ? (mask_base<<TEST_PID18_HYBRID_ABS_RAW) : 0;
 	offset = testing_save_output(save_buf, offset, NULL);
 
-	/* PT81 Test*/
+	/* PT81 Test */
 	retval = syna_testing_pt81(tcm);
 	if (retval < 0) {
 		goto exit;
 	}
 	/* TEST_PID81_PIXEL_UNIFORMITY 0x51 out of range, use 0x18 for mask */
-	result_flag |= (testing_hcd->result) ? (mask_base<<0x18 ) : 0;
+	result_flag |= (testing_hcd->result) ? (mask_base<< 0x18 ) : 0;
 	offset = testing_save_output(save_buf, offset, NULL);
 
 	/* PT85 only save result */
 	testing_copy_rawshift_diff_to_output(TEST_PID85_RAWSHIFTTEST);
-	/* TEST_PID85_RAWSHIFTTEST 0x55 out of range, use 0x19 for mask */
-	result_flag |= (testing_hcd->result) ? (1<< 0x19 ) : 0;
+	/* TEST_PID85_RAWSHIFTTEST 0x55 out of range, use 0x20 for mask */
+	result_flag |= (testing_hcd->result) ? (mask_base << 0x20) : 0;
 	offset = testing_save_output(save_buf, offset, NULL);
 
-#ifdef CONFIG_TOUCH_FACTORY_BUILD
-	/* PT86 Test will run only in factory build */
+	/* PT86 Test */
 	for (i = 0; i < 3; ++i) {
 		retval = syna_testing_pt86(tcm, i);
 		if (retval < 0) {
@@ -2932,27 +3192,25 @@ static int syna_testing_self_test(char *buf, char *save_buf, unsigned int *lengt
 			goto exit;
 		}
 	}
-#endif
-	/* PT86 save result */
 	testing_copy_rawshift_diff_to_output(TEST_PID86_RAWSHIFTTEST);
 	/* TEST_PID86_RAWSHIFTTEST 0x56 out of range, use 0x1a for mask */
- 	result_flag |= (testing_hcd->result) ? (1<< 0x1a ) : 0;
- 	offset = testing_save_output(save_buf, offset, NULL);
+	result_flag |= (testing_hcd->result) ? (1<< 0x1a ) : 0;
+	offset = testing_save_output(save_buf, offset, NULL);
 
-	/* HW reset test */
+	//HW reset test
 	result_hwreset = syna_testing_HwReset(tcm);
-	if (result_hwreset < 1) {
+	if(result_hwreset < 1 ) {
 		LOGE("HW reset test failed.\n");
 	}
-	/* Save hw reset test result */
+	//Save hw reset test result
 	cnt = snprintf(save_buf + offset, SAVE_BUF_SIZE - offset, "HwReset Test Result = %s\n", result_hwreset ? "pass":"fail");
 	offset += cnt;
 
 	/* print the panel result */
-	testing_hcd->result = ((result_flag & mask) == mask) ? true : false;
+	testing_hcd->result = ((result_flag & mask) == mask && result_hwreset) ? true : false;
 
 	cnt = snprintf(result_info, RESULT_INFO_LEN,
-				"Firmware: %d Cfg: %02x %02x\nPanel Test Result = %s: PT1 = %s  PT3 = %s  PT5 = %s PT22 = %s  GAP_DIFF = %s PT18 = %s \
+				"Firmware: %d Cfg: %02x %02x\nPanel Test Result = %s: PT1 = %s  PT3 = %s  PT5 = %s PT22 = %s  GAP_DIFF = %s PT25 = %s PT18 = %s \
 				PT44 gear0 = %s PT44 gear1 =  %s, PT44 gear2 =  %s, PT44 gearFF =  %s, PT81 = %s, PT85 = %s, PT86 = %s, HW reset = %s\n",
 				tcm->tcm_dev->packrat_number,
 				tcm->tcm_dev->app_info.customer_config_id[6] - 48,
@@ -2963,23 +3221,33 @@ static int syna_testing_self_test(char *buf, char *save_buf, unsigned int *lengt
 				(result_flag & (mask_base<<TEST_PID05_FULL_RAW_CAP)) ? "pass":"fail",
 				(result_flag & (mask_base<<TEST_PID22_TRANS_CAP_RAW)) ? "pass":"fail",
 				(result_flag & (mask_base<<TEST_GAP_DIFF)) ? "pass":"fail",
+				(result_flag & (mask_base<<TEST_PID25_EXTENDED_TRX_SHORT_MAX)) ? "pass":"fail",
 				(result_flag & (mask_base<<TEST_PID18_HYBRID_ABS_RAW)) ? "pass":"fail",
 				(result_flag & (mask_base<<TEST_PID44_MULTI_Gear_NOISE_TEST)) ? "pass":"fail",
 				(result_flag & (mask_base<<0x13)) ? "pass":"fail",
 				(result_flag & (mask_base<<0x14)) ? "pass":"fail",
 				(result_flag & (mask_base<<0x15)) ? "pass":"fail",
 				(result_flag & (mask_base<<0x18)) ? "pass":"fail",
-				(result_flag & (mask_base<<0x19)) ? "pass":"fail",
+				(result_flag & (mask_base<<0x20)) ? "pass":"fail",
 				(result_flag & (mask_base<<0x1a)) ? "pass":"fail",
-				result_hwreset ? "pass":"fail");
+				result_hwreset ? "pass":"fail");  
 
 	LOGI("%s\n", result_info);
-
+	LOGI("Self-test rusult length: %d \n", offset);
+	if (SAVE_BUF_SIZE <= offset)
+		LOGE("Self-test result larger than buffer size: %d \n", offset);
+	
+#ifdef CONFIG_TOUCH_FACTORY_BUILD
+#ifdef TESTING_RESULT_IN_CSV
 	cnt = snprintf(save_buf + offset, SAVE_BUF_SIZE - offset, "%s\n", result_info);
 	offset += cnt;
+	// retval = testing_result_save_csv(save_buf, offset);
+#endif
+#endif
 	*length = offset;
 	if (buf != NULL)
 		snprintf(buf, RESULT_INFO_LEN, "%s", result_info);
+
 
 exit:
 	LOGN("Panel Test Result = %s\n", (testing_hcd->result)?"pass":"fail");
@@ -2987,13 +3255,11 @@ exit:
 	return retval;
 }
 
-
 static ssize_t syna_testing_self_test_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
 	int retval;
 	unsigned int count = 0;
-	char *save_buf = g_save_buf;
 	unsigned int length = 0;
 	struct syna_tcm *tcm = g_tcm_ptr;
 	char result_info[RESULT_INFO_LEN + 1] = {0};
@@ -3003,13 +3269,6 @@ static ssize_t syna_testing_self_test_show(struct kobject *kobj,
 				"Device is NOT connected\n");
 		goto exit;
 	}
-
-        if (!save_buf) {
-	        LOGE("Failed to allocate memory for printBuf\n");
-	        retval = -ENOMEM;
-	        goto exit;
-        }
-
 	memset(save_buf, 0, SAVE_BUF_SIZE);
 	retval = syna_testing_self_test(result_info, save_buf, &length);
 	if (retval < 0) {
@@ -3038,9 +3297,12 @@ static struct attribute *attrs[] = {
 	&kobj_attr_pt44.attr,
 	&kobj_attr_pt18.attr,
 	&kobj_attr_pt22.attr,
+	&kobj_attr_pt25.attr,
 	&kobj_attr_pt81.attr,
 	&kobj_attr_pt85.attr,
 	&kobj_attr_pt86.attr,
+	&kobj_attr_capfold_raw.attr,
+	&kobj_attr_capfold_status.attr,
 	&kobj_attr_gap_diff.attr,
 	&kobj_attr_ptHwReset.attr,
 	&kobj_attr_self_test.attr,
@@ -3054,26 +3316,25 @@ static struct attribute_group attr_testing_group = {
 static int syna_selftest_proc_show(struct seq_file *m, void *v)
 {
 	struct syna_tcm *tcm = g_tcm_ptr;
-	char *save_buf = g_save_buf;
 
 	if (!tcm->is_connected) {
 		seq_puts(m,"Device is NOT connected\n");
 		goto exit;
 	}
+	LOGI("Read syna_selftest successfully\n");
+	seq_puts(m,save_buf);
 
-	if (!save_buf) {
-		seq_puts(m,"save_buf is NULL\n");
-		goto exit;
-	}
-
-	seq_puts(m, save_buf);
 exit:
+
 	return 0;
 }
+
 static int syna_selftest_proc_open(struct inode *inode, struct file *file)
 {
 	return single_open(file, syna_selftest_proc_show,NULL);
 }
+
+
 static const struct proc_ops syna_selftest_proc_fops = {
 	.proc_open           = syna_selftest_proc_open,
 	.proc_read           = seq_read,
@@ -3084,11 +3345,9 @@ static const struct proc_ops syna_selftest_proc_fops = {
 static int testing_xiaomi_self_test(char *buf)
 {
 	int retval = 0;
+	unsigned int length = 0;
 	char result_info[RESULT_INFO_LEN + 1] = {0};
 	struct syna_tcm *tcm_hcd = g_tcm_ptr;
-	unsigned int length = 0;
-	char *save_buf = g_save_buf;
-
 	if (tcm_hcd->hw_if->ops_enable_irq) {
 		retval = tcm_hcd->hw_if->ops_enable_irq(tcm_hcd->hw_if, true);
 		if (retval < 0) {
@@ -3142,9 +3401,8 @@ static int testing_hcd_init(void)
 /**
  * syna_testing_create_dir()
  *
- * Create a directory and register it with sysfs and proc
+ * Create a directory and register it with sysfs.
  * Then, create all defined sysfs files.
- *
  *
  * @param
  *    [ in] tcm:  the driver handle
@@ -3168,25 +3426,23 @@ int syna_testing_create_dir(struct syna_tcm *tcm,
 	retval = sysfs_create_group(g_testing_dir, &attr_testing_group);
 	if (retval < 0) {
 		LOGE("Fail to create sysfs group\n");
+
 		kobject_put(g_testing_dir);
 		return retval;
 	}
 
-	proc_selftest = proc_create("syna_selftest", 0, NULL, &syna_selftest_proc_fops);
-	if (!proc_selftest) {
-		LOGE("Failed to create proc/syna_selftest\n");
-	        retval = -EINVAL;
-	}
-
-        g_save_buf = kzalloc(SAVE_BUF_SIZE, GFP_KERNEL);
-        if (!g_save_buf) {
-	        LOGE("Failed to allocate memory for printBuf\n");
-	        retval = -ENOMEM;
-        }
-
 	g_tcm_ptr = tcm;
 
 	testing_hcd_init();
+
+	proc_selftest = proc_create("syna_selftest", 0, NULL, &syna_selftest_proc_fops);
+
+	save_buf = kzalloc(SAVE_BUF_SIZE, GFP_KERNEL);
+	if (!save_buf) {
+		LOGE("Failed to allocate memory for printBuf\n");
+		retval = -ENOMEM;
+	}
+
 
 	return 0;
 }
@@ -3221,12 +3477,12 @@ void syna_testing_remove_dir(void)
 	}
 
 	if(proc_selftest){
-	        proc_remove(proc_selftest);
-	        proc_selftest = NULL;
-        }
+		proc_remove(proc_selftest);
+		proc_selftest = NULL;
+	}
 
-        if (g_save_buf){
-	        kfree(g_save_buf);
-	        g_save_buf = NULL;
-        }
+	if (save_buf ){
+		kfree(save_buf);
+		save_buf = NULL;
+	}
 }

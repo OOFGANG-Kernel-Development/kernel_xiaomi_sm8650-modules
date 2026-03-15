@@ -1087,7 +1087,7 @@ retry:
 			if (tcm_msg->response_code >= REPORT_IDENTIFY)
 				goto next;
 			/* otherwise, unknown error */
-			LOGE("Incorrect status code 0x%02x of command 0x%02x\n",
+			LOGE("[DIS-TF-TOUCH] Incorrect status code 0x%02x of command 0x%02x\n",
 				tcm_msg->response_code, command);
 			goto exit;
 		}

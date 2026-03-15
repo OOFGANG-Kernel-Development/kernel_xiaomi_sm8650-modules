@@ -427,10 +427,8 @@ int syna_tcm_detect_device(struct tcm_dev *tcm_dev, int protocol,
 	/* check the running mode */
 	switch (tcm_dev->dev_mode) {
 	case MODE_APPLICATION_FIRMWARE:
-		LOGI("Device in Application FW, build id: %d, Cfg: %02x %02x, %s\n",
+		LOGI("Device in Application FW, build id: %d, %s\n",
 			tcm_dev->packrat_number,
-			tcm_dev->app_info.customer_config_id[6] - 48,
-			tcm_dev->app_info.customer_config_id[7] - 48,
 			tcm_dev->id_info.part_number);
 		break;
 	case MODE_BOOTLOADER:
@@ -1087,6 +1085,20 @@ exit:
 	return retval;
 }
 
+void syna_tcm_print_boot_info(struct tcm_boot_info boot_info)
+{
+	LOGE("boot_info->version: %u\n", boot_info.version);
+	LOGE("boot_info->status: %u\n", boot_info.status);
+	LOGE("boot_info->asic_id[0]: %u, asic_id[1]: %u\n", boot_info.asic_id[0],boot_info.asic_id[1]);
+	LOGE("boot_info->write_block_size_words: %u\n", boot_info.write_block_size_words);
+	LOGE("boot_info->erase_page_size_words[0]: %u, erase_page_size_words[1]: %u", boot_info.erase_page_size_words[0], boot_info.erase_page_size_words[1]);
+	LOGE("boot_info->max_write_payload_size[0]: %u, max_write_payload_size[1]: %u\n", boot_info.max_write_payload_size[0], boot_info.max_write_payload_size[1]);
+	LOGE("boot_info->last_reset_reason: %u\n", boot_info.last_reset_reason);
+	LOGE("boot_info->pc_at_time_of_last_reset[0]:%u, pc_at_time_of_last_reset[1]:%u\n", boot_info.pc_at_time_of_last_reset[0], boot_info.pc_at_time_of_last_reset[1]);
+	LOGE("boot_info->boot_config_start_block[0]:%u, boot_config_start_block[1]:%u\n", boot_info.boot_config_start_block[0], boot_info.boot_config_start_block[1]);
+	LOGE("boot_info->boot_config_size_blocks[0]:%u, boot_config_size_blocks[1]:%u\n", boot_info.boot_config_size_blocks[0], boot_info.boot_config_size_blocks[1]);
+}
+
 /**
  * syna_tcm_get_app_info()
  *
@@ -1172,7 +1184,7 @@ show_info:
 		retval = -ERR_TCMMSG;
 		goto exit;
 	} else if (app_status != APP_STATUS_OK) {
-		LOGE("Incorrect application status, 0x%x\n", app_status);
+		LOGE("[DIS-TF-TOUCH] Incorrect application status, 0x%x\n", app_status);
 		retval = -ERR_TCMMSG;
 		goto exit;
 	}
@@ -1335,6 +1347,68 @@ int syna_tcm_set_static_config(struct tcm_dev *tcm_dev,
 	}
 
 	retval = 0;
+exit:
+	return retval;
+}
+
+/**
+ * syna_tcm_get_capfold_status()
+ *
+ * Implement the application fw command code to get the capfold status
+ *
+ * @param
+ *    [ in] tcm_dev:  the device handle
+ *    [out] value:    the value returned
+ *    [ in] delay_ms_resp: delay time for response reading.
+ *                         a positive value presents the time for polling;
+ *                         or, set '0' or 'RESP_IN_ATTN' for ATTN driven
+ * @return
+ *    on success, 0 or positive value; otherwise, negative value on error.
+ */
+
+int syna_tcm_get_capfold_status(struct tcm_dev *tcm_dev,unsigned short *value,unsigned int delay_ms_resp)
+{
+	int retval = 0;
+	unsigned char out;
+	unsigned char resp_code;
+	unsigned int resp_handling;
+
+	if (!tcm_dev) {
+		LOGE("Invalid tcm device handle\n");
+		return -ERR_INVAL;
+	}
+
+	if (IS_NOT_APP_FW_MODE(tcm_dev->dev_mode)) {
+		LOGE("Device is not in application fw mode, mode: %x\n",
+			tcm_dev->dev_mode);
+		return -ERR_INVAL;
+	}
+
+	resp_handling = tcm_dev->msg_data.default_resp_reading;
+	if (resp_handling != delay_ms_resp)
+		resp_handling = delay_ms_resp;
+
+	out = 0x60;
+
+	retval = tcm_dev->write_message(tcm_dev,
+			CMD_MultiFunction,
+			&out,
+			sizeof(out),
+			sizeof(out),
+			&resp_code,
+			resp_handling);
+	if (retval < 0) {
+		LOGE("Fail to send command 0x%02x to get capFold status\n",
+			CMD_MultiFunction);
+		goto exit;
+	}
+
+	*value = (unsigned short)syna_pal_le2_to_uint(tcm_dev->resp_buf.buf);
+
+	LOGD("Get capfold status :%d\n", *value);
+
+	retval = 0;
+
 exit:
 	return retval;
 }

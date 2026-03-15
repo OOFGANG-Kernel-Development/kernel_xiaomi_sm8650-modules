@@ -37,6 +37,26 @@
  */
 
 #include "synaptics_touchcom_func_touch.h"
+extern struct qcom_smem_state *state;
+#include <linux/time.h>
+#include <linux/rtc.h>
+static unsigned char touch_default_format[] = {
+	/* entity code */                    /* bits */
+	TOUCH_REPORT_GESTURE_ID,				8,		//$10(016): Gesture ID (natively 8 bits)
+	TOUCH_REPORT_GESTURE_DATA,				48, 	//$1B(027): Gesture data (natively 16-48 bits)
+	TOUCH_REPORT_DEBUG_INFO,				64,		//$CC(204): Debug info for trouble shooting (natively 64 bits)
+	TOUCH_REPORT_FOREACH_ACTIVE_OBJECT,				//$01(001): Begin for each active object loop
+	TOUCH_REPORT_OBJECT_N_INDEX,			4,		//$06(006): Current object index (natively 4 bits)
+	TOUCH_REPORT_OBJECT_N_CLASSIFICATION,	4, 	  	//$07(007): Current object classification (natively 4 bits)
+	TOUCH_REPORT_OBJECT_N_X_POSITION,		16,		//$08(008): Current object X position in display pixels (natively 16 bits)
+	TOUCH_REPORT_OBJECT_N_Y_POSITION,		16,		//$09(009): Current object Y position in display pixels (natively 16 bits)
+	TOUCH_REPORT_OBJECT_N_Z,				16, 	//$0A(010): Current object Z (natively 16 bits)
+	TOUCH_REPORT_OBJECT_N_X_WIDTH,			8,		//$0B(011): Current object X width (natively 8 bits)
+	TOUCH_REPORT_OBJECT_N_Y_WIDTH,			8,		//$0C(012): Current object Y width (natively 8 bits)
+	TOUCH_REPORT_FOREACH_END, 						//$03(003): End for each loop
+	TOUCH_REPORT_END 								//$00(000): End report};
+};
+
 
 /**
  * syna_tcm_get_touch_data()
@@ -350,18 +370,107 @@ static int syna_tcm_get_gesture_data(const unsigned char *report,
 			syna_pal_le2_to_uint(gesture_data->tap_x),
 			syna_pal_le2_to_uint(gesture_data->tap_y));
 		break;
-	case GESTURE_TOUCH_AND_HOLD_DOWN_EVENT:
-	case GESTURE_TOUCH_AND_HOLD_UP_EVENT:
-	case GESTURE_TOUCH_AND_HOLD_MOVE_EVENT:
-		LOGD("fod:(x:%d, y:%d, major:%d,fod_overlap:%d)\n",
-			syna_pal_le2_to_uint(gesture_data->x_pos),
-			syna_pal_le2_to_uint(gesture_data->y_pos),
-			gesture_data->area[1], gesture_data->area[0]);
+	case GESTURE_ID_CAPFOLD_OPEN:
+		LOGI("[%02d:%02d:%02d:%03ld] capfold open!!\n",tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_nsec/1000 );
+		qcom_smem_state_update_bits(state, AWAKE_BIT, 0);
+		gesture_data->isOpen = 1;
+		break;
+	case GESTURE_ID_CAPFOLD_CLOSE:
+		LOGI("[%02d:%02d:%02d:%03ld] capfold close!!\n",tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_nsec/1000 );
+		qcom_smem_state_update_bits(state, AWAKE_BIT, AWAKE_BIT);
+		gesture_data->isOpen = 0;
 		break;
 	default:
 		LOGW("Unknown gesture_id:%d\n", gesture_id);
 		break;
 	}
+
+	return 0;
+}
+
+/**
+ * touch_debug_info_print() - print the debug info
+ */
+static void touch_debug_info_print(struct tcm_touch_data_blob *touch_data,unsigned int len)
+{
+	char print_buf[TOUCH_DEBUG_INFO_PRINT_SIZE] = {0};
+	int i, cnt, offset;
+
+	if (len > TOUCH_DEBUG_INFO_BYTES_MAX) {
+		LOGE("bigger len [%d], expected no more than %d\n", len, TOUCH_DEBUG_INFO_BYTES_MAX);
+	}
+
+	offset = 0;
+	for (i = 0; i < len/2; i++) {
+			cnt = snprintf(print_buf + offset, TOUCH_DEBUG_INFO_PRINT_SIZE - offset, " %04x",
+							touch_data->debug_info_data[i]);
+			offset += cnt;
+
+			if (offset >= TOUCH_DEBUG_INFO_PRINT_SIZE) {
+					LOGE("print buf is too small\n");
+					break;
+			}
+	}
+	LOGI("DebugInfo:%s\n", print_buf);
+
+	return;
+}
+
+/**
+ * touch_get_report_data() - Retrieve data from touch report
+ *
+ * Retrieve data from the touch report based on the bit offset and bit length
+ * information from the touch report configuration.
+ */
+static int touch_get_report_data(unsigned char *report, unsigned int report_size,unsigned int offset,
+		unsigned int bits, unsigned int *data)
+{
+	unsigned char mask;
+	unsigned char byte_data;
+	unsigned int output_data;
+	unsigned int bit_offset;
+	unsigned int byte_offset;
+	unsigned int data_bits;
+	unsigned int available_bits;
+	unsigned int remaining_bits;
+	unsigned char *touch_report;
+
+	if (bits == 0 || bits > 32) {
+		LOGE("Invalid number of bits\n");
+		return -EINVAL;
+	}
+
+	if (offset + bits > report_size * 8) {
+		*data = 0;
+		return 0;
+	}
+
+	touch_report = report;
+
+	output_data = 0;
+	remaining_bits = bits;
+
+	bit_offset = offset % 8;
+	byte_offset = offset / 8;
+
+	while (remaining_bits) {
+		byte_data = touch_report[byte_offset];
+		byte_data >>= bit_offset;
+
+		available_bits = 8 - bit_offset;
+		data_bits = MIN(available_bits, remaining_bits);
+		mask = 0xff >> (8 - data_bits);
+
+		byte_data &= mask;
+
+		output_data |= byte_data << (bits - remaining_bits);
+
+		bit_offset = 0;
+		byte_offset += 1;
+		remaining_bits -= data_bits;
+	}
+
+	*data = output_data;
 
 	return 0;
 }
@@ -398,11 +507,14 @@ int syna_tcm_parse_touch_report(struct tcm_dev *tcm_dev,
 	unsigned int loop_start;
 	unsigned int loop_end;
 	unsigned int data;
-	unsigned int bits;
+	unsigned int bits, temp_bits;
 	unsigned int offset;
 	unsigned int active_objects;
 	unsigned int config_size;
+	unsigned int left_bits;
+	unsigned int i;
 	unsigned char *config_data;
+	unsigned char *temp_data;
 	struct tcm_objects_data_blob *object_data;
 	unsigned int bits_in_obj_loop;
 	unsigned int bits_tailing;
@@ -438,7 +550,7 @@ int syna_tcm_parse_touch_report(struct tcm_dev *tcm_dev,
 	config_size = tcm_dev->touch_config.data_length;
 
 	if ((!config_data) || (config_size == 0)) {
-		LOGE("Invalid config_data\n");
+		LOGE("[DIS-TF-TOUCH] Invalid config_data\n");
 		return -ERR_INVAL;
 	}
 
@@ -665,6 +777,7 @@ int syna_tcm_parse_touch_report(struct tcm_dev *tcm_dev,
 						&touch_data->gesture_data,
 						touch_data->gesture_id);
 				offset += bits;
+				tcm_dev->isOpen = touch_data->gesture_data.isOpen;
 			}
 			if (retval < 0) {
 				LOGE("Fail to get gesture data\n");
@@ -827,6 +940,45 @@ int syna_tcm_parse_touch_report(struct tcm_dev *tcm_dev,
 			}
 			offset += bits;
 			break;
+		case TOUCH_REPORT_DEBUG_INFO:
+			bits = config_data[idx++];
+			temp_bits = bits;
+			if (bits > (TOUCH_DEBUG_INFO_BYTES_MAX*8)) {
+				LOGE("[DIS-TF-TOUCH] Incorrect Debug Info length:%d\n", bits);
+				return -EIO;
+			}
+
+			memset(touch_data->debug_info_data,0x00,sizeof(touch_data->debug_info_data));
+			temp_data = (unsigned char *)&touch_data->debug_info_data[0];
+			left_bits = bits;
+			i = 0;
+			while (left_bits){
+				bits = (left_bits >= 8) ? 8 : left_bits;
+				retval = touch_get_report_data(report,report_size,offset, bits, &data);
+				if (retval < 0){
+					LOGE("Failed to get data of debug_info, retval=%d\n", retval);
+					return retval;
+				}
+				temp_data[i++] = data&0xFF;
+				left_bits -= bits;
+				offset += bits;
+			}
+			/* print debug info */
+			if (touch_data->debug_info_data[0]&TOUCH_DEBUG_INFO_PRINT_MASK){
+				touch_debug_info_print(touch_data,(temp_bits + 7)/8);
+			}
+			break;
+		case TOUCH_REPORT_ANGLE:
+			bits = config_data[idx++];
+			retval = syna_tcm_get_touch_data(report, report_size,
+					offset, bits, &data);
+			if (retval < 0) {
+				LOGE("Fail to get object classification\n");
+				return retval;
+			}
+			LOGE("Capfold angle:%d\n",data);
+			offset += bits;
+			break;
 		default:
 			/* use custom parsing method, if registered */
 			if (tcm_dev->cb_custom_touch_entity) {
@@ -838,7 +990,7 @@ int syna_tcm_parse_touch_report(struct tcm_dev *tcm_dev,
 					continue;
 			}
 
-			LOGD("Unknown touch config code:0x%02x (length:%d)\n",
+			LOGW("Unknown touch config code:0x%02x (length:%d)\n",
 				code, config_data[idx]);
 			bits = config_data[idx++];
 			offset += bits;
@@ -991,7 +1143,14 @@ int syna_tcm_preserve_touch_report_config(struct tcm_dev *tcm_dev)
 
 	syna_tcm_buf_lock(&tcm_dev->resp_buf);
 
-	size = tcm_dev->resp_buf.data_length;
+	if(tcm_dev->resp_buf.data_length == 0) //maybe resp_buf.data_length has been changed by next command
+	{
+		LOGI("maybe resp_buf.data_length has been changed by next command,use pre data\n");
+			size = tcm_dev->pre_resp_data_length;
+	}else{
+			size = tcm_dev->resp_buf.data_length;
+	}
+
 	retval = syna_tcm_buf_alloc(&tcm_dev->touch_config,
 			size);
 	if (retval < 0) {
@@ -1015,6 +1174,33 @@ int syna_tcm_preserve_touch_report_config(struct tcm_dev *tcm_dev)
 	}
 
 	tcm_dev->touch_config.data_length = size;
+
+	if(size == 0)
+	{
+		LOGI("Use default touch config\n");
+		retval = syna_tcm_buf_alloc(&tcm_dev->touch_config,
+			sizeof(touch_default_format));
+		if (retval < 0) {
+			LOGE("Fail to allocate memory for internal touch_config\n");
+			syna_tcm_buf_unlock(&tcm_dev->touch_config);
+			syna_tcm_buf_unlock(&tcm_dev->resp_buf);
+			goto exit;
+		}
+		retval = syna_pal_mem_cpy(tcm_dev->touch_config.buf,
+				tcm_dev->touch_config.buf_size,
+				touch_default_format,
+				sizeof(touch_default_format),
+				sizeof(touch_default_format));
+		if (retval < 0) {
+			LOGE("Fail to clone touch config\n");
+			syna_tcm_buf_unlock(&tcm_dev->touch_config);
+			syna_tcm_buf_unlock(&tcm_dev->resp_buf);
+			goto exit;
+		}
+		tcm_dev->touch_config.data_length = sizeof(touch_default_format);
+	}
+
+
 
 	syna_tcm_buf_unlock(&tcm_dev->touch_config);
 	syna_tcm_buf_unlock(&tcm_dev->resp_buf);

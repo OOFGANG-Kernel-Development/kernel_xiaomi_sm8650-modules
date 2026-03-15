@@ -38,7 +38,6 @@
 
 #include "synaptics_touchcom_func_base.h"
 #include "synaptics_touchcom_func_reflash.h"
-#include <linux/wait.h>
 
 /**
  * @section: Reflash relevant definitions
@@ -107,7 +106,7 @@ static int syna_tcm_set_up_flash_access(struct tcm_dev *tcm_dev,
 	if (!IS_BOOTLOADER_MODE(tcm_dev->dev_mode)) {
 		LOGE("Fail to enter bootloader mode (current: 0x%x)\n",
 			tcm_dev->dev_mode);
-		return retval;
+		return -ERR_INVAL;
 	}
 
 	boot_info = &tcm_dev->boot_info;
@@ -217,7 +216,7 @@ int syna_tcm_compare_image_id_info(struct tcm_dev *tcm_dev,
 		device_fw_id, image_fw_id);
 
 	if (image_fw_id != device_fw_id) {
-		LOGI("Image build ID and device fw ID mismatched\n");
+		LOGN("Image build ID and device fw ID mismatched\n");
 		result = UPDATE_FIRMWARE_CONFIG;
 		goto exit;
 	}
@@ -227,8 +226,7 @@ int syna_tcm_compare_image_id_info(struct tcm_dev *tcm_dev,
 
 	for (idx = 0; idx < MAX_SIZE_CONFIG_ID; idx++) {
 		if (image_config_id[idx] != device_config_id[idx]) {
-			LOGI("Different Config ID, device_config_id[%d] = %d, image_config_id[%d] = %d\n",
-						idx, device_config_id[idx], idx, image_config_id[idx]);
+			LOGN("Different Config ID\n");
 			result = UPDATE_CONFIG_ONLY;
 			goto exit;
 		}
@@ -1272,6 +1270,7 @@ int syna_tcm_read_flash_area(struct tcm_dev *tcm_dev,
 		unsigned int rd_delay_us)
 {
 	int retval;
+    int retval_app;
 	unsigned int addr = 0;
 	unsigned int length = 0;
 	struct tcm_reflash_data_blob reflash_data;
@@ -1365,15 +1364,17 @@ int syna_tcm_read_flash_area(struct tcm_dev *tcm_dev,
 	retval = 0;
 
 exit:
-	retval = syna_tcm_switch_fw_mode(tcm_dev,
+    syna_tcm_buf_release(&reflash_data.out);
+
+	retval_app= syna_tcm_switch_fw_mode(tcm_dev,
 			MODE_APPLICATION_FIRMWARE,
 			FW_MODE_SWITCH_DELAY_MS);
-	if (retval < 0)
+	if (retval_app < 0){
 		LOGE("Fail to go back to application firmware\n");
-
-	syna_tcm_buf_release(&reflash_data.out);
-
-	return retval;
+                return retval_app;
+        } else {
+                return retval;
+        }
 }
 
 /**
@@ -1813,7 +1814,7 @@ static int syna_tcm_do_reflash_tddi(struct tcm_dev *tcm_dev,
 	image_info = &reflash_data->image_info;
 
 	if (tcm_dev->dev_mode != MODE_TDDI_BOOTLOADER) {
-		LOGE("Incorrect bootloader mode, 0x%02x, expected: 0x%02x\n",
+		LOGE("[DIS-TF-TOUCH] Incorrect bootloader mode, 0x%02x, expected: 0x%02x\n",
 			tcm_dev->dev_mode, MODE_TDDI_BOOTLOADER);
 		return -ERR_INVAL;
 	}
@@ -1915,7 +1916,7 @@ static int syna_tcm_do_reflash_generic(struct tcm_dev *tcm_dev,
 	}
 
 	if (tcm_dev->dev_mode != MODE_BOOTLOADER) {
-		LOGE("Incorrect bootloader mode, 0x%02x, expected: 0x%02x\n",
+		LOGE("[DIS-TF-TOUCH] Incorrect bootloader mode, 0x%02x, expected: 0x%02x\n",
 			tcm_dev->dev_mode, MODE_BOOTLOADER);
 		return -ERR_INVAL;
 	}
@@ -1977,7 +1978,7 @@ int syna_tcm_do_fw_update(struct tcm_dev *tcm_dev,
 		const unsigned char *image, unsigned int image_size,
 		unsigned int wait_delay_ms, bool force_reflash)
 {
-	int retval, ret;
+	int retval;
 	enum update_area type = UPDATE_NONE;
 	struct tcm_reflash_data_blob reflash_data;
 	int app_status;
@@ -2010,7 +2011,6 @@ int syna_tcm_do_fw_update(struct tcm_dev *tcm_dev,
 	LOGN("Start of reflash\n");
 
 	ATOMIC_SET(tcm_dev->firmware_flashing, 1);
-	reinit_completion(&tcm_dev->fw_update_completion);
 
 	app_status = syna_pal_le2_to_uint(tcm_dev->app_info.status);
 
@@ -2025,7 +2025,6 @@ int syna_tcm_do_fw_update(struct tcm_dev *tcm_dev,
 		force_reflash = true;
 
 	if (force_reflash) {
-		LOGI("force reflash\n");
 		type = UPDATE_FIRMWARE_CONFIG;
 		goto reflash;
 	}
@@ -2058,7 +2057,7 @@ reflash:
 			type,
 			wait_delay_ms);
 	} else {
-		LOGE("Incorrect bootloader mode, 0x%02x\n",
+		LOGE("[DIS-TF-TOUCH] Incorrect bootloader mode, 0x%02x\n",
 			tcm_dev->dev_mode);
 		goto reset;
 	}
@@ -2072,20 +2071,17 @@ reflash:
 
 	retval = 0;
 reset:
-	ret = syna_tcm_reset(tcm_dev);
-	if (ret < 0) {
+	retval = syna_tcm_reset(tcm_dev);
+	if (retval < 0) {
 		LOGE("Fail to do reset\n");
 		goto exit;
 	}
 
 exit:
 	ATOMIC_SET(tcm_dev->firmware_flashing, 0);
-	complete_all(&tcm_dev->fw_update_completion);
 
 	syna_tcm_buf_release(&reflash_data.out);
-	if (retval < 0 || ret < 0)
-		return -EIO;
-	else
-		return 0;
+
+	return retval;
 }
 

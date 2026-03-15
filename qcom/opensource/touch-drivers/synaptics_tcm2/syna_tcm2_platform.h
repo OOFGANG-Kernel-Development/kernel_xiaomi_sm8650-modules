@@ -42,13 +42,15 @@
 #define _SYNAPTICS_TCM2_PLATFORM_H_
 
 #include "syna_tcm2_runtime.h"
-
+#include <linux/soc/qcom/smem_state.h>
+#define PROC_AWAKE_ID 0 /* 1th bit */
+#define AWAKE_BIT BIT(PROC_AWAKE_ID)
 /**
  * @section: The capability of bus transferred
  *
  * Declare read/write capability in bytes (0 = unlimited)
  */
-#define RD_CHUNK_SIZE (0)
+#define RD_CHUNK_SIZE (512)
 #define WR_CHUNK_SIZE (512)
 
 /**
@@ -285,20 +287,6 @@ struct syna_hw_interface {
 	int (*ops_wait_irq)(struct syna_hw_interface *hw_if,
 			unsigned int timeout_ms);
 
-	/* Operation to initialize the GPIOs, if supported
-	 *
-	 * This is an optional operation.
-	 *
-	 * Implementation should set up the proper gpio to the device.
-	 *
-	 * Assign the pointer NULL if gpio is not available.
-	 *
-	 * @param
-	 *    [ in] hw_if: the handle of hw interface
-	 *
-	 * @return
-	 *    0 on success; otherwise, on error.
-	 */
 	int (*ops_config_gpio)(struct syna_hw_interface *hw_if);
 
 };

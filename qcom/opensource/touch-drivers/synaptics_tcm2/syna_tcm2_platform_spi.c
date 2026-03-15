@@ -37,13 +37,11 @@
  */
 
 #include <linux/spi/spi.h>
-#include <linux/interrupt.h>
 
 #include "syna_tcm2.h"
 #include "syna_tcm2_cdev.h"
 #include "syna_tcm2_platform.h"
-#include "../xiaomi/xiaomi_touch.h"
-
+struct qcom_smem_state *state;
 #if (KERNEL_VERSION(5, 15, 0) <= LINUX_VERSION_CODE)
 #define SPI_NO_DELAY_USEC
 #endif
@@ -58,18 +56,6 @@ static unsigned int buf_size;
 static struct spi_transfer *xfer;
 
 static struct platform_device *syna_spi_device;
-
-#ifdef TOUCH_SPI_CS_CLK_DELAY
-struct spi_geni_qcom_ctrl_data {
-	u32 spi_cs_clk_delay;
-	u32 spi_inter_words_delay;
-};
-
-static struct spi_geni_qcom_ctrl_data qcom_ctrl_data = {
-	.spi_cs_clk_delay = 30,
-	.spi_inter_words_delay = 0,
-};
-#endif
 
 /**
  * @brief FOR TUNE DEBUG LOG
@@ -104,8 +90,8 @@ static void syna_print_xfer_data(unsigned char *data, unsigned int length, unsig
 	}
 
 	if(tune_debug_enable == 1) {
-		/* print all the report and response */
-		/* print all the write data */
+		// print all the report and response
+		// print all the write data
 	} else if (tune_debug_enable == 2) {
 		/* skip all the report data except identify report */
 		if (((code == STATUS_CONTINUED_READ) && (last_code > REPORT_IDENTIFY) ) || (code > REPORT_IDENTIFY))
@@ -125,6 +111,7 @@ static void syna_print_xfer_data(unsigned char *data, unsigned int length, unsig
 	for (i = 0; i < length; i++) {
 		left = SYNA_SPI_PRINT_BUF_SIZE - offset;
 		if (left <= SYNA_SPI_PRINT_BUF_LEFT_SIZE) {
+			//LOGI("There is unprinted data\n");
 			break;
 		}
 		cnt = snprintf(print_buf + offset, SYNA_SPI_PRINT_BUF_SIZE - offset, "%02x ", data[i]);
@@ -641,42 +628,14 @@ static int syna_spi_read(struct syna_hw_interface *hw_if,
 	struct spi_message msg;
 	struct spi_device *spi = hw_if->pdev;
 	struct syna_hw_bus_data *bus = &hw_if->bdata_io;
-	struct syna_tcm *tcm = NULL;
 
 	if (!spi) {
 		LOGE("Invalid bus io device\n");
 		return -ENXIO;
 	}
 
-	if (!syna_spi_device) {
-		LOGE("Invalid platform device\n");
-		return -ENXIO;
-	}
-
-	tcm = platform_get_drvdata(syna_spi_device);
-	if (!tcm) {
-		LOGW("Invalid tcm device\n");
-		return -ENXIO;
-	}
-
 	syna_pal_mutex_lock(&bus->io_mutex);
-/*#ifdef TOUCH_SENSORHUB_SUPPORT*/
-#if 0
-	retval = pm_runtime_get_sync(spi->master->dev.parent);
-	if (retval < 0) {
-		LOGE("Fail to failed to get sync, retval = %d\n", retval);
-	}
-#endif
 	pm_stay_awake(&syna_spi_device->dev);
-	if (tcm->tp_pm_suspend) {
-		LOGI("Touch is in pm_suspend status!\n");
-		retval = wait_for_completion_timeout(&tcm->pm_resume_completion, msecs_to_jiffies(500));
-		if (!retval) {
-			retval = -EINVAL;
-			LOGE("wait_for_completion_timeout!\n");
-			goto exit;
-		}
-	}
 
 	if ((rd_len & 0xffff) == 0xffff) {
 		LOGE("Invalid read length 0x%X\n", (rd_len & 0xffff));
@@ -737,13 +696,6 @@ static int syna_spi_read(struct syna_hw_interface *hw_if,
 
 exit:
 	pm_relax(&syna_spi_device->dev);
-/*#ifdef TOUCH_SENSORHUB_SUPPORT*/
-#if 0
-	retval = pm_runtime_put_sync(spi->master->dev.parent);
-	if (retval < 0) {
-		LOGE("Fail to failed to put sync, retval = %d\n", retval);
-	}
-#endif
 	syna_pal_mutex_unlock(&bus->io_mutex);
 
 	return retval;
@@ -771,41 +723,14 @@ static int syna_spi_write(struct syna_hw_interface *hw_if,
 	struct spi_message msg;
 	struct spi_device *spi = hw_if->pdev;
 	struct syna_hw_bus_data *bus = &hw_if->bdata_io;
-	struct syna_tcm *tcm = NULL;
 
 	if (!spi) {
 		LOGE("Invalid bus io device\n");
 		return -ENXIO;
 	}
 
-	if (!syna_spi_device) {
-		LOGE("Invalid platform device\n");
-		return -ENXIO;
-	}
-
-	tcm = platform_get_drvdata(syna_spi_device);
-	if (!tcm) {
-		LOGW("Invalid tcm device\n");
-		return -ENXIO;
-	}
 	syna_pal_mutex_lock(&bus->io_mutex);
-/*#ifdef TOUCH_SENSORHUB_SUPPORT*/
-#if 0
-	retval = pm_runtime_get_sync(spi->master->dev.parent);
-	if (retval < 0) {
-		LOGE("Fail to failed to get sync, retval = %d\n", retval);
-	}
-#endif
 	pm_stay_awake(&syna_spi_device->dev);
-	if (tcm->tp_pm_suspend) {
-		LOGI("Touch is in pm_suspend status!\n");
-		retval = wait_for_completion_timeout(&tcm->pm_resume_completion, msecs_to_jiffies(500));
-		if (!retval) {
-			retval = -EINVAL;
-			LOGE("wait_for_completion_timeout!\n");
-			goto exit;
-		}
-	}
 
 	if ((wr_len & 0xffff) == 0xffff) {
 		LOGE("Invalid write length 0x%X\n", (wr_len & 0xffff));
@@ -863,13 +788,6 @@ static int syna_spi_write(struct syna_hw_interface *hw_if,
 
 exit:
 	pm_relax(&syna_spi_device->dev);
-/*#ifdef TOUCH_SENSORHUB_SUPPORT*/
-#if 0
-	retval = pm_runtime_put_sync(spi->master->dev.parent);
-	if (retval < 0) {
-		LOGE("Fail to failed to put sync, retval = %d\n", retval);
-	}
-#endif
 	syna_pal_mutex_unlock(&bus->io_mutex);
 
 	return retval;
@@ -893,7 +811,7 @@ static void syna_spi_hw_reset(struct syna_hw_interface *hw_if, int reset_delay_m
 	if (rst->reset_gpio == 0)
 		return;
 
-	LOGI("Prepare to toggle reset, hold:%d delay:%d\n",
+	LOGD("Prepare to toggle reset, hold:%d delay:%d\n",
 		rst->reset_active_ms, (reset_delay_ms != 0) ? reset_delay_ms : rst->reset_delay_ms);
 
 	gpio_set_value(rst->reset_gpio, (rst->reset_on_state & 0x01));
@@ -1033,9 +951,11 @@ disable_pwr_reg:
 		regulator_disable(vdd_reg);
 		usleep_range(3000, 3100);
 	}
+
 disable_avdd_reg:
 	if (avdd_reg)
 		regulator_disable(avdd_reg);
+
 exit:
 	return retval;
 }
@@ -1068,7 +988,7 @@ static int syna_spi_power_on(struct syna_hw_interface *hw_if,
 		retval = syna_spi_enable_pwr_gpio(hw_if, en);
 
 	if (retval < 0) {
-		LOGE("Fail to power %s device\n", (en) ? "on" : "off");
+		LOGE("[DIS-TF-TOUCH] Fail to power %s device\n", (en) ? "on" : "off");
 		return retval;
 	}
 
@@ -1265,7 +1185,7 @@ static int syna_spi_enable_irq(struct syna_hw_interface *hw_if,
 	/* enable the handling of interrupt */
 	if (en) {
 		if (attn->irq_enabled) {
-			LOGD("Interrupt already enabled\n");
+			LOGI("Interrupt already enabled\n");
 			retval = 0;
 			goto exit;
 		}
@@ -1281,7 +1201,7 @@ static int syna_spi_enable_irq(struct syna_hw_interface *hw_if,
 	/* disable the handling of interrupt */
 	else {
 		if (!attn->irq_enabled) {
-			LOGD("Interrupt already disabled\n");
+			LOGI("Interrupt already disabled\n");
 			retval = 0;
 			goto exit;
 		}
@@ -1363,11 +1283,16 @@ static int syna_spi_probe(struct spi_device *spi)
 #ifdef CONFIG_OF
 	retval = syna_spi_parse_dt(&syna_spi_hw_if, &spi->dev);
 	if (retval < 0) {
-		LOGE("Fail to parse dt\n");
+		LOGE("[DIS-TF-TOUCH] Fail to parse dt\n");
 		return -EIO;
-
 	}
 #endif
+
+	state = qcom_smem_state_get(&spi->dev, 0, &retval);
+	if (IS_ERR(state)){
+		LOGI("smp2p state get error\n");
+		return PTR_ERR(state);
+	}
 
 	syna_pal_mutex_alloc(&attn->irq_en_mutex);
 	syna_pal_mutex_alloc(&bus->io_mutex);
@@ -1387,13 +1312,10 @@ static int syna_spi_probe(struct spi_device *spi)
 		break;
 	}
 
-#ifdef TOUCH_SPI_CS_CLK_DELAY
-	spi->controller_data = &qcom_ctrl_data;
-#endif
 	/* keep the i/o device */
 	syna_spi_hw_if.pdev = spi;
 
-	/*syna_spi_device->dev.parent = &spi->dev;*/
+	//syna_spi_device->dev.parent = &spi->dev;
 	syna_spi_device->dev.platform_data = &syna_spi_hw_if;
 
 	spi->bits_per_word = 8;
@@ -1419,7 +1341,7 @@ static int syna_spi_probe(struct spi_device *spi)
 	/* initialize power unit */
 	retval = syna_spi_config_psu(&syna_spi_hw_if);
 	if (retval < 0) {
-		LOGE("Fail to config power unit\n");
+		LOGE("[DIS-TF-TOUCH] Fail to config power unit\n");
 		return retval;
 	}
 

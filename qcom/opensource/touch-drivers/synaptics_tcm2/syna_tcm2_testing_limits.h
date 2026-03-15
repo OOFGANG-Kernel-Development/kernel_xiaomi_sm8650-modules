@@ -35,7 +35,7 @@
 #define LIMIT_BOUNDARY (40)
 
 /* test limit for the device id checking */
-static const char *device_id_limit = "S3910VA0A0-15.2";
+static const char *device_id_limit = "S3910VA0A0-15.20";
 
 /* test limit for the config id checking */
 static const unsigned char config_id_limit[16] = {

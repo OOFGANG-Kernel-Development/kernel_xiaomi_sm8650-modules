@@ -40,9 +40,12 @@ ddk_headers(
 ddk_headers(
     name = "synaptics_tcm_headers",
     hdrs = glob([
-            "synaptics_tcm/*.h"
+            "synaptics_tcm/*.h",
+            "synaptics_tcm2/*.h",
+            "synaptics_tcm2/tcm/*.h",
         ]
-    )
+    ),
+    includes = ["synaptics_tcm2", "synaptics_tcm2/tcm"],
 )
 
 ddk_headers(

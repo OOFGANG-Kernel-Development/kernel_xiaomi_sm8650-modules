@@ -32,7 +32,8 @@ module_entry(
             "goodix_berlin_driver/goodix_ts_gesture.c",
             "goodix_berlin_driver/goodix_ts_inspect.c",
             "goodix_berlin_driver/goodix_ts_tools.c",
-            "goodix_berlin_driver/goodix_ts_utils.c"
+            "goodix_berlin_driver/goodix_ts_utils.c",
+            "goodix_berlin_driver/goodix_xiaomi_driver.c",
     ]
 )
 
@@ -68,11 +69,20 @@ module_entry(
 #define ddk_module() for synaptics_tcm_ts
 module_entry(
     name = "synaptics_tcm_ts",
-    config_option = "CONFIG_TOUCHSCREEN_SYNAPTICS_TCM",
+    config_option = "CONFIG_TOUCHSCREEN_SYNAPTICS_TCM2",
     srcs = [
-            "synaptics_tcm/synaptics_tcm_core.c",
-            "synaptics_tcm/synaptics_tcm_i2c.c",
-            "synaptics_tcm/synaptics_tcm_touch.c"
+            "synaptics_tcm2/syna_tcm2.c",
+            "synaptics_tcm2/syna_tcm2_cdev.c",
+            "synaptics_tcm2/syna_tcm2_platform_spi.c",
+            "synaptics_tcm2/syna_tcm2_sysfs.c",
+            "synaptics_tcm2/syna_tcm2_testing.c",
+            "synaptics_tcm2/syna_xiaomi_driver.c",
+            "synaptics_tcm2/tcm/synaptics_touchcom_core_v1.c",
+            "synaptics_tcm2/tcm/synaptics_touchcom_core_v2.c",
+            "synaptics_tcm2/tcm/synaptics_touchcom_func_base.c",
+            "synaptics_tcm2/tcm/synaptics_touchcom_func_touch.c",
+            "synaptics_tcm2/tcm/synaptics_touchcom_func_reflash.c",
+            "synaptics_tcm2/tcm/synaptics_touchcom_func_romboot.c",
     ]
 )
 

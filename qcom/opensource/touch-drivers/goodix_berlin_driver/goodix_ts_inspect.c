@@ -1,36 +1,38 @@
-/*
- * Goodix Touchscreen Driver
- * Copyright (C) 2020 - 2021 Goodix, Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be a reference
- * to you, when you are integrating the GOODiX's CTP IC into your system,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- */
+ /*
+  * Goodix Touchscreen Driver
+  * Copyright (C) 2020 - 2021 Goodix, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; either version 2 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be a reference
+  * to you, when you are integrating the GOODiX's CTP IC into your system,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  * General Public License for more details.
+  *
+  */
 
 #include "goodix_ts_core.h"
 #include <linux/rtc.h>
 #include <linux/timer.h>
 #include <linux/version.h>
+#include <linux/proc_fs.h>
 #include <linux/fs.h>
 #include <asm/uaccess.h>
 
-
+static char g_limit_file_name[100];
 /* test config */
-#define TOTAL_FRAME_NUM 					1 /* rawdata test frames */
+#define TOTAL_FRAME_NUM 					16 /* rawdata test frames */
 #define NOISEDATA_TEST_TIMES				1  /* noise test frames */
-// #define SAVE_IN_CSV
 
-#define GOODIX_RESULT_SAVE_PATH				"/vendor/etc/Test_Data.csv"
-#define GOODIX_TEST_FILE_NAME				"goodix"
-#define MAX_DATA_BUFFER						28000
+#define DISCARD_FRAMES						3
+
+#define GOODIX_TEST_FILE_NAME				"goodix_test_limits"
+#define DEFAULT_SEQ_FILE_SIZE				800 * 1024
+#define MAX_DATA_BUFFER						30000
 #define MAX_SHORT_NUM						15
 #define MAX_LINE_LEN                		(1024 * 3 * 7)
 #define MAX_DRV_NUM							52
@@ -38,15 +40,8 @@
 
 #define STATISTICS_DATA_LEN					32
 #define MAX_STR_LEN				 			32
-#define MAX_TEST_ITEMS			    		10 /* 0P-1P-2P-3P-5P total test items */
-#define GTP_CAP_TEST						1
-#define GTP_DELTA_TEST						2
-#define GTP_NOISE_TEST						3
-#define GTP_SHORT_TEST						5
-#define GTP_SELFCAP_TEST					6
-#define GTP_SELFNOISE_TEST					7
 
-#define GTP_TEST_PASS						1 
+#define GTP_TEST_PASS						1
 #define GTP_PANEL_REASON					2
 #define SYS_SOFTWARE_REASON					3
 
@@ -63,6 +58,7 @@
 #define CSV_TP_NOISE_LIMIT					"noise_data_limit"
 #define CSV_TP_SELFNOISE_LIMIT				"noise_selfdata_limit"
 #define CSV_TP_TEST_CONFIG					"test_config"
+#define CSV_TP_DIFF_SHIFT_MAX				"diff_shift_max"
 
 #define MAX_TEST_TIME_MS            		15000
 #define DEFAULT_TEST_TIME_MS				7000
@@ -109,21 +105,58 @@
 #define DRV_SEN_SELFCODE_REG_BRD			0x14556
 #define DIFF_CODE_DATA_REG_BRD				0x14D00
 
+/* nottingham */
+#define MAX_DRV_NUM_NOT				    	17
+#define MAX_SEN_NUM_NOT				    	35
+#define SHORT_TEST_TIME_REG_NOT				0x1479E
+#define SHORT_TEST_STATUS_REG_NOT			0x13400
+#define SHORT_TEST_RESULT_REG_NOT			0x13408
+#define DRV_DRV_SELFCODE_REG_NOT			0x13446
+#define SEN_SEN_SELFCODE_REG_NOT 			0x136EE
+#define DRV_SEN_SELFCODE_REG_NOT			0x14152
+#define DIFF_CODE_DATA_REG_NOT				0x14734
 
-#define ABS(val)			((val < 0)? -(val) : val)
+/* marseille */
+#define MAX_DRV_NUM_MAR						20
+#define MAX_SEN_NUM_MAR						34
+#define SHORT_TEST_TIME_REG_MAR				0x138AC
+#define SHORT_TEST_STATUS_REG_MAR			0x12400
+#define SHORT_TEST_RESULT_REG_MAR			0x12408
+#define DRV_DRV_SELFCODE_REG_MAR			0x12448
+#define SEN_SEN_SELFCODE_REG_MAR 			0x127E0
+#define DRV_SEN_SELFCODE_REG_MAR			0x137D0
+#define DIFF_CODE_DATA_REG_MAR				0x1383E
+
+#define ABS(val)			(((val) < 0)? -(val) : val)
+#define MAX_ABS(a, b)			((ABS(a) > ABS(b))? a : b)
+#define MIN_ABS(a, b)			((ABS(a) > ABS(b))? b : a)
 #define MAX(a, b)			((a > b)? a : b)
 
+enum GTP_TEST_ITEMS {
+	GTP_CAP_TEST = 0,
+	GTP_DELTA_TEST,
+	GTP_NOISE_TEST,
+	GTP_SHORT_TEST,
+	GTP_SELFCAP_TEST,
+	GTP_SELFNOISE_TEST,
+	GTP_CUSTOM_INFO_TEST,
+	GTP_CHIP_KEY_INFO_TEST,
+	GTP_VERSION_TEST,
+	GTP_RESET_TEST,
+	GTP_DIFF_SHIFT_TEST,
+	MAX_TEST_ITEMS = 20
+};
 static bool module_initialized;
 
 /* berlin A drv-sen map */
 static u8 brl_a_drv_map[] = {
-	42, 43, 44, 45, 46, 47, 48, 49,
-	50, 51, 52, 53, 54, 55, 56, 57,
-	58, 59, 60, 61, 62
+    42, 43, 44, 45, 46, 47, 48, 49,
+    50, 51, 52, 53, 54, 55, 56, 57,
+    58, 59, 60, 61, 62
 };
 
 static u8 brl_a_sen_map[] = {
-	0, 1, 2, 3, 4, 5, 6, 7,
+    0, 1, 2, 3, 4, 5, 6, 7,
 	8, 9, 10, 11, 12, 13, 14, 15,
 	16, 17, 18, 19, 20, 21, 22, 23,
 	24, 25, 26, 27, 28, 29, 30, 31,
@@ -162,15 +195,41 @@ static u8 brl_d_drv_map[] = {
 };
 
 static u8 brl_d_sen_map[] = {
-	0, 1, 2, 3, 4, 5, 6, 7,
+    0, 1, 2, 3, 4, 5, 6, 7,
 	8, 9, 10, 11, 12, 13, 14, 15,
 	16, 17, 18, 19, 20, 21, 22, 23,
 	24, 25, 26, 27, 28, 29, 30, 31,
 	32, 33, 34, 35, 36, 37, 38, 39,
 };
 
+/* nottingham drv-sen map */
+static u8 not_drv_map[] = {
+	35, 36, 37, 38, 39, 40, 41, 42, 43,
+	44, 45, 46, 47, 48, 49, 50, 51
+};
+
+static u8 not_sen_map[] = {
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+	10, 11, 12, 13, 14, 15, 16, 17, 18,
+	19, 20, 21, 22, 23, 24, 25, 26, 27,
+	28, 29, 30, 31, 32, 33, 34
+};
+
+/* marseille drv-sen map */
+static u8 mar_drv_map[] = {
+	34, 35, 36, 37, 38, 39, 40, 41, 42, 43,
+	44, 45, 46, 47, 48, 49, 50, 51, 52, 53,
+};
+
+static u8 mar_sen_map[] = {
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+	10, 11, 12, 13, 14, 15, 16, 17, 18,
+	19, 20, 21, 22, 23, 24, 25, 26, 27,
+	28, 29, 30, 31, 32, 33
+};
+
 typedef struct __attribute__((packed)) {
-	u8 result;
+    u8 result;
 	u8 drv_drv_num;
 	u8 sen_sen_num;
 	u8 drv_sen_num;
@@ -178,6 +237,20 @@ typedef struct __attribute__((packed)) {
 	u8 sen_gnd_avdd_num;
 	u16 checksum;
 } test_result_t;
+
+#define CHIP_KEY_INFO_MAX_LEN 0x40
+#define CHIP_UID_MAX_LEN 16
+typedef struct {
+    u8 hw_ver;
+    u8 package_site;
+    u8 chip_uid[CHIP_UID_MAX_LEN];
+    u8 ft_test_result;
+    u8 substrate_tech;
+    u8 mcu_fab;
+    u8 res[40];
+    u8 vaild_len;
+    u16 check_sum;
+} chip_attr_info_t;
 
 struct params_info_t {
 	u32 max_drv_num;
@@ -247,6 +320,40 @@ struct params_info_t params_brd = {
 	DFT_DIFFCODE_SHORT_THRESHOLD_BRD,
 };
 
+struct params_info_t params_not = {
+	MAX_DRV_NUM_NOT,
+	MAX_SEN_NUM_NOT,
+	not_drv_map,
+	not_sen_map,
+	SHORT_TEST_TIME_REG_NOT,
+	SHORT_TEST_STATUS_REG_NOT,
+	SHORT_TEST_RESULT_REG_NOT,
+	DRV_DRV_SELFCODE_REG_NOT,
+	SEN_SEN_SELFCODE_REG_NOT,
+	DRV_SEN_SELFCODE_REG_NOT,
+	DIFF_CODE_DATA_REG_NOT,
+	0,
+	0,
+	0,
+};
+
+struct params_info_t params_mar = {
+	MAX_DRV_NUM_MAR,
+	MAX_SEN_NUM_MAR,
+	mar_drv_map,
+	mar_sen_map,
+	SHORT_TEST_TIME_REG_MAR,
+	SHORT_TEST_STATUS_REG_MAR,
+	SHORT_TEST_RESULT_REG_MAR,
+	DRV_DRV_SELFCODE_REG_MAR,
+	SEN_SEN_SELFCODE_REG_MAR,
+	DRV_SEN_SELFCODE_REG_MAR,
+	DIFF_CODE_DATA_REG_MAR,
+	0,
+	0,
+	0,
+};
+
 struct ts_test_params {
 	bool test_items[MAX_TEST_ITEMS];
 
@@ -266,7 +373,10 @@ struct ts_test_params {
 	s32 deviation_limits[MAX_DRV_NUM * MAX_SEN_NUM];
 	s32 self_max_limits[MAX_DRV_NUM + MAX_SEN_NUM];
 	s32 self_min_limits[MAX_DRV_NUM + MAX_SEN_NUM];
-	s32 noise_threshold;
+	s32 noise_threshold[MAX_SCAN_FREQ_NUM];
+	s32 diff_shift_test_freq_cnt;
+	s32 diff_shift_freq[MAX_SCAN_FREQ_NUM]; /* record diff shift test freq index */
+	s32 diff_shift_max[MAX_SCAN_FREQ_NUM][MAX_DRV_NUM * MAX_SEN_NUM];
 	s32 self_noise_threshold;
 
 	u32 short_threshold;
@@ -299,22 +409,33 @@ struct ts_open_res {
 	u8 beyond_accord_limit_cnt[MAX_DRV_NUM * MAX_SEN_NUM];
 };
 
+struct ts_mutual_freq_noise {
+	struct ts_test_rawdata noisedata[NOISEDATA_TEST_TIMES];
+};
+
 struct goodix_ts_test {
 	struct goodix_ts_core *ts;
 	struct ts_test_params test_params;
 	struct ts_test_rawdata rawdata[TOTAL_FRAME_NUM];
 	struct ts_test_rawdata accord_arr[TOTAL_FRAME_NUM];
-	struct ts_test_rawdata noisedata[NOISEDATA_TEST_TIMES];
+	struct ts_mutual_freq_noise mutual_freq_diff[MAX_SCAN_FREQ_NUM];
+	s16 diff_shift_noise[MAX_SCAN_FREQ_NUM][MAX_DRV_NUM * MAX_SEN_NUM];
 	struct goodix_ic_config test_config;
 	struct ts_test_self_rawdata self_rawdata;
 	struct ts_test_self_rawdata self_noisedata;
 	struct ts_short_res short_res;
 	struct ts_open_res open_res;
+	char cur_version[64];
+	char chip_pid[8];
+	chip_attr_info_t chip_info;
+	char custom_info_flash[16];
+	char custom_info_sram[16];
 
 	/*[0][0][0][0][0]..  0 without test; 1 pass, 2 panel failed; 3 software failed */
 	char test_result[MAX_TEST_ITEMS];
 	char test_info[TS_RAWDATA_RESULT_MAX];
-};
+	u8 frame_buf[8*1024];
+} *g_ts_test;
 
 static int cal_cha_to_cha_res(struct goodix_ts_test *ts_test, int v1, int v2)
 {
@@ -322,8 +443,12 @@ static int cal_cha_to_cha_res(struct goodix_ts_test *ts_test, int v1, int v2)
 		return (v1 - v2) * 63 / v2;
 	else if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_B)
 		return (v1 - v2) * 74 / v2 + 20;
-	else
+	else if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_D)
 		return (v1 / v2 - 1) * 70 + 59;
+	else if (ts_test->ts->bus->ic_type == IC_TYPE_MARSEILLE)
+		return (v1 / v2 - 1) * 14;
+	else
+		return (v1 / v2 - 1) * 55 + 45;
 }
 
 static int cal_cha_to_avdd_res(struct goodix_ts_test *ts_test, int v1, int v2)
@@ -332,8 +457,12 @@ static int cal_cha_to_avdd_res(struct goodix_ts_test *ts_test, int v1, int v2)
 		return 64 * (2 * v2 - 25) * 40 / v1 - 40;
 	else if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_B)
 		return 64 * (2 * v2 - 25) * 99 / v1 - 60;
-	else
+	else if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_D)
 		return 64 * (2 * v2 - 25) * 93 / v1 - 20;
+	else if (ts_test->ts->bus->ic_type == IC_TYPE_MARSEILLE)
+		return 64 * (2 * v2 - 25) * 72 / v1 - 13;
+	else
+		return 64 * (2 * v2 - 25) * 76 / v1 - 15;
 }
 
 static int cal_cha_to_gnd_res(struct goodix_ts_test *ts_test, int v)
@@ -342,71 +471,77 @@ static int cal_cha_to_gnd_res(struct goodix_ts_test *ts_test, int v)
 		return 64148 / v - 40;
 	else if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_B)
 		return 150500 / v - 60;
-	else
+	else if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_D)
 		return 145000 / v - 15;
+	else if (ts_test->ts->bus->ic_type == IC_TYPE_MARSEILLE)
+		return 28800 / v - 13;
+	else
+		return 120000 / v - 16;
 }
 
-static int ts_test_reset(struct goodix_ts_test *ts_test, u32 delay_ms)
+static int ts_test_reset(struct goodix_ts_test *ts_test,
+    u32 delay_ms)
 {
-	return ts_test->ts->hw_ops->reset(ts_test->ts, delay_ms);
+    return ts_test->ts->hw_ops->reset(ts_test->ts, delay_ms);
 }
 
 static int ts_test_read(struct goodix_ts_test *ts_test,
-	u32 addr, u8 *data, u32 len)
+    u32 addr, u8 *data, u32 len)
 {
-	return ts_test->ts->hw_ops->read(ts_test->ts, addr, data, len);
+    return ts_test->ts->hw_ops->read(ts_test->ts, addr, data, len);
 }
 
 static int ts_test_write(struct goodix_ts_test *ts_test,
-	u32 addr, u8 *data, u32 len)
+    u32 addr, u8 *data, u32 len)
 {
-	return ts_test->ts->hw_ops->write(ts_test->ts, addr, data, len);
+    return ts_test->ts->hw_ops->write(ts_test->ts, addr, data, len);
 }
 
 static int ts_test_send_cmd(struct goodix_ts_test *ts_test,
-	struct goodix_ts_cmd *cmd)
+    struct goodix_ts_cmd *cmd)
 {
-	return ts_test->ts->hw_ops->send_cmd(ts_test->ts, cmd);
+    return ts_test->ts->hw_ops->send_cmd(ts_test->ts, cmd);
 }
 
-static int ts_test_irq_enable(struct goodix_ts_test *ts_test, bool flag)
+static int ts_test_irq_enable(struct goodix_ts_test *ts_test,
+	bool flag)
 {
 	return ts_test->ts->hw_ops->irq_enable(ts_test->ts, flag);
 }
 
-static int ts_test_send_config(struct goodix_ts_test *ts_test, int type)
+static int ts_test_send_config(struct goodix_ts_test *ts_test,
+    int type)
 {
-	struct goodix_ic_config *cfg;
+    struct goodix_ic_config *cfg;
 
 	if (type >= GOODIX_MAX_CONFIG_GROUP) {
 		ts_err("unsupproted config type %d", type);
 		return -EINVAL;
 	}
-	cfg = ts_test->ts->ic_configs[type];
+    cfg = ts_test->ts->ic_configs[type];
 	if (!cfg || cfg->len <= 0) {
 		ts_err("no valid normal config found");
 		return -EINVAL;
 	}
-
-	return ts_test->ts->hw_ops->send_config(ts_test->ts, cfg->data, cfg->len);
+    
+    return ts_test->ts->hw_ops->send_config(ts_test->ts, cfg->data, cfg->len);
 }
 
 static int ts_test_read_version(struct goodix_ts_test *ts_test,
-	struct goodix_fw_version *version)
+    struct goodix_fw_version *version)
 {
-	return ts_test->ts->hw_ops->read_version(ts_test->ts, version);
+    return ts_test->ts->hw_ops->read_version(ts_test->ts, version);
 }
 
 static void goto_next_line(char **ptr)
 {
-	do {
-		*ptr = *ptr + 1;
-	} while (**ptr != '\n' && **ptr != '\0');
-
-	if (**ptr == '\0')
-		return;
-
-	*ptr = *ptr + 1;
+    do {
+        *ptr = *ptr + 1;
+    } while (**ptr != '\n' && **ptr != '\0');
+    if (**ptr == '\0') {
+        return;
+    }
+    *ptr = *ptr + 1;
 }
 
 static void copy_this_line(char *dest, char *src)
@@ -430,115 +565,118 @@ static int getrid_space(s8* data, s32 len)
 	s32 i;
 	u32 count = 0;
 
-	buf = (char*)kzalloc(len + 5, GFP_KERNEL);
-	if (!buf) {
-		ts_err("get space kzalloc error");
+	buf = (char*)vzalloc(len + 5);
+	if (buf == NULL){
+		ts_err("get space alloc error");
 		return -ESRCH;
 	}
 
-	for (i = 0; i < len; i++) {
+	for (i = 0; i < len; i++)
+	{
 		if (data[i] == ' ' || data[i] == '\r' || data[i] == '\n')
+		{
 			continue;
-
+		}
 		buf[count++] = data[i];
 	}
 
 	buf[count++] = '\0';
 
 	memcpy(data, buf, count);
-	kfree(buf);
+	vfree(buf);
 
 	return count;
 }
 
 static int parse_valid_data(char *buf_start, loff_t buf_size,
-	char *ptr, s32 *data, s32 rows)
+    char *ptr, s32 *data, s32 rows)
 {
-	int i = 0;
-	int j = 0;
-	char *token = NULL;
-	char *tok_ptr = NULL;
-	char *row_data = NULL;
+    int i = 0;
+    int j = 0;
+    char *token = NULL;
+    char *tok_ptr = NULL;
+    char *row_data = NULL;
 	long temp_val;
 
-	if (!ptr) {
-		ts_err("ptr is NULL");
-		return -EINVAL;
-	}
+    if (!ptr) {
+        ts_err("ptr is NULL");
+        return -EINVAL;
+    }
 	if (!data) {
 		ts_err("data is NULL");
 		return -EINVAL;
 	}
 
-	row_data = (char *)kzalloc(MAX_LINE_LEN, GFP_KERNEL);
-	if (!row_data) {
-		ts_err("alloc bytes %d failed.", MAX_LINE_LEN);
-		return -ENOMEM;
-	}
+    row_data = (char *)vzalloc(MAX_LINE_LEN);
+    if (!row_data) {
+        ts_err("alloc bytes %d failed.", MAX_LINE_LEN);
+        return -ENOMEM;
+    }
 
-	for (i = 0; i < rows; i++) {
-		memset(row_data, 0, MAX_LINE_LEN);
-		copy_this_line(row_data, ptr);
-		getrid_space(row_data, strlen(row_data));
-		tok_ptr = row_data;
+    for (i = 0; i < rows; i++) {
+        memset(row_data, 0, MAX_LINE_LEN);
+        copy_this_line(row_data, ptr);
+        getrid_space(row_data, strlen(row_data));
+        tok_ptr = row_data;
 		while ((token = strsep(&tok_ptr,","))) {
 			if (strlen(token) == 0)
 				continue;
 			if (kstrtol(token, 0, &temp_val)) {
-				kfree(row_data);
+				vfree(row_data);
 				return -EINVAL;
 			}
 			data[j++] = (s32)temp_val;
 		}
 		if (i == rows - 1)
 			break;
-		goto_next_line(&ptr); //next row
-		if(!ptr || (strlen(ptr) == 0) || (ptr >= (buf_start + buf_size))) {
+		goto_next_line(&ptr);				//next row
+		if(!ptr || (0 == strlen(ptr)) || (ptr >= (buf_start + buf_size))) {
 			ts_info("invalid ptr, return");
-			kfree(row_data);
+			vfree(row_data);
 			row_data = NULL;
 			return -EPERM;
-		}
-	}
-	kfree(row_data);
-	return j;
+		}        
+    }
+    vfree(row_data);
+    return j;
 }
 
 static int parse_csvfile(char *buf, size_t size, char *target_name,
-	s32 *data, s32 rows, s32 col)
+        s32 *data, s32 rows, s32 col)
 {
-	int ret = 0;
-	char *ptr = NULL;
-	int read_ret;
+    int ret = 0;
+    char *ptr = NULL;
+    int read_ret;
 
-	read_ret = size;
-	if (read_ret > 0) {
-		ptr = buf;
-		ptr = strstr(ptr, target_name);
-		if (!ptr) {
+    read_ret = size;
+    if (read_ret > 0) {
+        ptr = buf;
+        ptr = strstr(ptr, target_name);
+        if (!ptr) {
 			ts_info("load %s failed 1, maybe not this item", target_name);
-			return -EINTR;
-		}
+            return -EINTR;
+        }
 
-		goto_next_line(&ptr);
-		if (!ptr || (strlen(ptr) == 0 )) {
-			ts_err("load %s failed 2!", target_name);
-			return -EIO;
-		}
+        goto_next_line(&ptr);
+        if (!ptr || (0 == strlen(ptr))) {
+            ts_err("load %s failed 2!", target_name);
+            return -EIO;
+        }
+        
+        if (data) {
+            ret = parse_valid_data(buf, size, ptr, data, rows);
+        } else {
+            ts_err("load %s failed 3!", target_name);
+            return -EINTR;
+        }
+    } else {
+        ts_err("ret=%d, read_ret=%d", ret, read_ret);
+        ret = -ENXIO;
+    }
 
-		if (data) {
-			ret = parse_valid_data(buf, size, ptr, data, rows);
-		} else {
-			ts_err("load %s failed 3!", target_name);
-			return -EINTR;
-		}
-	} else {
-		ts_err("ret=%d, read_ret=%d", ret, read_ret);
-		ret = -ENXIO;
-	}
-
-	return ret;
+    return ret;
 }
+
 
 static void goodix_init_params(struct goodix_ts_test *ts_test)
 {
@@ -557,50 +695,55 @@ static void goodix_init_params(struct goodix_ts_test *ts_test)
 		test_params->params_info = &params_bra;
 	else if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_B)
 		test_params->params_info = &params_brb;
-	else
+	else if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_D)
 		test_params->params_info = &params_brd;
+	else if (ts_test->ts->bus->ic_type == IC_TYPE_NOTTINGHAM)
+		test_params->params_info = &params_not;
+	else if (ts_test->ts->bus->ic_type == IC_TYPE_MARSEILLE)
+		test_params->params_info = &params_mar;
 }
 
 static int goodix_init_testlimits(struct goodix_ts_test *ts_test)
 {
-	int ret;
+    int ret;
 	int i;
-	u32 data_buf[10] = {0};
-	char *temp_buf = NULL;
-	struct ts_test_params *test_params = &ts_test->test_params;
-	struct goodix_ts_core *ts_core = ts_test->ts;
-	const struct firmware *firmware = NULL;
-	struct device *dev = &ts_core->pdev->dev;
-	char limit_file[100] = {0};
-	u32 tx = test_params->drv_num;
-	u32 rx = test_params->sen_num;
+    u32 data_buf[10] = {0};
+    char *temp_buf = NULL;
+    struct ts_test_params *test_params = &ts_test->test_params;
+    struct goodix_ts_core *ts_core = ts_test->ts;
+    const struct firmware *firmware = NULL;
+    struct device *dev = &ts_core->pdev->dev;
+    char limit_file[100] = {0};
+    u32 tx = test_params->drv_num;
+    u32 rx = test_params->sen_num;
+	int freq_num = ts_core->ic_info.parm.mutual_freq_num;
+	char tmp_str[64] = {0};
+	int freq_cnt;
 
-	scnprintf(limit_file, ARRAY_SIZE(limit_file), "%s_test_limits_%d.csv",
-			GOODIX_TEST_FILE_NAME, ts_core->fw_version.sensor_id);
-	ts_info("limit_file_name:%s", limit_file);
+	if(strlen(g_limit_file_name) == 0)
+		sprintf(limit_file, "%s_%d.csv", GOODIX_TEST_FILE_NAME,ts_core->fw_version.sensor_id);
+	else
+		sprintf(limit_file, "%s_%d.csv", g_limit_file_name, ts_core->fw_version.sensor_id);
+    ts_info("limit_file_name:%s", limit_file);
 
-	ret = request_firmware(&firmware, limit_file, dev);
-	if (ret < 0) {
-		ts_err("limits file [%s] not available", limit_file);
-		return -EINVAL;
-	}
-	if (!firmware) {
-		ts_err("request_firmware failed");
-		return -EINVAL;
-	}
-	if (firmware->size <= 0) {
-		ts_err("request_firmware, limits param length error,len:%zu",
-			firmware->size);
-		ret = -EINVAL;
-		goto exit_free;
-	}
-	temp_buf = kzalloc(firmware->size + 1, GFP_KERNEL);
-	if (!temp_buf) {
-		ts_err("kzalloc bytes failed.");
-		ret = -ENOMEM;
-		goto exit_free;
-	}
-	memcpy(temp_buf, firmware->data, firmware->size);
+    ret = request_firmware(&firmware, limit_file, dev);
+    if (ret < 0) {
+        ts_err("limits file [%s] not available", limit_file);
+        return -EINVAL;
+    }
+    if (firmware->size <= 0) {
+        ts_err("request_firmware, limits param length error,len:%zu",
+            firmware->size);
+        ret = -EINVAL;
+        goto exit_free;
+    }
+    temp_buf = vzalloc(firmware->size + 1);
+    if (!temp_buf) {
+        ts_err("alloc bytes failed.");
+        ret = -ENOMEM;
+        goto exit_free;
+    }
+    memcpy(temp_buf, firmware->data, firmware->size);
 
 	/* obtain config data */
 	ret = parse_csvfile(temp_buf, firmware->size, CSV_TP_TEST_CONFIG,
@@ -614,24 +757,24 @@ static int goodix_init_testlimits(struct goodix_ts_test *ts_test)
 		ts_test->test_config.len = ret;
 	}
 
-	/* obtain mutual_raw min */
-	ret = parse_csvfile(temp_buf, firmware->size, CSV_TP_SPECIAL_RAW_MIN,
-	test_params->min_limits, rx, tx);
-	if (ret < 0) {
-		ts_err("Failed get min_limits");
-		goto exit_free;
-	} else
-		ts_info("parse_csvfile %s OK", CSV_TP_SPECIAL_RAW_MIN);
-
-	/* obtain mutual_raw max */
-	ret = parse_csvfile(temp_buf, firmware->size, CSV_TP_SPECIAL_RAW_MAX,
-		test_params->max_limits, rx, tx);
-	if (ret < 0) {
-		ts_err("Failed get max_limits");
-		goto exit_free;
-	} else
-		ts_info("parse_csvfile %s OK", CSV_TP_SPECIAL_RAW_MAX);
-
+    /* obtain mutual_raw min */
+    ret = parse_csvfile(temp_buf, firmware->size, CSV_TP_SPECIAL_RAW_MIN,
+        test_params->min_limits, rx, tx);
+    if (ret < 0) {
+        ts_err("Failed get min_limits");
+        goto exit_free;
+    } else {
+        ts_info("parse_csvfile %s OK", CSV_TP_SPECIAL_RAW_MIN);
+    }
+    /* obtain mutual_raw max */
+    ret = parse_csvfile(temp_buf, firmware->size, CSV_TP_SPECIAL_RAW_MAX,
+        test_params->max_limits, rx, tx);
+    if (ret < 0) {
+        ts_err("Failed get max_limits");
+        goto exit_free;
+    } else {
+        ts_info("parse_csvfile %s OK", CSV_TP_SPECIAL_RAW_MAX);
+    }
 	/* obtain delta limit */
 	ret = parse_csvfile(temp_buf, firmware->size, CSV_TP_SPECIAL_RAW_DELTA,
 		test_params->deviation_limits, rx, tx);
@@ -642,25 +785,25 @@ static int goodix_init_testlimits(struct goodix_ts_test *ts_test)
 		ts_info("parse_csvfile %s OK", CSV_TP_SPECIAL_RAW_DELTA);
 	}
 
-	/* obtain self_raw min */
-	ret = parse_csvfile(temp_buf, firmware->size, CSV_TP_SPECIAL_SELFRAW_MIN,
-		test_params->self_min_limits, 1, tx + rx);
+    /* obtain self_raw min */
+    ret = parse_csvfile(temp_buf, firmware->size, CSV_TP_SPECIAL_SELFRAW_MIN,
+        test_params->self_min_limits, 1, tx + rx);
 	/* obtain self_raw max */
 	ret |= parse_csvfile(temp_buf, firmware->size, CSV_TP_SPECIAL_SELFRAW_MAX,
 		test_params->self_max_limits, 1, tx + rx);
-	if (ret < 0) {
-		ts_info("Can't find self_min_max_limits, ship this item");
+    if (ret < 0) {
+        ts_info("Can't find self_min_max_limits, ship this item");
 		ret = 0;
-		test_params->test_items[GTP_SELFCAP_TEST] = false;
-	} else {
-		ts_info("parse_csvfile %s OK", CSV_TP_SPECIAL_SELFRAW_MIN);
+        test_params->test_items[GTP_SELFCAP_TEST] = false;
+    } else {
+        ts_info("parse_csvfile %s OK", CSV_TP_SPECIAL_SELFRAW_MIN);
 		ts_info("parse_csvfile %s OK", CSV_TP_SPECIAL_SELFRAW_MAX);
 		test_params->test_items[GTP_SELFCAP_TEST] = true;
-	}
+    }
 
 	/* obtain noise_threshold */
 	ret = parse_csvfile(temp_buf, firmware->size, CSV_TP_NOISE_LIMIT,
-		&test_params->noise_threshold, 1, 1);
+			&test_params->noise_threshold[0], 1, 1);
 	if (ret < 0) {
 		ts_info("Can't find noise_threshold, skip this item");
 		ret = 0;
@@ -668,149 +811,177 @@ static int goodix_init_testlimits(struct goodix_ts_test *ts_test)
 	} else {
 		ts_info("parse_csvfile %s OK", CSV_TP_NOISE_LIMIT);
 		test_params->test_items[GTP_NOISE_TEST] = true;
+		for (freq_cnt = 1; freq_cnt < freq_num; freq_cnt++) {
+			memset(tmp_str, 0, sizeof(tmp_str));
+			sprintf(tmp_str, "%s%d", CSV_TP_NOISE_LIMIT, freq_cnt);
+			parse_csvfile(temp_buf, firmware->size, tmp_str,
+				&test_params->noise_threshold[freq_cnt], 1, 1);
+		}
 	}
 
-	/* obtain self_noise_threshold */
-	ret = parse_csvfile(temp_buf, firmware->size, CSV_TP_SELFNOISE_LIMIT,
-		&test_params->self_noise_threshold, 1, 1);
-	if (ret < 0) {
-		ts_info("Can't find self_noise_threshold, skip this item");
+    /* obtain self_noise_threshold */
+    ret = parse_csvfile(temp_buf, firmware->size, CSV_TP_SELFNOISE_LIMIT,
+        &test_params->self_noise_threshold, 1, 1);
+    if (ret < 0) {
+        ts_info("Can't find self_noise_threshold, skip this item");
 		ret = 0;
-		test_params->test_items[GTP_SELFNOISE_TEST] = false;
-	} else {
-		ts_info("parse_csvfile %s OK", CSV_TP_SELFNOISE_LIMIT);
+        test_params->test_items[GTP_SELFNOISE_TEST] = false;
+    } else {
+        ts_info("parse_csvfile %s OK", CSV_TP_SELFNOISE_LIMIT);
 		test_params->test_items[GTP_SELFNOISE_TEST] = true;
-	}
+    }
 
 	 /* obtain short_params */
-	ret = parse_csvfile(temp_buf, firmware->size, CSV_TP_SHORT_THRESHOLD,
-		(s32 *)data_buf, 1, 7);
-	if (ret < 0) {
+    ret = parse_csvfile(temp_buf, firmware->size, CSV_TP_SHORT_THRESHOLD,
+        (s32 *)data_buf, 1, 7);
+    if (ret < 0) {
 		ts_info("Can't find short shortciurt_threshold, skip this item");
 		ret = 0;
 		test_params->test_items[GTP_SHORT_TEST] = false;
-	} else {
-		ts_info("parse_csvfile %s OK", CSV_TP_SHORT_THRESHOLD);
+    } else {
+        ts_info("parse_csvfile %s OK", CSV_TP_SHORT_THRESHOLD);
 		test_params->test_items[GTP_SHORT_TEST] = true;
-		test_params->short_threshold = data_buf[0];
-		test_params->r_drv_drv_threshold = data_buf[1];
-		test_params->r_drv_sen_threshold = data_buf[2];
-		test_params->r_sen_sen_threshold = data_buf[3];
-		test_params->r_drv_gnd_threshold = data_buf[4];
-		test_params->r_sen_gnd_threshold = data_buf[5];
-		test_params->avdd_value = data_buf[6];
-	}
+        test_params->short_threshold = data_buf[0];
+        test_params->r_drv_drv_threshold = data_buf[1];
+        test_params->r_drv_sen_threshold = data_buf[2];
+        test_params->r_sen_sen_threshold = data_buf[3];
+        test_params->r_drv_gnd_threshold = data_buf[4];
+        test_params->r_sen_gnd_threshold = data_buf[5];
+        test_params->avdd_value = data_buf[6];
+    }
+	test_params->test_items[GTP_DIFF_SHIFT_TEST] = false;
+	memset(test_params->diff_shift_freq, 0, sizeof(test_params->diff_shift_freq));
+	for (freq_cnt = 0, i = 0; i < freq_num; i++) {
+		memset(tmp_str, 0, sizeof(tmp_str));
+		sprintf(tmp_str, "%s%d", CSV_TP_DIFF_SHIFT_MAX, i);
+		ret = parse_csvfile(temp_buf, firmware->size, tmp_str,
+				test_params->diff_shift_max[i], rx, tx);
+		if (ret == -EINTR)
+			continue;
 
+		if (ret < 0){
+			ts_err("failed get freq diff shift max %d", i);
+			goto exit_free;
+		}
+
+		ts_info("parse_csvfile %s, freq %d OK", CSV_TP_DIFF_SHIFT_MAX, i);
+		test_params->diff_shift_freq[i] = 1;
+		freq_cnt++;
+	}
+	ret = 0;
+	if (freq_cnt) {
+		test_params->diff_shift_test_freq_cnt = freq_cnt;
+		test_params->test_items[GTP_DIFF_SHIFT_TEST] = true;
+		ts_info("%s: test freq num %d", CSV_TP_DIFF_SHIFT_MAX, freq_cnt);
+	}
+	
 exit_free:
-	kfree(temp_buf);
-	release_firmware(firmware);
-	return ret;
+    vfree(temp_buf);
+    if (firmware)
+        release_firmware(firmware);
+    return ret;
 }
 
 static int goodix_tptest_prepare(struct goodix_ts_test *ts_test)
 {
-	int ret;
-	struct goodix_ic_config *cfg = &ts_test->test_config;
+    int ret;
+	struct goodix_fw_version ver;
+	struct goodix_ic_info ic_info;
 
 	ts_info("TP test prepare IN");
 
-	goodix_init_params(ts_test);
-	/* parse test limits from csv */
-	ret = goodix_init_testlimits(ts_test);
-	if (ret < 0) {
-		ts_err("Failed to init testlimits from csv.");
-		return ret;
-	}
+    goodix_init_params(ts_test);
+    /* parse test limits from csv */
+    ret = goodix_init_testlimits(ts_test);
+    if (ret < 0) {
+        ts_err("Failed to init testlimits from csv.");
+        return ret;
+    }
 
-	/* disable irq */
-	ts_test_irq_enable(ts_test, false);
-	/* close esd */
-	goodix_ts_blocking_notify(NOTIFY_ESD_OFF, NULL);
+    /* disable irq */
+    ts_test_irq_enable(ts_test, false);
+    /* close esd */
+    goodix_ts_blocking_notify(NOTIFY_ESD_OFF, NULL);
 
-	/* send test config if exist */
-	if (cfg->len > 0) {
-		ts_info("Test config exists and send it");
-		ret = ts_test->ts->hw_ops->send_config(ts_test->ts, cfg->data, cfg->len);
-		if (ret < 0) {
-			ts_err("Send test config failed, exit");
-			goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
-			ts_test_irq_enable(ts_test, true);
-			return ret;
-		}
-	}
+	/* read fw version & config id */
+	ts_test->ts->hw_ops->read_version(ts_test->ts, &ver);
+	ts_test->ts->hw_ops->get_ic_info(ts_test->ts, &ic_info);
+	ts_info("before send order config, PID:%s VID:%02x %02x %02x %02x CFGID:0x%x", ver.patch_pid,
+		ver.patch_vid[0], ver.patch_vid[1],
+		ver.patch_vid[2], ver.patch_vid[3],
+		ic_info.version.config_id);
 
-	return 0;
+		ts_test->ts->hw_ops->read_version(ts_test->ts, &ver);
+		ts_test->ts->hw_ops->get_ic_info(ts_test->ts, &ic_info);
+		ts_info("after send order config, PID:%s VID:%02x %02x %02x %02x CFGID:0x%x", ver.patch_pid,
+			ver.patch_vid[0], ver.patch_vid[1],
+			ver.patch_vid[2], ver.patch_vid[3],
+			ic_info.version.config_id);
+
+    return 0;
 }
 
 static void goodix_tptest_finish(struct goodix_ts_test *ts_test)
 {
 	ts_info("TP test finish IN");
-	/* reset chip */
-	ts_test_reset(ts_test, 100);
-	/* send normal config */
+    /* reset chip */
+    ts_test_reset(ts_test, 100);
+    /* send normal config */
 	if (ts_test->test_config.len > 0) {
 		if (ts_test_send_config(ts_test, CONFIG_TYPE_NORMAL))
 			ts_err("Send normal config failed");
 	}
 
-	/* open esd */
-	goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
-	/* enable irq */
-	ts_test_irq_enable(ts_test, true);
+    /* open esd */
+    goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
+    /* enable irq */
+    ts_test_irq_enable(ts_test, true);
 }
 
 #define SHORT_TEST_RUN_REG			0x10400
-#define SHORT_TEST_RUN_FLAG			0xAA
 #define INSPECT_FW_SWITCH_CMD		0x85
 #define TEST_FW_PID  				"OST"
 static int goodix_short_test_prepare(struct goodix_ts_test *ts_test)
 {
-	struct goodix_ts_cmd tmp_cmd;
-	struct goodix_fw_version fw_ver;
-	int ret;
-	int retry;
+    struct goodix_ts_cmd tmp_cmd;
+    struct goodix_fw_version fw_ver;
+    int ret;
+    int retry;
 	int resend = 3;
-	u8 status;
 
 	ts_info("short test prepare IN");
 	ts_test->test_result[GTP_SHORT_TEST] = SYS_SOFTWARE_REASON;
-	tmp_cmd.len = 4;
-	tmp_cmd.cmd = INSPECT_FW_SWITCH_CMD;
+    tmp_cmd.len = 4;
+    tmp_cmd.cmd = INSPECT_FW_SWITCH_CMD;
 
 resend_cmd:
-	ret = ts_test_send_cmd(ts_test, &tmp_cmd);
-	if (ret < 0) {
-		ts_err("send test mode failed");
-		return ret;
-	}
+    ret = ts_test_send_cmd(ts_test, &tmp_cmd);
+    if (ret < 0) {
+        ts_err("send test mode failed");
+        return ret;
+    }
 
 	retry = 3;
-	while (retry--) {
-		msleep(40);
-		if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_A) {
-			ret = ts_test_read_version(ts_test, &fw_ver);
-			if (ret < 0) {
-				ts_err("read test version failed");
-				return ret;
-			}
-			ret = memcmp(&(fw_ver.patch_pid[3]), TEST_FW_PID, strlen(TEST_FW_PID));
-			if (ret == 0)
-				return 0;
-			ts_info("patch ID dismatch %s != %s", fw_ver.patch_pid, TEST_FW_PID);
-		} else {
-			ret = ts_test_read(ts_test, SHORT_TEST_RUN_REG, &status, 1);
-			if (!ret && status == SHORT_TEST_RUN_FLAG)
-				return 0;
-			ts_info("short_mode_status=0x%02x ret=%d", status, ret);
+    while (retry--) {
+        msleep(40);
+		ret = ts_test_read_version(ts_test, &fw_ver);
+		if (ret < 0) {
+			ts_err("read test version failed");
+			return ret;
 		}
-	}
+		ret = memcmp(&(fw_ver.patch_pid[3]), TEST_FW_PID, strlen(TEST_FW_PID));
+		if (ret == 0)
+			return 0;
+		else
+			ts_info("patch ID dismatch %s != %s", fw_ver.patch_pid, TEST_FW_PID);
+    }
 
 	if (resend--) {
 		ts_test_reset(ts_test, 100);
 		goto resend_cmd;
 	}
 
-	return -EINVAL;
+    return -EINVAL;
 }
 
 static u32 map_die2pin(struct ts_test_params *test_params, u32 chn_num)
@@ -842,7 +1013,7 @@ static u32 map_die2pin(struct ts_test_params *test_params, u32 chn_num)
 	else
 		res |= DRV_CHANNEL_FLAG;
 
-	return res;
+	return res;   
 }
 
 static void goodix_save_short_res(struct ts_test_params *params,
@@ -857,7 +1028,7 @@ static void goodix_save_short_res(struct ts_test_params *params,
 
 	if (chn1 == chn2 || short_res->short_num >= MAX_SHORT_NUM)
 		return;
-
+	
 	for (i = 0; i < short_res->short_num; i++) {
 		repeat_cnt = 0;
 		if (short_res->short_msg[4 * i] == chn1)
@@ -884,7 +1055,7 @@ static void goodix_save_short_res(struct ts_test_params *params,
 }
 
 static int gdix_check_tx_tx_shortcircut(struct goodix_ts_test *ts_test,
-	u8 short_ch_num)
+        u8 short_ch_num)
 {
 	int ret = 0, err = 0;
 	u32 r_threshold = 0, short_r = 0;
@@ -904,7 +1075,7 @@ static int gdix_check_tx_tx_shortcircut(struct goodix_ts_test *ts_test,
 		ts_err("Failed to alloc memory");
 		return -ENOMEM;
 	}
-	/* drv&drv shortcircut check */
+    /* drv&drv shortcircut check */
 	data_reg = test_params->params_info->drv_drv_selfcode_reg;
 	for (i = 0; i < short_ch_num; i++) {
 		ret = ts_test_read(ts_test, data_reg, data_buf, size);
@@ -972,7 +1143,7 @@ static int gdix_check_tx_tx_shortcircut(struct goodix_ts_test *ts_test,
 }
 
 static int gdix_check_rx_rx_shortcircut(struct goodix_ts_test *ts_test,
-	u8 short_ch_num)
+        u8 short_ch_num)
 {
 	int ret = 0, err = 0;
 	u32 r_threshold = 0, short_r = 0;
@@ -993,7 +1164,7 @@ static int gdix_check_rx_rx_shortcircut(struct goodix_ts_test *ts_test,
 	}
 	/* drv&drv shortcircut check */
 	data_reg = test_params->params_info->sen_sen_selfcode_reg;
-	for (i = 0; i < short_ch_num; i++) {
+    for (i = 0; i < short_ch_num; i++) {
 		ret = ts_test_read(ts_test, data_reg, data_buf, size);
 		if (ret) {
 			ts_err("Failed read Sen-to-Sen short rawdata");
@@ -1002,15 +1173,15 @@ static int gdix_check_rx_rx_shortcircut(struct goodix_ts_test *ts_test,
 		}
 
 		if (checksum_cmp(data_buf, size, CHECKSUM_MODE_U8_LE)) {
-			ts_err("Sen-to-Sen adc data checksum error");
+			ts_err("Sen-to-Sen adc data checksum error");				
 			err = -EINVAL;
-			break;
+			break;		
 		}
 
 		r_threshold = test_params->r_sen_sen_threshold;
 		short_die_num = le16_to_cpup((__le16 *)&data_buf[0]);
 		if (short_die_num >= max_sen_num) {
-			ts_info("invalid short pad num:%d", short_die_num);
+			ts_info("invalid short pad num:%d",	short_die_num);
 			continue;
 		}
 
@@ -1051,17 +1222,17 @@ static int gdix_check_rx_rx_shortcircut(struct goodix_ts_test *ts_test,
 	}
 
 	kfree(data_buf);
-	return err;
+	return err;    
 }
 
 static int gdix_check_tx_rx_shortcircut(struct goodix_ts_test *ts_test,
-	u8 short_ch_num)
+        u8 short_ch_num)
 {
 	int ret = 0, err = 0;
-	u32 r_threshold = 0, short_r = 0;
+	u32 r_threshold = 0, short_r = 0;	
 	int size = 0, i = 0, j = 0;
 	u16 adc_signal = 0;
-	u8 master_pin_num, slave_pin_num;
+	u8 master_pin_num, slave_pin_num;	
 	u8 *data_buf = NULL;
 	u32 data_reg;
 	struct ts_test_params *test_params = &ts_test->test_params;
@@ -1094,7 +1265,7 @@ static int gdix_check_tx_rx_shortcircut(struct goodix_ts_test *ts_test,
 		r_threshold = test_params->r_drv_sen_threshold;
 		short_die_num = le16_to_cpup((__le16 *)&data_buf[0]);
 		if (short_die_num >= max_sen_num) {
-			ts_info("invalid short pad num:%d", short_die_num);
+			ts_info("invalid short pad num:%d",	short_die_num);
 			continue;
 		}
 
@@ -1135,11 +1306,11 @@ static int gdix_check_tx_rx_shortcircut(struct goodix_ts_test *ts_test,
 	}
 
 	kfree(data_buf);
-	return err;
+	return err;    
 }
 
 static int gdix_check_resistance_to_gnd(struct ts_test_params *test_params,
-	u16 adc_signal, u32 pos)
+        u16 adc_signal, u32 pos)
 {
 	long r = 0;
 	u16 r_th = 0, avdd_value = 0;
@@ -1147,7 +1318,7 @@ static int gdix_check_resistance_to_gnd(struct ts_test_params *test_params,
 	u8 pin_num = 0;
 	unsigned short short_type;
 	struct goodix_ts_test *ts_test = container_of(test_params,
-					struct goodix_ts_test, test_params);
+		struct goodix_ts_test, test_params);
 	int max_drv_num = test_params->params_info->max_drv_num;
 	int max_sen_num = test_params->params_info->max_sen_num;
 
@@ -1197,7 +1368,7 @@ static int gdix_check_gndvdd_shortcircut(struct goodix_ts_test *ts_test)
 	int ret = 0, err = 0;
 	int size = 0, i = 0;
 	u16 adc_signal = 0;
-	u32 data_reg;
+    u32 data_reg;
 	u8 *data_buf = NULL;
 	int max_drv_num = ts_test->test_params.params_info->max_drv_num;
 	int max_sen_num = ts_test->test_params.params_info->max_sen_num;
@@ -1221,7 +1392,7 @@ static int gdix_check_gndvdd_shortcircut(struct goodix_ts_test *ts_test)
 	if (checksum_cmp(data_buf, size, CHECKSUM_MODE_U8_LE)) {
 		ts_err("diff code checksum error");
 		err = -EINVAL;
-		goto err_out;
+		goto err_out;		
 	}
 
 	for (i = 0; i < max_drv_num + max_sen_num; i++) {
@@ -1241,17 +1412,16 @@ err_out:
 
 static int goodix_shortcircut_analysis(struct goodix_ts_test *ts_test)
 {
-	int ret;
-	int err = 0;
-	test_result_t test_result;
+    int ret;
+    int err = 0;
+    test_result_t test_result;
 
-	ret = ts_test_read(ts_test,
-			ts_test->test_params.params_info->short_test_result_reg,
-			(u8 *)&test_result, sizeof(test_result));
-	if (ret < 0) {
-		ts_err("Read TEST_RESULT_REG failed");
-		return ret;
-	}
+    ret = ts_test_read(ts_test, ts_test->test_params.params_info->short_test_result_reg,
+        (u8 *)&test_result, sizeof(test_result));
+    if (ret < 0) {
+        ts_err("Read TEST_RESULT_REG failed");
+        return ret;
+    }
 
 	if (checksum_cmp((u8 *)&test_result, sizeof(test_result),
 		CHECKSUM_MODE_U8_LE)) {
@@ -1276,26 +1446,26 @@ static int goodix_shortcircut_analysis(struct goodix_ts_test *ts_test)
 	if (test_result.drv_gnd_avdd_num || test_result.sen_gnd_avdd_num)
 		err |= gdix_check_gndvdd_shortcircut(ts_test);
 
-	ts_info(">>>>> short check return 0x%x", err);
+    ts_info(">>>>> short check return 0x%x", err);
 
-	return err;
+    return err;
 }
 
 #define SHORT_FW_CMD_REG				0x10400
 static int send_test_cmd(struct goodix_ts_test *ts_test,
-	struct goodix_ts_cmd *cmd)
+    struct goodix_ts_cmd *cmd)
 {
-	int ret;
-	u32 reg = SHORT_FW_CMD_REG;
-
-	cmd->state = 0;
-	cmd->ack = 0;
-	goodix_append_checksum(&(cmd->buf[2]), cmd->len - 2, CHECKSUM_MODE_U8_LE);
-	ret = ts_test_write(ts_test, reg, cmd->buf, cmd->len + 2);
-	if (ret < 0)
-		return ret;
-	usleep_range(10000, 11000);
-	return ret;
+    int ret;
+    u32 reg = SHORT_FW_CMD_REG;
+    cmd->state = 0;
+    cmd->ack = 0;
+    goodix_append_checksum(&(cmd->buf[2]), cmd->len - 2,
+            CHECKSUM_MODE_U8_LE);
+    ret = ts_test_write(ts_test, reg, cmd->buf, cmd->len + 2);
+    if (ret < 0)
+        return ret;
+    usleep_range(10000, 11000);
+    return ret;
 }
 
 
@@ -1304,12 +1474,12 @@ static int send_test_cmd(struct goodix_ts_test *ts_test,
 #define SHORT_TEST_THRESHOLD_REG		0x20402
 static void goodix_shortcircut_test(struct goodix_ts_test *ts_test)
 {
-	int ret = 0;
-	int retry;
-	u16 test_time;
+    int ret = 0;
+    int retry;
+    u16 test_time;
 	u8 status;
 	int ic_type = ts_test->ts->bus->ic_type;
-	struct goodix_ts_cmd test_parm_cmd;
+    struct goodix_ts_cmd test_parm_cmd;
 	// u8 test_param[6];
 
 	ts_info("---------------------- short_test begin ----------------------");
@@ -1320,9 +1490,10 @@ static void goodix_shortcircut_test(struct goodix_ts_test *ts_test)
 	}
 
 	/* get short test time */
+
 	ret = ts_test_read(ts_test,
-		ts_test->test_params.params_info->short_test_time_reg,
-		(u8 *)&test_time, 2);
+			ts_test->test_params.params_info->short_test_time_reg,
+			(u8 *)&test_time, 2);
 	if (ret < 0) {
 		ts_err("Failed to get test_time, default %dms", DEFAULT_TEST_TIME_MS);
 		test_time = DEFAULT_TEST_TIME_MS;
@@ -1331,28 +1502,40 @@ static void goodix_shortcircut_test(struct goodix_ts_test *ts_test)
 			test_time /= 10;
 		if (test_time > MAX_TEST_TIME_MS) {
 			ts_info("test time too long %d > %d",
-			test_time, MAX_TEST_TIME_MS);
+					test_time, MAX_TEST_TIME_MS);
 			test_time = MAX_TEST_TIME_MS;
 		}
-		ts_info("get test time %dms", test_time);
 	}
 
+	/* get short test time */
+
+	ret = ts_test_read(ts_test,
+			ts_test->test_params.params_info->short_test_time_reg,
+			(u8 *)&test_time, 2);
+	if (ret < 0) {
+		ts_err("Failed to get test_time, default %dms", DEFAULT_TEST_TIME_MS);
+		test_time = DEFAULT_TEST_TIME_MS;
+	} else {
+		if (ic_type == IC_TYPE_BERLIN_A)
+			test_time /= 10;
+		if (test_time > MAX_TEST_TIME_MS) {
+			ts_info("test time too long %d > %d",
+					test_time, MAX_TEST_TIME_MS);
+			test_time = MAX_TEST_TIME_MS;
+		}
+	}
+
+	ts_info("get test time %dms", test_time);
 	/* start short test */
 	if (ic_type == IC_TYPE_BERLIN_A) {
 		test_parm_cmd.len = 0x0A;
 		test_parm_cmd.cmd = INSPECT_PARAM_CMD;
-		test_parm_cmd.data[0] =
-			ts_test->test_params.params_info->dft_short_threshold & 0xFF;
-		test_parm_cmd.data[1] =
-			(ts_test->test_params.params_info->dft_short_threshold >> 8) & 0xFF;
-		test_parm_cmd.data[2] =
-			ts_test->test_params.params_info->short_diffcode_threshold & 0xFF;
-		test_parm_cmd.data[3] =
-			(ts_test->test_params.params_info->short_diffcode_threshold >> 8) & 0xFF;
-		test_parm_cmd.data[4] =
-			ts_test->test_params.params_info->short_test_dump_num & 0xFF;
-		test_parm_cmd.data[5] =
-			(ts_test->test_params.params_info->short_test_dump_num >> 8) & 0xFF;
+		test_parm_cmd.data[0] = ts_test->test_params.params_info->dft_short_threshold & 0xFF;
+		test_parm_cmd.data[1] = (ts_test->test_params.params_info->dft_short_threshold >> 8) & 0xFF;
+		test_parm_cmd.data[2] = ts_test->test_params.params_info->short_diffcode_threshold & 0xFF;
+		test_parm_cmd.data[3] = (ts_test->test_params.params_info->short_diffcode_threshold >> 8) & 0xFF;
+		test_parm_cmd.data[4] = ts_test->test_params.params_info->short_test_dump_num & 0xFF;
+		test_parm_cmd.data[5] = (ts_test->test_params.params_info->short_test_dump_num >> 8) & 0xFF;
 		ret = send_test_cmd(ts_test, &test_parm_cmd);
 		if (ret < 0) {
 			ts_err("send INSPECT_PARAM_CMD failed");
@@ -1360,18 +1543,12 @@ static void goodix_shortcircut_test(struct goodix_ts_test *ts_test)
 		}
 	} else {
 		// test_param[0] = ts_test->test_params.params_info->dft_short_threshold & 0xFF;
-		// test_param[1] =
-		//	(ts_test->test_params.params_info->dft_short_threshold >> 8) & 0xFF;
-		// test_param[2] =
-		//	ts_test->test_params.params_info->short_diffcode_threshold & 0xFF;
-		// test_param[3] =
-		//	(ts_test->test_params.params_info->short_diffcode_threshold >> 8) & 0xFF;
-		// test_param[4] =
-		//	ts_test->test_params.params_info->short_test_dump_num & 0xFF;
-		// test_param[5] =
-		//	(ts_test->test_params.params_info->short_test_dump_num >> 8) & 0xFF;
-		// ts_test_write(ts_test, SHORT_TEST_THRESHOLD_REG,
-		//	test_param, sizeof(test_param));
+		// test_param[1] = (ts_test->test_params.params_info->dft_short_threshold >> 8) & 0xFF;
+		// test_param[2] = ts_test->test_params.params_info->short_diffcode_threshold & 0xFF;
+		// test_param[3] = (ts_test->test_params.params_info->short_diffcode_threshold >> 8) & 0xFF;
+		// test_param[4] = ts_test->test_params.params_info->short_test_dump_num & 0xFF;
+		// test_param[5] = (ts_test->test_params.params_info->short_test_dump_num >> 8) & 0xFF;
+		// ts_test_write(ts_test, SHORT_TEST_THRESHOLD_REG, test_param, sizeof(test_param));
 		status = 0;
 		ts_test_write(ts_test, SHORT_TEST_RUN_REG, &status, 1);
 	}
@@ -1380,8 +1557,7 @@ static void goodix_shortcircut_test(struct goodix_ts_test *ts_test)
 	msleep(test_time);
 	retry = 50;
 	while (retry--) {
-		ret = ts_test_read(ts_test,
-			ts_test->test_params.params_info->short_test_status_reg, &status, 1);
+		ret = ts_test_read(ts_test, ts_test->test_params.params_info->short_test_status_reg, &status, 1);
 		if (!ret && status == SHORT_TEST_FINISH_FLAG)
 			break;
 		msleep(50);
@@ -1404,8 +1580,9 @@ static void goodix_shortcircut_test(struct goodix_ts_test *ts_test)
 #define GOODIX_TOUCH_EVENT	0x80
 static int goodix_cap_test_prepare(struct goodix_ts_test *ts_test)
 {
-	int ret;
+    int ret;
 	struct goodix_ts_cmd temp_cmd;
+	struct goodix_ic_config *cfg = &ts_test->test_config;
 
 	ts_info("cap test prepare IN");
 	ts_test->test_result[GTP_CAP_TEST] = SYS_SOFTWARE_REASON;
@@ -1416,6 +1593,16 @@ static int goodix_cap_test_prepare(struct goodix_ts_test *ts_test)
 		ts_test->test_result[GTP_NOISE_TEST] = SYS_SOFTWARE_REASON;
 	if (ts_test->test_params.test_items[GTP_SELFNOISE_TEST])
 		ts_test->test_result[GTP_SELFNOISE_TEST] = SYS_SOFTWARE_REASON;
+
+	/* send test config if exist */
+	if (cfg->len > 0) {
+		ts_info("Test config exists and send it");
+		ret = ts_test->ts->hw_ops->send_config(ts_test->ts, cfg->data, cfg->len);
+		if (ret < 0) {
+			ts_err("Send test config failed, exit");
+			return ret;
+		}
+	}
 
 	/* switch rawdata mode */
 	if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_D) {
@@ -1436,7 +1623,7 @@ static int goodix_cap_test_prepare(struct goodix_ts_test *ts_test)
 static int goodix_cap_test_finish(struct goodix_ts_test *ts_test)
 {
 	ts_info("cap_test finished");
-	/* switch coor mode */
+    /* switch coor mode */
 	ts_test_reset(ts_test, 100);
 	return 0;
 }
@@ -1448,7 +1635,6 @@ static int goodix_cache_rawdata(struct goodix_ts_test *ts_test)
 	int retry;
 	u8 val;
 	unsigned char frame_buf[GOODIX_MAX_FRAMEDATA_LEN];
-	struct frame_head *frame_head;
 	struct goodix_ts_core *cd = ts_test->ts;
 	unsigned char *cur_ptr;
 	u32 sen_num = ts_test->test_params.sen_num;
@@ -1457,8 +1643,16 @@ static int goodix_cache_rawdata(struct goodix_ts_test *ts_test)
 	u32 data_addr = ts_test->test_params.rawdata_addr;
 	u32 flag_addr = ts_test->ts->ic_info.misc.touch_data_addr;
 
-	if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_D)
+	if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_D ||
+			ts_test->ts->bus->ic_type == IC_TYPE_NOTTINGHAM ||
+			ts_test->ts->bus->ic_type == IC_TYPE_MARSEILLE)
 		flag_addr = ts_test->ts->ic_info.misc.frame_data_addr;
+
+	for (i = 0; i < DISCARD_FRAMES; i++) {
+		val = 0;
+		ts_test_write(ts_test, flag_addr, &val, 1);
+		msleep(20);
+	}
 
 	for (i = 0; i < TOTAL_FRAME_NUM; i++) {
 		val = 0;
@@ -1479,27 +1673,23 @@ static int goodix_cache_rawdata(struct goodix_ts_test *ts_test)
 			return -EAGAIN;
 		}
 
-		if (cd->bus->ic_type == IC_TYPE_BERLIN_D) {
+		if (cd->bus->ic_type == IC_TYPE_BERLIN_D ||
+				cd->bus->ic_type == IC_TYPE_NOTTINGHAM ||
+				cd->bus->ic_type == IC_TYPE_MARSEILLE) {
 			ret = ts_test_read(ts_test, flag_addr, frame_buf, sizeof(frame_buf));
 			if (ret < 0)
 				return ret;
-			if (checksum_cmp(frame_buf,
-				cd->ic_info.misc.frame_data_head_len, CHECKSUM_MODE_U8_LE)) {
+			if (checksum_cmp(frame_buf, cd->ic_info.misc.frame_data_head_len, CHECKSUM_MODE_U8_LE)) {
 				ts_err("frame head checksum error");
-				return -EINVAL; 
-			}
-			frame_head = (struct frame_head *)frame_buf;
-			if (checksum_cmp(frame_buf,
-				frame_head->cur_frame_len, CHECKSUM_MODE_U16_LE)) {
-				ts_err("frame body checksum error");
 				return -EINVAL;
 			}
+
 			cur_ptr = frame_buf;
 			cur_ptr += cd->ic_info.misc.frame_data_head_len;
 			cur_ptr += cd->ic_info.misc.fw_attr_len;
 			cur_ptr += cd->ic_info.misc.fw_log_len;
 			memcpy((u8 *)ts_test->rawdata[i].data, cur_ptr + 8,
-					cd->ic_info.misc.mutual_struct_len - 8);
+					data_size * 2);
 		} else {
 			ret = ts_test_read(ts_test, data_addr,
 				(u8 *)ts_test->rawdata[i].data, data_size * sizeof(s16));
@@ -1528,7 +1718,6 @@ static void goodix_cache_deltadata(struct goodix_ts_test *ts_test)
 		data_size = ts_test->rawdata[i].size;
 		if (data_size == 0)
 			continue;
-
 		for (j = 0; j < data_size; j++) {
 			raw = ts_test->rawdata[i].data[j];
 			max_val = 0;
@@ -1545,7 +1734,7 @@ static void goodix_cache_deltadata(struct goodix_ts_test *ts_test)
 				max_val = MAX(max_val, temp);
 			}
 			/* calcu delta with left node */
-			if (j > 0 && j % tx) {
+			if (j % tx) {
 				temp = ts_test->rawdata[i].data[j - 1];
 				temp = ABS(temp - raw);
 				max_val = MAX(max_val, temp);
@@ -1556,7 +1745,8 @@ static void goodix_cache_deltadata(struct goodix_ts_test *ts_test)
 				temp = ABS(temp - raw);
 				max_val = MAX(max_val, temp);
 			}
-			ts_test->accord_arr[i].data[j] = max_val * 1000 / raw;
+			temp = max_val * 1000 / raw;
+			ts_test->accord_arr[i].data[j] = (temp > 32767) ? 32767 : temp;
 		}
 		ts_test->accord_arr[i].size = data_size;
 	}
@@ -1570,18 +1760,236 @@ static int goodix_cache_self_rawdata(struct goodix_ts_test *ts_test)
 	u32 data_size = sen_num + drv_num;
 	u32 data_addr = ts_test->test_params.self_rawdata_addr;
 	u32 flag_addr = ts_test->ts->ic_info.misc.frame_data_addr;
-	struct frame_head *frame_head;
+
 	struct goodix_ts_core *cd = ts_test->ts;
 	unsigned char frame_buf[GOODIX_MAX_FRAMEDATA_LEN];
-	unsigned char *cur_ptr;
+	unsigned char *cur_ptr;	
 
-	if (cd->bus->ic_type == IC_TYPE_BERLIN_D) {
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_D ||
+			cd->bus->ic_type == IC_TYPE_NOTTINGHAM ||
+			cd->bus->ic_type == IC_TYPE_MARSEILLE) {
 		ret = ts_test_read(ts_test, flag_addr, frame_buf, sizeof(frame_buf));
 		if (ret < 0)
 			return ret;
+		if (checksum_cmp(frame_buf, cd->ic_info.misc.frame_data_head_len, CHECKSUM_MODE_U8_LE)) {
+			ts_err("frame head checksum error");
+			return -EINVAL;
+		}
 
-		if (checksum_cmp(frame_buf,
-			cd->ic_info.misc.frame_data_head_len, CHECKSUM_MODE_U8_LE)) {
+		cur_ptr = frame_buf;
+		cur_ptr += cd->ic_info.misc.frame_data_head_len;
+		cur_ptr += cd->ic_info.misc.fw_attr_len;
+		cur_ptr += cd->ic_info.misc.fw_log_len;
+		cur_ptr += cd->ic_info.misc.mutual_struct_len;
+		memcpy((u8 *)ts_test->self_rawdata.data, cur_ptr + 10,
+				data_size * 2);
+	} else {
+		ret = ts_test_read(ts_test, data_addr,
+			(u8 *)ts_test->self_rawdata.data, data_size * sizeof(s16));
+		if (ret < 0)
+			return ret;
+	}
+	ts_test->self_rawdata.size = data_size;
+
+	return ret;
+}
+
+enum TEST_STAGE {
+	TEST_STAGE_NONE = 0,
+	TEST_STAGE_PREPARE,
+	TEST_STAGE_OPEN_SHORT_S,
+	TEST_STAGE_OPEN_SHORT_E,
+	TEST_STAGE_FINISH = 20,
+};
+
+int g_test_stage = 0;
+
+#define DATA_MODE_RAW  1
+#define DATA_MODE_DIFF 2
+static int goodix_switch_data_mode(struct goodix_ts_test *ts_test, int mode)
+{
+	struct goodix_ts_cmd temp_cmd;
+
+	if (ts_test->ts->bus->ic_type != IC_TYPE_BERLIN_D) {
+		temp_cmd.cmd = GOODIX_CMD_RAWDATA;
+		temp_cmd.len = 4;
+		return ts_test_send_cmd(ts_test, &temp_cmd);
+	}
+
+	if (mode == DATA_MODE_RAW)
+		temp_cmd.data[0] = 0x81;
+	else if (mode == DATA_MODE_DIFF)
+		temp_cmd.data[0] = 0x82;
+	else
+		return -EINVAL;
+
+	temp_cmd.cmd = 0x90;
+	temp_cmd.len = 5;
+	return ts_test_send_cmd(ts_test, &temp_cmd);
+}
+
+int goodix_diff_shift_test_start(struct goodix_ts_core *cd, int freq_index)
+{
+	int ret;
+	struct goodix_ts_cmd temp_cmd;
+	struct goodix_ts_test *ts_test = g_ts_test;
+
+	if (!ts_test) {
+		ts_err("test work does not init");
+		return -EINVAL;
+	}
+
+	if (!ts_test->test_params.diff_shift_freq[freq_index]) {
+		ts_err("freq %d diff shift test not enabled", freq_index);
+		return -EINVAL;
+	}
+	// send diff data cmd
+	ret = goodix_switch_data_mode(ts_test, DATA_MODE_DIFF);
+	if (ret < 0) {
+		ts_err("switch diffdata mode failed, exit!");
+		return ret;
+	}
+	ts_info("start diff shift test on freq %d", freq_index);
+	// send switch to freq_index cmd
+	temp_cmd.cmd = 0x9C;
+	temp_cmd.data[0] = freq_index;
+	temp_cmd.len = 5;
+	ret = ts_test_send_cmd(ts_test, &temp_cmd);
+	if (ret < 0) {
+		ts_err("switch freq index:%d failed", freq_index);
+		return ret;
+	}
+	//  delay 10ms
+	msleep(10);
+	// send diff test start cmd
+	temp_cmd.cmd = 0x90;
+	temp_cmd.data[0] = 0x88;
+	temp_cmd.data[1] = 0x1;
+	temp_cmd.len = 6;
+	ret = ts_test_send_cmd(ts_test, &temp_cmd);
+	if (ret < 0) {
+		ts_err("send start diff test cmd failed");
+		return ret;
+	}
+	return 0;
+}
+
+static int goodix_diff_shift_result_check(struct goodix_ts_test *ts_test)
+{
+	int i;
+	int freq_index;
+	int error_node_count;
+	s16 val;
+	s32 sen_num = ts_test->test_params.sen_num;
+	s32 drv_num = ts_test->test_params.drv_num;
+	u32 data_size;
+
+	if (!ts_test->test_params.test_items[GTP_DIFF_SHIFT_TEST]) {
+		/* diff shift test not enable */
+		return 0;
+	}
+
+	ts_test->test_result[GTP_DIFF_SHIFT_TEST] = SYS_SOFTWARE_REASON;
+
+	data_size = sen_num * drv_num;
+	error_node_count = 0;
+	for (freq_index = 0; freq_index < MAX_SCAN_FREQ_NUM; freq_index++) {
+		if (!ts_test->test_params.diff_shift_freq[freq_index])
+			continue;
+
+		for (i = 0; i < data_size; i++) {
+			val = ts_test->diff_shift_noise[freq_index][i];
+			if (val > ts_test->test_params.diff_shift_max[freq_index][i]) {
+				ts_err("diff shift test freq %d, node %d = %d > %d",
+					freq_index, i, val, ts_test->test_params.diff_shift_max[freq_index][i]);
+				error_node_count++;
+			}
+		}
+	}
+
+	if (!error_node_count) {
+		ts_test->test_result[GTP_DIFF_SHIFT_TEST] = GTP_TEST_PASS;
+		ts_info("diff shift test pass");
+	} else {
+		ts_test->test_result[GTP_DIFF_SHIFT_TEST] = GTP_PANEL_REASON;
+		ts_info("diff shift test failed, fail node num %d", error_node_count);
+	}
+	return 0;	
+}
+
+int goodix_diff_shift_test_end(struct goodix_ts_core *cd, int freq_index)
+{
+	int ret, retry, i;
+	u8 val;
+	struct goodix_ts_cmd temp_cmd;
+	struct goodix_ts_test *ts_test = g_ts_test;
+	struct frame_head *frame_head;
+	u8 *frame_buf, *cur_ptr;
+	u32 sen_num, drv_num, data_size, data_addr, flag_addr;
+	int frame_len;
+
+	if (!ts_test) {
+		ts_err("test work does not init");
+		return -EINVAL;
+	}
+
+	frame_buf = ts_test->frame_buf;
+	sen_num = ts_test->test_params.sen_num;
+	drv_num = ts_test->test_params.drv_num;
+	data_size = sen_num * drv_num;
+	data_addr = ts_test->test_params.noisedata_addr;
+
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_D)
+		flag_addr = ts_test->ts->ic_info.misc.frame_data_addr;
+	else
+		flag_addr = ts_test->ts->ic_info.misc.touch_data_addr;
+	// clean data ready flag
+	val = 0;
+	ret = ts_test_write(ts_test, flag_addr, &val, 1);
+	if (ret < 0) {
+		ts_err("clean touch event failed, exit");
+		return -EAGAIN;
+	}
+
+	ts_info("try stop diff shift test on freq %d", freq_index);
+	// send cmd stop diff test
+	temp_cmd.cmd = 0x90;
+	temp_cmd.data[0] = 0x88;
+	temp_cmd.data[1] = 0x2;
+	temp_cmd.len = 6;
+	ret = ts_test_send_cmd(ts_test, &temp_cmd);
+	if (ret < 0) {
+		ts_err("send stop diff test cmd failed");
+		return ret;
+	}
+
+	// wait data ready
+	retry = 20;
+	while (retry--) {
+		usleep_range(5000, 5100);
+		ret = ts_test_read(ts_test, flag_addr, &val, 1);
+		if (!ret && (val & 0x80))
+			break;
+	}
+	if (retry < 0) {
+		ts_err("diff shift data is not ready val:0x%02x", val);
+		return -EAGAIN;
+	}
+
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_D) {
+		frame_len = cd->ic_info.misc.frame_data_head_len +
+				cd->ic_info.misc.fw_attr_len +
+				cd->ic_info.misc.fw_log_len +
+				data_size * sizeof(s16) +
+				1024;
+		if (frame_len > sizeof(ts_test->frame_buf)) {
+			ts_info("frame_len exceed limit %d > %lu", frame_len, sizeof(ts_test->frame_buf));
+			return -EINVAL;
+		}
+		ret = ts_test_read(ts_test, flag_addr, frame_buf, frame_len);
+		if (ret < 0)
+			return ret;
+		if (checksum_cmp(frame_buf, cd->ic_info.misc.frame_data_head_len, CHECKSUM_MODE_U8_LE)) {
 			ts_err("frame head checksum error");
 			return -EINVAL;
 		}
@@ -1594,19 +2002,20 @@ static int goodix_cache_self_rawdata(struct goodix_ts_test *ts_test)
 		cur_ptr += cd->ic_info.misc.frame_data_head_len;
 		cur_ptr += cd->ic_info.misc.fw_attr_len;
 		cur_ptr += cd->ic_info.misc.fw_log_len;
-		cur_ptr += cd->ic_info.misc.mutual_struct_len;
-		memcpy((u8 *)ts_test->self_rawdata.data, cur_ptr + 10,
-				cd->ic_info.misc.self_struct_len - 10);
+		memcpy((u8 *)ts_test->diff_shift_noise[freq_index], cur_ptr + 8,
+				data_size * 2);
 	} else {
 		ret = ts_test_read(ts_test, data_addr,
-				(u8 *)ts_test->self_rawdata.data,
-				data_size * sizeof(s16));
+			(u8 *)ts_test->diff_shift_noise[freq_index], data_size * sizeof(s16));
 		if (ret < 0)
 			return ret;
 	}
-	ts_test->self_rawdata.size = data_size;
 
-	return ret;
+	goodix_rotate_abcd2cbad(drv_num, sen_num, ts_test->diff_shift_noise[freq_index]);
+	for (i = 0; i < data_size; i++)
+		ts_test->diff_shift_noise[freq_index][i] = ABS(ts_test->diff_shift_noise[freq_index][i]);
+
+	return 0;
 }
 
 static int goodix_cache_noisedata(struct goodix_ts_test *ts_test)
@@ -1616,7 +2025,7 @@ static int goodix_cache_noisedata(struct goodix_ts_test *ts_test)
 	int cnt;
 	int retry;
 	u8 val;
-	unsigned char frame_buf[GOODIX_MAX_FRAMEDATA_LEN];
+	u8 *frame_buf = ts_test->frame_buf;
 	unsigned char *cur_ptr;
 	struct frame_head *frame_head;
 	struct goodix_ts_cmd temp_cmd;
@@ -1626,8 +2035,12 @@ static int goodix_cache_noisedata(struct goodix_ts_test *ts_test)
 	u32 data_size = sen_num * drv_num;
 	u32 data_addr = ts_test->test_params.noisedata_addr;
 	u32 flag_addr = ts_test->ts->ic_info.misc.touch_data_addr;
+	int freq_num = ts_test->ts->ic_info.parm.mutual_freq_num;
+	int freq_cnt, frame_len;
 
-	if (cd->bus->ic_type == IC_TYPE_BERLIN_D) {
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_D ||
+			cd->bus->ic_type == IC_TYPE_NOTTINGHAM ||
+			cd->bus->ic_type == IC_TYPE_MARSEILLE) {
 		flag_addr = ts_test->ts->ic_info.misc.frame_data_addr;
 		temp_cmd.cmd = 0x90;
 		temp_cmd.data[0] = 0x82;
@@ -1638,60 +2051,91 @@ static int goodix_cache_noisedata(struct goodix_ts_test *ts_test)
 			return ret;
 		}
 	}
-
-	for (cnt = 0; cnt < NOISEDATA_TEST_TIMES; cnt++) {
-		val = 0;
-		ret = ts_test_write(ts_test, flag_addr, &val, 1);
+	
+	for (freq_cnt = 0; freq_cnt < freq_num; freq_cnt++) {
+		temp_cmd.cmd = 0x9C;
+		temp_cmd.data[0] = freq_cnt;
+		temp_cmd.len = 5;
+		ret = ts_test_send_cmd(ts_test, &temp_cmd);
 		if (ret < 0) {
-			ts_err("clean touch event failed, exit");
-			return -EAGAIN;
-		}
-		retry = 20;
-		while (retry--) {
-			usleep_range(5000, 5100);
-			ret = ts_test_read(ts_test, flag_addr, &val, 1);
-			if (!ret && (val & 0x80))
-				break;
-		}
-		if (retry < 0) {
-			ts_err("noisedata is not ready val:0x%02x i:%d, exit", val, cnt);
-			return -EAGAIN;
+			ts_err("switch freq index:%d failed", freq_cnt);
+			return ret;
 		}
 
-		if (cd->bus->ic_type == IC_TYPE_BERLIN_D) {
-			ret = ts_test_read(ts_test, flag_addr, frame_buf, sizeof(frame_buf));
-			if (ret < 0)
-				return ret;
-			if (checksum_cmp(frame_buf,
-					cd->ic_info.misc.frame_data_head_len,
-					CHECKSUM_MODE_U8_LE)) {
-				ts_err("frame head checksum error");
-				return -EINVAL; 
-			}
-			frame_head = (struct frame_head *)frame_buf;
-			if (checksum_cmp(frame_buf,
-					frame_head->cur_frame_len,
-					CHECKSUM_MODE_U16_LE)) {
-				ts_err("frame body checksum error");
-				return -EINVAL;
-			}
-			cur_ptr = frame_buf;
-			cur_ptr += cd->ic_info.misc.frame_data_head_len;
-			cur_ptr += cd->ic_info.misc.fw_attr_len;
-			cur_ptr += cd->ic_info.misc.fw_log_len;
-			memcpy((u8 *)ts_test->noisedata[cnt].data, cur_ptr + 8,
-					cd->ic_info.misc.mutual_struct_len - 8);
-		} else {
-			ret = ts_test_read(ts_test, data_addr,
-				(u8 *)ts_test->noisedata[cnt].data, data_size * sizeof(s16));
-			if (ret < 0)
-				return ret;
+		ts_info("switch freq index:%d", freq_cnt);
+		for (i = 0; i < DISCARD_FRAMES; i++) {
+			val = 0;
+			ts_test_write(ts_test, flag_addr, &val, 1);
+			msleep(20);
 		}
 
-		ts_test->noisedata[cnt].size = data_size;
-		goodix_rotate_abcd2cbad(drv_num, sen_num, ts_test->noisedata[cnt].data);
-		for (i = 0; i < data_size; i++)
-			ts_test->noisedata[cnt].data[i] = ABS(ts_test->noisedata[cnt].data[i]);
+		temp_cmd.cmd = 0x83;
+		temp_cmd.len = 4;
+		ts_test_send_cmd(ts_test, &temp_cmd); //force refresh base
+
+		for (i = 0; i < DISCARD_FRAMES; i++) {
+			val = 0;
+			ts_test_write(ts_test, flag_addr, &val, 1);
+			msleep(20);
+		}
+
+		for (cnt = 0; cnt < NOISEDATA_TEST_TIMES; cnt++) {
+			val = 0;
+			ret = ts_test_write(ts_test, flag_addr, &val, 1);
+			if (ret < 0) {
+				ts_err("clean touch event failed, exit");
+				return -EAGAIN;
+			}
+			retry = 20;
+			while (retry--) {
+				usleep_range(5000, 5100);
+				ret = ts_test_read(ts_test, flag_addr, &val, 1);
+				if (!ret && (val & 0x80))
+					break;
+			}
+			if (retry < 0) {
+				ts_err("noisedata is not ready val:0x%02x i:%d, exit", val, cnt);
+				return -EAGAIN;
+			}
+			if (cd->bus->ic_type == IC_TYPE_BERLIN_D) {
+				frame_len = cd->ic_info.misc.frame_data_head_len +
+						cd->ic_info.misc.fw_attr_len +
+						cd->ic_info.misc.fw_log_len +
+						data_size * sizeof(s16) +
+						1024;
+				if (frame_len > sizeof(ts_test->frame_buf)) {
+					ts_info("frame_len exceed limit %d > %lu", frame_len, sizeof(ts_test->frame_buf));
+					return -EINVAL;
+				}
+				ret = ts_test_read(ts_test, flag_addr, frame_buf, frame_len);
+				if (ret < 0)
+					return ret;
+				if (checksum_cmp(frame_buf, cd->ic_info.misc.frame_data_head_len, CHECKSUM_MODE_U8_LE)) {
+					ts_err("frame head checksum error");
+					return -EINVAL;
+				}
+				frame_head = (struct frame_head *)frame_buf;
+				if (checksum_cmp(frame_buf, frame_head->cur_frame_len, CHECKSUM_MODE_U16_LE)) {
+					ts_err("frame body checksum error");
+					return -EINVAL;
+				}
+				cur_ptr = frame_buf;
+				cur_ptr += cd->ic_info.misc.frame_data_head_len;
+				cur_ptr += cd->ic_info.misc.fw_attr_len;
+				cur_ptr += cd->ic_info.misc.fw_log_len;
+				memcpy((u8 *)ts_test->mutual_freq_diff[freq_cnt].noisedata[cnt].data, cur_ptr + 8,
+						data_size * 2);
+			} else {
+				ret = ts_test_read(ts_test, data_addr,
+					(u8 *)ts_test->mutual_freq_diff[freq_cnt].noisedata[cnt].data, data_size * sizeof(s16));
+				if (ret < 0)
+					return ret;
+			}
+			ts_test->mutual_freq_diff[freq_cnt].noisedata[cnt].size = data_size;
+			goodix_rotate_abcd2cbad(drv_num, sen_num, ts_test->mutual_freq_diff[freq_cnt].noisedata[cnt].data);
+			for (i = 0; i < data_size; i++)
+				ts_test->mutual_freq_diff[freq_cnt].noisedata[cnt].data[i] = ABS(ts_test->mutual_freq_diff[freq_cnt].noisedata[cnt].data[i]);
+		}
 	}
 
 	return ret;
@@ -1706,32 +2150,29 @@ static int goodix_cache_self_noisedata(struct goodix_ts_test *ts_test)
 	u32 data_size = sen_num + drv_num;
 	u32 data_addr = ts_test->test_params.self_noisedata_addr;
 	u32 flag_addr = ts_test->ts->ic_info.misc.frame_data_addr;
-	struct frame_head *frame_head;
+
 	struct goodix_ts_core *cd = ts_test->ts;
 	unsigned char frame_buf[GOODIX_MAX_FRAMEDATA_LEN];
 	unsigned char *cur_ptr;
 
-	if (cd->bus->ic_type == IC_TYPE_BERLIN_D) {
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_D ||
+			cd->bus->ic_type == IC_TYPE_NOTTINGHAM ||
+			cd->bus->ic_type == IC_TYPE_MARSEILLE) {
 		ret = ts_test_read(ts_test, flag_addr, frame_buf, sizeof(frame_buf));
 		if (ret < 0)
 			return ret;
-		if (checksum_cmp(frame_buf,
-			cd->ic_info.misc.frame_data_head_len, CHECKSUM_MODE_U8_LE)) {
+		if (checksum_cmp(frame_buf, cd->ic_info.misc.frame_data_head_len, CHECKSUM_MODE_U8_LE)) {
 			ts_err("frame head checksum error");
 			return -EINVAL;
 		}
-		frame_head = (struct frame_head *)frame_buf;
-		if (checksum_cmp(frame_buf, frame_head->cur_frame_len, CHECKSUM_MODE_U16_LE)) {
-			ts_err("frame body checksum error");
-			return -EINVAL;
-		}
+
 		cur_ptr = frame_buf;
 		cur_ptr += cd->ic_info.misc.frame_data_head_len;
 		cur_ptr += cd->ic_info.misc.fw_attr_len;
 		cur_ptr += cd->ic_info.misc.fw_log_len;
 		cur_ptr += cd->ic_info.misc.mutual_struct_len;
 		memcpy((u8 *)ts_test->self_noisedata.data, cur_ptr + 10,
-				cd->ic_info.misc.self_struct_len - 10);
+				data_size * 2);
 	} else {
 		ret = ts_test_read(ts_test, data_addr,
 			(u8 *)ts_test->self_noisedata.data, data_size * sizeof(s16));
@@ -1740,10 +2181,11 @@ static int goodix_cache_self_noisedata(struct goodix_ts_test *ts_test)
 	}
 
 	ts_test->self_noisedata.size = data_size;
-	for (i = 0; i < data_size; i++)
+	for (i = 0; i < data_size; i++) {
 		ts_test->self_noisedata.data[i] = ABS(ts_test->self_noisedata.data[i]);
+	}	
 
-	return ret;
+	return ret;	
 }
 
 static int goodix_analysis_rawdata(struct goodix_ts_test *ts_test)
@@ -1773,13 +2215,16 @@ static int goodix_analysis_rawdata(struct goodix_ts_test *ts_test)
 		fail_flag = false;
 	}
 
-	if (err_cnt > 0)
-		ts_err("rawdata have %d frames out of range", err_cnt);
+	if (err_cnt * 100 > times * 100 * 9 / 10) {
+		ts_err("rawdata more than 90%%(%d) fail, test fail", err_cnt);
+		return -1;
+	}
+	if (err_cnt * 100 > times * 100 * 1 / 10) {
+		ts_info("rawdata more than 10%%(%d) fail, need test again", err_cnt);
+		return 1;
+	}
 
-	err_cnt *= 100;
-	if (err_cnt > times * 100 * 9 / 10)
-		return -EINVAL;
-
+	ts_info("rawdata less than 10%%(%d) fail, test pass", err_cnt);
 	return 0;
 }
 
@@ -1788,7 +2233,7 @@ static int goodix_analysis_deltadata(struct goodix_ts_test *ts_test)
 	int i;
 	int j;
 	int ret = 0;
-	s16 val;
+	s32 val;
 	u32 data_size = ts_test->accord_arr[0].size;
 
 	for (i = 0; i < TOTAL_FRAME_NUM; i++) {
@@ -1821,36 +2266,38 @@ static int goodix_analysis_self_rawdata(struct goodix_ts_test *ts_test)
 		}
 	}
 
-	return 0;
+	return 0;	
 }
 
 static int goodix_analysis_noisedata(struct goodix_ts_test *ts_test)
 {
-	int cnt;
+int cnt;
 	int i;
 	bool fail_flag = false;
 	int err_cnt = 0;
 	int times = NOISEDATA_TEST_TIMES;
 	s16 val;
-	u32 data_size = ts_test->noisedata[0].size;
-
-	for (cnt = 0; cnt < times; cnt++) {
-		for (i = 0; i < data_size; i++) {
-			val = ts_test->noisedata[cnt].data[i];
-			if (val > ts_test->test_params.noise_threshold)
-				fail_flag = true;
+	u32 data_size = ts_test->mutual_freq_diff[0].noisedata[0].size;
+	int freq_num = ts_test->ts->ic_info.parm.mutual_freq_num;
+	int freq_cnt;
+	
+	for (freq_cnt = 0; freq_cnt < freq_num; freq_cnt++) {
+		for (cnt = 0; cnt < times; cnt++) {
+			for (i = 0; i < data_size; i++) {
+				val = ts_test->mutual_freq_diff[freq_cnt].noisedata[cnt].data[i];
+				if (val > ts_test->test_params.noise_threshold[freq_cnt])
+					fail_flag = true;
+			}
+			if (fail_flag)
+				err_cnt++;
+			fail_flag = false;
 		}
-		if (fail_flag)
-			err_cnt++;
-		fail_flag = false;
 	}
 
-	if (err_cnt > 0)
+	if (err_cnt > 0) {
 		ts_err("noisedata have %d frames out of range", err_cnt);
-
-	err_cnt *= 100;
-	if (err_cnt > times * 100 * 2 / 10)
 		return -EINVAL;
+	}
 
 	return 0;
 }
@@ -1876,32 +2323,47 @@ static int goodix_analysis_self_noisedata(struct goodix_ts_test *ts_test)
 static void goodix_capacitance_test(struct goodix_ts_test *ts_test)
 {
 	int ret;
+	int retry = 0;
+	u8 debug_buf[10];
+	int i;
 
 	ts_info("---------------------- cap_test begin ----------------------");
-	ret = goodix_cap_test_prepare(ts_test);
-	if (ret < 0) {
+    ret = goodix_cap_test_prepare(ts_test);
+    if (ret < 0) {
 		ts_err("cap_test prepare failed, exit");
 		goto exit;
-	}
+    }
 	ts_info("cap rawdata prepare OK");
 
-	/* obtain rawdata */
-	ret = goodix_cache_rawdata(ts_test);
-	if (ret < 0) {
+rawdata_test_start:
+    /* obtain rawdata */
+    ret = goodix_cache_rawdata(ts_test);
+    if (ret < 0) {
 		if (ret == -EAGAIN) {
+			for (i = 0; i < 16; i++) {
+				ts_test_read(ts_test, 0x2000, debug_buf, sizeof(debug_buf));
+				ts_info("0x2000[%d]: %*ph", i, (int)sizeof(debug_buf), debug_buf);
+			}
 			ts_err("Capacitance exit");
 			goto exit;
-		} else
+		} else {
 			ts_err("Failed to read capdata");
-
-	} else {
+		}
+    } else {
 		ts_info("get rawdata finish, start analysis");
 		ret = goodix_analysis_rawdata(ts_test);
-		if (ret < 0)
+		if (ret < 0) {
 			ts_test->test_result[GTP_CAP_TEST] = GTP_PANEL_REASON;
-		else
+		} else if (ret == 0) {
 			ts_test->test_result[GTP_CAP_TEST] = GTP_TEST_PASS;
-	}
+		} else if (retry < 3) {
+			retry++;
+			ts_info("rawdata test retry[%d]", retry);
+			goto rawdata_test_start;
+		} else {
+			ts_test->test_result[GTP_CAP_TEST] = GTP_PANEL_REASON;
+		}
+    }
 
 	/* obtain delta_data */
 	goodix_cache_deltadata(ts_test);
@@ -1912,7 +2374,7 @@ static void goodix_capacitance_test(struct goodix_ts_test *ts_test)
 	else
 		ts_test->test_result[GTP_DELTA_TEST] = GTP_TEST_PASS;
 
-	/* obtain self_rawdata */
+    /* obtain self_rawdata */
 	if (ts_test->test_params.test_items[GTP_SELFCAP_TEST]) {
 		ret = goodix_cache_self_rawdata(ts_test);
 		if (ret < 0) {
@@ -1927,7 +2389,7 @@ static void goodix_capacitance_test(struct goodix_ts_test *ts_test)
 		}
 	}
 
-	/* obtain noisedata */
+    /* obtain noisedata */
 	if (ts_test->test_params.test_items[GTP_NOISE_TEST]) {
 		ret = goodix_cache_noisedata(ts_test);
 		if (ret < 0) {
@@ -1942,7 +2404,7 @@ static void goodix_capacitance_test(struct goodix_ts_test *ts_test)
 		}
 	}
 
-	/* obtain self_noisedata */
+    /* obtain self_noisedata */
 	if (ts_test->test_params.test_items[GTP_SELFNOISE_TEST]) {
 		ret = goodix_cache_self_noisedata(ts_test);
 		if (ret < 0) {
@@ -1954,11 +2416,163 @@ static void goodix_capacitance_test(struct goodix_ts_test *ts_test)
 				ts_test->test_result[GTP_SELFNOISE_TEST] = GTP_PANEL_REASON;
 			else
 				ts_test->test_result[GTP_SELFNOISE_TEST] = GTP_TEST_PASS;
-		}		
+		}
 	}
 
 exit:
 	goodix_cap_test_finish(ts_test);
+}
+
+static void goodix_version_test(struct goodix_ts_test *ts_test)
+{
+	struct goodix_ts_core *cd = ts_test->ts;
+	u8 rom_pid[8] = {0};
+	if (ts_test->test_params.test_items[GTP_VERSION_TEST])
+			ts_test->test_result[GTP_VERSION_TEST] = SYS_SOFTWARE_REASON;
+	memcpy(rom_pid, cd->fw_version.rom_pid, sizeof(cd->fw_version.rom_pid));
+	sprintf(ts_test->cur_version, "%s-%02x.%02x.%02x_%s_%02x.%02x.%02x.%02x",
+		rom_pid, cd->fw_version.rom_vid[0], cd->fw_version.rom_vid[1],
+		cd->fw_version.rom_vid[2], cd->fw_version.patch_pid,
+		cd->fw_version.patch_vid[0], cd->fw_version.patch_vid[1],
+		cd->fw_version.patch_vid[2], cd->fw_version.patch_vid[3]);
+	ts_test->test_result[GTP_VERSION_TEST] = GTP_TEST_PASS;
+}
+#define FT_TEST_PASS_FLAG			0xAA
+static void goodix_check_key_info_test(struct goodix_ts_test *ts_test)
+{
+	int ret;
+	u32 chip_pid_addr;
+	u32 chip_info_addr;
+	u8 chip_info_buf[CHIP_KEY_INFO_MAX_LEN];
+	u8 test_result = 0;
+	u16 chksum;
+	u16 sum = 0;
+	int i;
+	struct goodix_ts_core *cd = ts_test->ts;
+	if (ts_test->test_params.test_items[GTP_CHIP_KEY_INFO_TEST])
+		ts_test->test_result[GTP_CHIP_KEY_INFO_TEST] = SYS_SOFTWARE_REASON;
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B)
+		chip_pid_addr = 0x3F051;
+	else
+		chip_pid_addr = 0x1F031;
+	for (i = 0; i < 3; i++) {
+		ret = cd->hw_ops->read_flash(cd, chip_pid_addr, ts_test->chip_pid, sizeof(ts_test->chip_pid));
+		if (ret == 0)
+			break;
+		msleep(100);
+	}
+	if (ret < 0) {
+		ts_err("read chip pid from flash failed");
+		return;
+	}
+	if (memcmp(ts_test->chip_pid, cd->fw_version.patch_pid, 7)) {
+		test_result |= 0x01; // chip pid check failed
+		ts_err("chip_pid:%s != patch_pid:%s", ts_test->chip_pid, cd->fw_version.patch_pid);
+	}
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B ||
+			cd->bus->ic_type == IC_TYPE_BERLIN_D) {
+		if (cd->bus->ic_type == IC_TYPE_BERLIN_B)
+			chip_info_addr = 0x3F300;
+		else
+			chip_info_addr = 0x1F300;
+		for (i = 0; i < 3; i++) {
+			ret = cd->hw_ops->read_flash(cd, chip_info_addr, chip_info_buf, sizeof(chip_info_buf));
+			if (ret == 0)
+				break;
+			msleep(100);
+		}
+		if (ret < 0) {
+			ts_err("read chip info from flash failed");
+			return;
+		}
+		chksum = chip_info_buf[CHIP_KEY_INFO_MAX_LEN - 2] + ((u16)chip_info_buf[CHIP_KEY_INFO_MAX_LEN - 1] << 8);
+		for (i = 0; i < CHIP_KEY_INFO_MAX_LEN - 2; i++)
+			sum += chip_info_buf[i];
+		if ((sum & 0x00FF) != (chksum & 0x00FF)) {
+			ts_err("chip info checksum error");
+			return;
+		}
+		ts_test->chip_info.hw_ver = chip_info_buf[0];
+		ts_test->chip_info.package_site = chip_info_buf[1];
+        if (chip_info_buf[2 + CHIP_UID_MAX_LEN] == FT_TEST_PASS_FLAG) {
+            memcpy(ts_test->chip_info.chip_uid, &chip_info_buf[2], CHIP_UID_MAX_LEN);//UID
+            ts_test->chip_info.ft_test_result = chip_info_buf[2 + CHIP_UID_MAX_LEN];
+        } else if (chip_info_buf[2] == FT_TEST_PASS_FLAG){
+            ts_test->chip_info.ft_test_result = chip_info_buf[2];
+            memcpy(ts_test->chip_info.chip_uid, &chip_info_buf[3], CHIP_UID_MAX_LEN);//UID
+        } else {
+			test_result |= 0x02;
+			ts_err("chip info test failed");
+		}
+        ts_test->chip_info.substrate_tech = chip_info_buf[3 + CHIP_UID_MAX_LEN];
+        ts_test->chip_info.mcu_fab = chip_info_buf[4 + CHIP_UID_MAX_LEN];
+        ts_test->chip_info.vaild_len = chip_info_buf[CHIP_KEY_INFO_MAX_LEN - 3];
+        ts_test->chip_info.check_sum = chksum;
+	}
+	if (test_result > 0)
+		ts_test->test_result[GTP_CHIP_KEY_INFO_TEST] = GTP_PANEL_REASON;
+	else
+		ts_test->test_result[GTP_CHIP_KEY_INFO_TEST] = GTP_TEST_PASS;
+}
+static void goodix_custom_info_test(struct goodix_ts_test *ts_test)
+{
+	int ret;
+	struct goodix_ts_core *cd = ts_test->ts;
+	u32 custom_info_addr;
+	u32 custom_info_ram_addr;
+	u32 custom_info_len = 16;
+	if (ts_test->test_params.test_items[GTP_CUSTOM_INFO_TEST])
+		ts_test->test_result[GTP_CUSTOM_INFO_TEST] = SYS_SOFTWARE_REASON;
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_A) {
+		custom_info_addr = 0x3F000;
+		custom_info_ram_addr = 0x10028;
+	} else if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
+		custom_info_addr = 0x7F000;
+		custom_info_ram_addr = 0x10030;
+	} else {
+		custom_info_addr = 0x1E000;
+		custom_info_ram_addr = 0x10030;
+	}
+	ret = cd->hw_ops->read_flash(cd, custom_info_addr, ts_test->custom_info_flash, custom_info_len);
+	if (ret < 0) {
+		ts_err("read custom info from flash failed");
+		return;
+	}
+	ret = cd->hw_ops->read(cd, custom_info_ram_addr, ts_test->custom_info_sram, custom_info_len);
+	if (ret < 0) {
+		ts_err("read custom info from sram failed");
+		return;
+	}
+	ts_test->test_result[GTP_CUSTOM_INFO_TEST] = GTP_TEST_PASS;
+}
+
+static void goodix_reset_test(struct goodix_ts_test *ts_test)
+{
+	struct goodix_ts_core *cd = ts_test->ts;
+	struct goodix_fw_version ver;
+	int type = 0x00;
+	int ret = -1;
+
+	cd->hw_ops->gesture(cd, type);
+	ts_test_read_version(ts_test, &ver);
+	ret = ts_test_reset(ts_test, GOODIX_NORMAL_RESET_DELAY_MS);
+	if (strncmp(ver.patch_pid, "GEST", 4)) {
+		ts_err("PID[%s] != GEST", ver.patch_pid);
+		ts_test->test_result[GTP_RESET_TEST] = GTP_PANEL_REASON;
+		return;
+	}
+	ts_test_read_version(ts_test, &ver);
+	if (strncmp(ver.patch_pid, cd->fw_version.patch_pid, sizeof(ver.patch_pid))) {
+		ts_err("PID[%s] != %s", ver.patch_pid, cd->fw_version.patch_pid);
+		ts_test->test_result[GTP_RESET_TEST] = GTP_PANEL_REASON;
+		return;
+	}
+
+	if (0 == ret) {
+		ts_test->test_result[GTP_RESET_TEST] = GTP_TEST_PASS;
+	} else {
+		ts_test->test_result[GTP_RESET_TEST] = GTP_PANEL_REASON;
+	}
 }
 
 char *goodix_strncat(char *dest, char *src, size_t dest_size)
@@ -1966,8 +2580,7 @@ char *goodix_strncat(char *dest, char *src, size_t dest_size)
 	size_t dest_len = 0;
 
 	dest_len = strnlen(dest, dest_size);
-	strlcat(&dest[dest_len], src, dest_size - dest_len - 1);
-	return dest;
+	return strncat(&dest[dest_len], src, dest_size - dest_len - 1);
 }
 
 char *goodix_strncatint(char *dest, int src, char *format, size_t dest_size)
@@ -2024,39 +2637,40 @@ static void goodix_data_statistics(s16 *data, size_t data_size,
 	return;
 }
 
-#ifdef SAVE_IN_CSV
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
-static ssize_t fs_write(const void* buf, size_t size, struct file* fp)
+static u8 *g_test_result_buf;
+static u32 g_test_result_size;
+static int fs_write(const void* buf, size_t size)
 {
-	loff_t pos;
-	ssize_t len;
+	if (!g_test_result_buf) {
+		g_test_result_buf = vmalloc(DEFAULT_SEQ_FILE_SIZE);
+		if (!g_test_result_buf)
+			return -ENOMEM;
+		g_test_result_size = 0;
+	}
 
-	pos = fp->f_pos;
-	len = kernel_write(fp, buf, size, &pos);
-	fp->f_pos = pos;
+	if (size > DEFAULT_SEQ_FILE_SIZE - g_test_result_size) {
+		ts_err("test result too much");
+		return -EINVAL;
+	}
 
-	return len;
+	memcpy(g_test_result_buf + g_test_result_size, buf, size);
+	g_test_result_size += size;
+
+	return 0;
 }
-#else
-static ssize_t fs_write(const void* buf, size_t size, struct file* fp)
+
+static int deinit_test_result_buf(void)
 {
-	mm_segment_t old_fs;
-	loff_t pos;
-	ssize_t len;
+	g_test_result_size = 0;
+	if (!g_test_result_buf)
+		return 0;
 
-	pos = fp->f_pos;
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-	len = vfs_write(fp, buf, size, &pos);
-	set_fs(old_fs);
-	fp->f_pos = pos;
-
-	return len;
+	vfree(g_test_result_buf);
+	g_test_result_buf = NULL;
+	return 0;
 }
-#endif
 
-static int goodix_save_test_config(struct goodix_ts_test *ts_test,
-		struct file *fp)
+static int goodix_save_test_config(struct goodix_ts_test *ts_test)
 {
 	int ret = 0;
 	int i;
@@ -2069,32 +2683,30 @@ static int goodix_save_test_config(struct goodix_ts_test *ts_test,
 		return 0;
 	}
 
-	data = kzalloc(MAX_DATA_BUFFER, GFP_KERNEL);
+	data = vzalloc(MAX_DATA_BUFFER);
 	if (!data) {
 		ts_err("alloc memory failed");
 		return -ENOMEM;
 	}
 
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<OrderConfig>\n");
-	for (i = 0; i < cfg->len; i++)
-		bytes += scnprintf(&data[bytes],
-				MAX_DATA_BUFFER - bytes, "0x%02x,", cfg->data[i]);
-
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</OrderConfig>\n");
-	ret = fs_write(data, bytes, fp);
+	bytes += sprintf(&data[bytes], "<OrderConfig>\n");
+	for (i = 0; i < cfg->len; i++) {
+		bytes += sprintf(&data[bytes], "0x%02x,", cfg->data[i]);
+	}
+	bytes += sprintf(&data[bytes], "\n");
+	bytes += sprintf(&data[bytes], "</OrderConfig>\n");
+	ret = fs_write(data, bytes);
 	if (ret < 0) {
 		ts_err("test config write failed");
 		goto save_end;
 	}
 
 save_end:
-	kfree(data);
+	vfree(data);
 	return ret;
 }
 
-static int goodix_save_header(struct goodix_ts_test *ts_test,
-		struct file *fp)
+static int goodix_save_header(struct goodix_ts_test *ts_test)
 {
 	int ret;
 	int i;
@@ -2103,17 +2715,15 @@ static int goodix_save_header(struct goodix_ts_test *ts_test,
 	char *data = NULL;
 	struct goodix_ts_core *ts = ts_test->ts;
 
-	data = kzalloc(MAX_DATA_BUFFER, GFP_KERNEL);
+	data = vzalloc(MAX_DATA_BUFFER);
 	if (!data) {
 		ts_err("alloc memory failed");
 		return -ENOMEM;
 	}
 
-	bytes += scnprintf(&data[bytes],
-				MAX_DATA_BUFFER - bytes,
-				"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<TESTLOG>\n");
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<Header>\n");
+	bytes += sprintf(&data[bytes], "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
+	bytes += sprintf(&data[bytes], "<TESTLOG>\n");
+	bytes += sprintf(&data[bytes], "<Header>\n");
 	/* sava test result */
 	for (i = 0; i < MAX_TEST_ITEMS; i++) {
 		if ((ts_test->test_result[i] > 0) &&
@@ -2123,35 +2733,28 @@ static int goodix_save_header(struct goodix_ts_test *ts_test,
 		}
 	}
 	if (result)
-		bytes += scnprintf(&data[bytes],
-				MAX_DATA_BUFFER - bytes,
-				"<Result>NG</Result>\n");
+		bytes += sprintf(&data[bytes], "<Result>NG</Result>\n");
 	else
-		bytes += scnprintf(&data[bytes],
-				MAX_DATA_BUFFER - bytes,
-				"<Result>OK</Result>\n");
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<DeviceType>GT%s</DeviceType>\n",
-				ts->fw_version.patch_pid);
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<SensorId>%d</SensorId>\n",
-				ts_test->ts->fw_version.sensor_id);
-
-	ret = fs_write(data, bytes, fp);
+		bytes += sprintf(&data[bytes], "<Result>OK</Result>\n");
+	bytes += sprintf(&data[bytes], "<DeviceType>GT%s</DeviceType>\n",
+			ts->fw_version.patch_pid);
+	bytes += sprintf(&data[bytes], "<SensorId>%d</SensorId>\n",
+			ts_test->ts->fw_version.sensor_id);
+	ret = fs_write(data, bytes);
 	if (ret < 0) {
 		ts_err("header write failed");
 		goto save_end;
 	}
 	bytes = 0;
 	/* save test config */
-	ret = goodix_save_test_config(ts_test, fp);
+	ret = goodix_save_test_config(ts_test);
 	if (ret < 0)  {
 		ts_err("save test config failed");
 		goto save_end;
 	}
 
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</Header>\n");
-	ret = fs_write(data, bytes, fp);
+	bytes += sprintf(&data[bytes], "</Header>\n");
+	ret = fs_write(data, bytes);
 	if (ret < 0) {
 		ts_err("header write failed");
 		goto save_end;
@@ -2159,75 +2762,92 @@ static int goodix_save_header(struct goodix_ts_test *ts_test,
 	bytes = 0;
 
 	/* item list */
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<ItemList>\n");
+	bytes += sprintf(&data[bytes], "<ItemList>\n");
 	if (ts_test->test_result[GTP_CAP_TEST]) {
 		if (GTP_TEST_PASS == ts_test->test_result[GTP_CAP_TEST])
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
+			bytes += sprintf(&data[bytes],
 					"<Item name=\"Rawdata MAX/MIN Test\" result=\"OK\"/>\n");
 		else
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
+			bytes += sprintf(&data[bytes],
 					"<Item name=\"Rawdata MAX/MIN Test\" result=\"NG\"/>\n");
 	}
 
 	if (ts_test->test_result[GTP_DELTA_TEST]) {
 		if (GTP_TEST_PASS == ts_test->test_result[GTP_DELTA_TEST])
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			      "<Item name=\"Rawdata Adjcent Deviation Test\" result=\"OK\"/>\n");
+			bytes += sprintf(&data[bytes],
+					"<Item name=\"Rawdata Adjcent Deviation Test\" result=\"OK\"/>\n");
 		else
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			      "<Item name=\"Rawdata Adjcent Deviation Test\" result=\"NG\"/>\n");
+			bytes += sprintf(&data[bytes],
+					"<Item name=\"Rawdata Adjcent Deviation Test\" result=\"NG\"/>\n");
 	}
 
 	if (ts_test->test_result[GTP_NOISE_TEST]) {
 		if (GTP_TEST_PASS == ts_test->test_result[GTP_NOISE_TEST])
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
+			bytes += sprintf(&data[bytes],
 					"<Item name=\"Diffdata Jitter Test\" result=\"OK\"/>\n");
 		else
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
+			bytes += sprintf(&data[bytes],
 					"<Item name=\"Diffdata Jitter Test\" result=\"NG\"/>\n");
 	}
 
 	if (ts_test->test_result[GTP_SELFNOISE_TEST]) {
 		if (GTP_TEST_PASS == ts_test->test_result[GTP_SELFNOISE_TEST])
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			      "<Item name=\"Self Diffdata Jitter Limit Test\" result=\"OK\"/>\n");
+			bytes += sprintf(&data[bytes],
+					"<Item name=\"Self Diffdata Jitter Limit Test\" result=\"OK\"/>\n");
 		else
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			      "<Item name=\"Self Diffdata Jitter Limit Test\" result=\"NG\"/>\n");
+			bytes += sprintf(&data[bytes],
+					"<Item name=\"Self Diffdata Jitter Limit Test\" result=\"NG\"/>\n");
 	}
 
 	if (ts_test->test_result[GTP_SELFCAP_TEST]) {
 		if (GTP_TEST_PASS == ts_test->test_result[GTP_SELFCAP_TEST])
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			      "<Item name=\"Self Rawdata Upper Limit Test\" result=\"OK\"/>\n");
+			bytes += sprintf(&data[bytes],
+					"<Item name=\"Self Rawdata Upper Limit Test\" result=\"OK\"/>\n");
 		else
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			      "<Item name=\"Self Rawdata Upper Limit Test\" result=\"NG\"/>\n");
+			bytes += sprintf(&data[bytes],
+					"<Item name=\"Self Rawdata Upper Limit Test\" result=\"NG\"/>\n");
+	}
+
+	if (ts_test->test_result[GTP_DIFF_SHIFT_TEST]) {
+		if (GTP_TEST_PASS == ts_test->test_result[GTP_DIFF_SHIFT_TEST])
+			bytes += sprintf(&data[bytes],
+					"<Item name=\"Diff shift test\" result=\"OK\"/>\n");
+		else
+			bytes += sprintf(&data[bytes],
+					"<Item name=\"Diff shift test\" result=\"NG\"/>\n");
 	}
 
 	if (ts_test->test_result[GTP_SHORT_TEST]) {
 		if (GTP_TEST_PASS == ts_test->test_result[GTP_SHORT_TEST])
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
+			bytes += sprintf(&data[bytes],
 					"<Item name=\"Short Test\" result=\"OK\"/>\n");
 		else
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
+			bytes += sprintf(&data[bytes],
 					"<Item name=\"Short Test\" result=\"NG\"/>\n");
 	}
 
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</ItemList>\n");
-	ret = fs_write(data, bytes, fp);
+	if (ts_test->test_result[GTP_RESET_TEST]) {
+		if (GTP_TEST_PASS == ts_test->test_result[GTP_RESET_TEST])
+			bytes += sprintf(&data[bytes],
+					"<Item name=\"Chip Reset Test\" result=\"OK\"/>\n");
+		else
+			bytes += sprintf(&data[bytes],
+					"<Item name=\"Chip Reset Test\" result=\"NG\"/>\n");
+	}
+
+	bytes += sprintf(&data[bytes], "</ItemList>\n");
+	ret = fs_write(data, bytes);
 	if (ret < 0) {
 		ts_err("item list write failed");
 		goto save_end;
 	}
 
 save_end:
-	kfree(data);
+	vfree(data);
 	return ret;
 }
 
-static int goodix_save_limits(struct goodix_ts_test *ts_test,
-		struct file *fp)
+static int goodix_save_limits(struct goodix_ts_test *ts_test)
 {
 	int ret;
 	int i;
@@ -2238,19 +2858,21 @@ static int goodix_save_limits(struct goodix_ts_test *ts_test,
 	int chn1;
 	int chn2;
 	int r;
+	char tmp_str[64] = {0};
+	int str_n = 0;
+	int freq_num = ts_test->ts->ic_info.parm.mutual_freq_num;	
+	int freq_index;
 
-	data = kzalloc(MAX_DATA_BUFFER, GFP_KERNEL);
-	if (!data) {
+	data = vzalloc(MAX_DATA_BUFFER);
+	if (!data)
 		return -ENOMEM;
 
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<TestItems>\n");
+	bytes += sprintf(&data[bytes], "<TestItems>\n");
 
 	/* save short result */
 	if (ts_test->test_result[GTP_SHORT_TEST]) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<Item name=\"Short Test\">\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<ShortNum>%d</ShortNum>\n",
+		bytes += sprintf(&data[bytes], "<Item name=\"Short Test\">\n");
+		bytes += sprintf(&data[bytes], "<ShortNum>%d</ShortNum>\n",
 				ts_test->short_res.short_num);
 		for (i = 0; i < ts_test->short_res.short_num; i++) {
 			chn1 = ts_test->short_res.short_msg[4 * i];
@@ -2258,36 +2880,32 @@ static int goodix_save_limits(struct goodix_ts_test *ts_test,
 			r = (ts_test->short_res.short_msg[4 * i + 2] << 8) +
 				ts_test->short_res.short_msg[4 * i + 3];
 			if (chn1 == CHN_VDD)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-						"<ShortMess Chn1=\"VDD\" ");
+				bytes += sprintf(&data[bytes], "<ShortMess Chn1=\"VDD\" ");
 			else if (chn1 == CHN_GND)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-						"<ShortMess Chn1=\"GND\" ");
+				bytes += sprintf(&data[bytes], "<ShortMess Chn1=\"GND\" ");
 			else if (chn1 & DRV_CHANNEL_FLAG)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-						"<ShortMess Chn1=\"Tx%d\" ",
+				bytes += sprintf(&data[bytes], "<ShortMess Chn1=\"Tx%d\" ",
 						chn1 & 0x7f);
 			else
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-						"<ShortMess Chn1=\"Rx%d\" ",
+				bytes += sprintf(&data[bytes], "<ShortMess Chn1=\"Rx%d\" ",
 						chn1 & 0x7f);
 			if (chn2 == CHN_VDD)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
+				bytes += sprintf(&data[bytes],
 						"Chn2=\"VDD\" ShortResistor= \"%dKom\"/>\n", r);
 			else if (chn2 == CHN_GND)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
+				bytes += sprintf(&data[bytes],
 						"Chn2=\"GND\" ShortResistor= \"%dKom\"/>\n", r);
 			else if (chn2 & DRV_CHANNEL_FLAG)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
+				bytes += sprintf(&data[bytes],
 						"Chn2=\"Tx%d\" ShortResistor= \"%dKom\"/>\n",
 						chn2 & 0x7f, r);
 			else
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
+				bytes += sprintf(&data[bytes],
 						"Chn2=\"Rx%d\" ShortResistor= \"%dKom\"/>\n",
 						chn2 & 0x7f, r);
 		}
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</Item>\n");
-		ret = fs_write(data, bytes, fp);
+		bytes += sprintf(&data[bytes], "</Item>\n");
+		ret = fs_write(data, bytes);
 		if (ret < 0) {
 			ts_err("short res write fail.");
 			goto save_end;
@@ -2295,31 +2913,57 @@ static int goodix_save_limits(struct goodix_ts_test *ts_test,
 		bytes = 0;
 	}
 
+	/* save diff shift test limit */
+	if (ts_test->test_result[GTP_DIFF_SHIFT_TEST]) {
+		bytes += sprintf(&data[bytes], "<Item name=\"Diff Shift Test Sets\">\n");
+
+		for (freq_index = 0; freq_index < MAX_SCAN_FREQ_NUM; freq_index++) {
+			if (!ts_test->test_params.diff_shift_freq[freq_index])
+				continue;
+
+			bytes += sprintf(&data[bytes], "<DiffShiftLimit%d>\n", freq_index);
+
+			for (i = 0; i < tx * rx; i++) {
+				bytes += sprintf(&data[bytes], "%d,",
+						ts_test->test_params.diff_shift_max[freq_index][i]);
+				if ((i + 1) % tx == 0)
+					bytes += sprintf(&data[bytes], "\n");
+			}
+
+			bytes += sprintf(&data[bytes], "</DiffShiftLimit%d>\n", freq_index);
+		}
+
+		bytes += sprintf(&data[bytes], "</Item>\n");
+		ret = fs_write(data, bytes);
+		if (ret < 0) {
+			ts_err("diff shift limit write failed");
+			goto save_end;
+		}
+		bytes = 0;
+	}
+
 	/* rawdata max limit */
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			"<Item name=\"Rawdata Test Sets\">\n");
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			"<TotalFrameCnt>%d</TotalFrameCnt>\n", TOTAL_FRAME_NUM);
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<MaxRawLimit>\n");
+	bytes += sprintf(&data[bytes], "<Item name=\"Rawdata Test Sets\">\n");
+	bytes += sprintf(&data[bytes], "<TotalFrameCnt>%d</TotalFrameCnt>\n",
+			TOTAL_FRAME_NUM);
+	bytes += sprintf(&data[bytes], "<MaxRawLimit>\n");
 	for (i = 0; i < tx * rx; i++) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "%d,",
+		bytes += sprintf(&data[bytes], "%d,",
 			ts_test->test_params.max_limits[i]);
 		if ((i + 1) % tx == 0)
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
+			bytes += sprintf(&data[bytes], "\n");
 	}
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</MaxRawLimit>\n");
+	bytes += sprintf(&data[bytes], "</MaxRawLimit>\n");
 	/* BeyondRawdataUpperLimit */
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			"<BeyondRawdataUpperLimitCnt>\n");
+	bytes += sprintf(&data[bytes], "<BeyondRawdataUpperLimitCnt>\n");
 	for (i = 0; i < tx * rx; i++) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "%d,",
+		bytes += sprintf(&data[bytes], "%d,",
 				ts_test->open_res.beyond_max_limit_cnt[i]);
 		if ((i + 1) % tx == 0)
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
+			bytes += sprintf(&data[bytes], "\n");
 	}
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			"</BeyondRawdataUpperLimitCnt>\n");
-	ret = fs_write(data, bytes, fp);
+	bytes += sprintf(&data[bytes], "</BeyondRawdataUpperLimitCnt>\n");
+	ret = fs_write(data, bytes);
 	if (ret < 0) {
 		ts_err("rawdata limit write failed");
 		goto save_end;
@@ -2327,26 +2971,24 @@ static int goodix_save_limits(struct goodix_ts_test *ts_test,
 	bytes = 0;
 
 	/* rawdata min limit */
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<MinRawLimit>\n");
+	bytes += sprintf(&data[bytes], "<MinRawLimit>\n");
 	for (i = 0; i < tx * rx; i++) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "%d,",
+		bytes += sprintf(&data[bytes], "%d,",
 			ts_test->test_params.min_limits[i]);
 		if ((i + 1) % tx == 0)
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
+			bytes += sprintf(&data[bytes], "\n");
 	}
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</MinRawLimit>\n");
+	bytes += sprintf(&data[bytes], "</MinRawLimit>\n");
 	/* BeyondRawdataLower limit */
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			"<BeyondRawdataLowerLimitCnt>\n");
+	bytes += sprintf(&data[bytes], "<BeyondRawdataLowerLimitCnt>\n");
 	for (i = 0; i < tx * rx; i++) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "%d,",
+		bytes += sprintf(&data[bytes], "%d,",
 				ts_test->open_res.beyond_min_limit_cnt[i]);
 		if ((i + 1) % tx == 0)
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
+			bytes += sprintf(&data[bytes], "\n");
 	}
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			"</BeyondRawdataLowerLimitCnt>\n");
-	ret = fs_write(data, bytes, fp);
+	bytes += sprintf(&data[bytes], "</BeyondRawdataLowerLimitCnt>\n");
+	ret = fs_write(data, bytes);
 	if (ret < 0) {
 		ts_err("rawdata limit write failed");
 		goto save_end;
@@ -2354,25 +2996,25 @@ static int goodix_save_limits(struct goodix_ts_test *ts_test,
 	bytes = 0;
 
 	/* Max Accord limit */
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<MaxAccordLimit>\n");
+	bytes += sprintf(&data[bytes], "<MaxAccordLimit>\n");
 	for (i = 0; i < tx * rx; i++) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "%d,",
+		bytes += sprintf(&data[bytes], "%d,",
 			ts_test->test_params.deviation_limits[i]);
 		if ((i + 1) % tx == 0)
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
+			bytes += sprintf(&data[bytes], "\n");
 	}
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</MaxAccordLimit>\n");
+	bytes += sprintf(&data[bytes], "</MaxAccordLimit>\n");
 	/* BeyondAccordLimitCnt */
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<BeyondAccordLimitCnt>\n");
+	bytes += sprintf(&data[bytes], "<BeyondAccordLimitCnt>\n");
 	for (i = 0; i < tx * rx; i++) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "%d,",
+		bytes += sprintf(&data[bytes], "%d,",
 			ts_test->open_res.beyond_accord_limit_cnt[i]);
 		if ((i + 1) % tx == 0)
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
+			bytes += sprintf(&data[bytes], "\n");
 	}
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</BeyondAccordLimitCnt>\n");
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</Item>\n");
-	ret = fs_write(data, bytes, fp);
+	bytes += sprintf(&data[bytes], "</BeyondAccordLimitCnt>\n");
+	bytes += sprintf(&data[bytes], "</Item>\n");
+	ret = fs_write(data, bytes);
 	if (ret < 0) {
 		ts_err("rawdata limit write failed");
 		goto save_end;
@@ -2381,16 +3023,15 @@ static int goodix_save_limits(struct goodix_ts_test *ts_test,
 
 	/* save noise limit */
 	if (ts_test->test_result[GTP_NOISE_TEST]) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<Item name=\"Diffdata Test Sets\">\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<TotalFrameCnt>%d</TotalFrameCnt>\n",
+		for (i = 0; i < freq_num; i++)
+			str_n += sprintf(&tmp_str[str_n], "%d,", ts_test->test_params.noise_threshold[i]);
+		
+		bytes += sprintf(&data[bytes], "<Item name=\"Diffdata Test Sets\">\n");
+		bytes += sprintf(&data[bytes], "<TotalFrameCnt>%d</TotalFrameCnt>\n",
 				NOISEDATA_TEST_TIMES);
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<MaxJitterLimit>%d</MaxJitterLimit>\n",
-				ts_test->test_params.noise_threshold);
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</Item>\n");
-		ret = fs_write(data, bytes, fp);
+		bytes += sprintf(&data[bytes], "<MaxJitterLimit>%s</MaxJitterLimit>\n", tmp_str);
+		bytes += sprintf(&data[bytes], "</Item>\n");
+		ret = fs_write(data, bytes);
 		if (ret < 0) {
 			ts_err("noise limit write failed");
 			goto save_end;
@@ -2400,32 +3041,33 @@ static int goodix_save_limits(struct goodix_ts_test *ts_test,
 
 	/* save self rawdata limit */
 	if (ts_test->test_result[GTP_SELFCAP_TEST]) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
+		bytes += sprintf(&data[bytes],
 				"<Item name=\"Self Rawdata Test Sets\">\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
+		bytes += sprintf(&data[bytes],
 				"<TotalFrameCnt>1</TotalFrameCnt>\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<MaxRawLimit>\n");
+		bytes += sprintf(&data[bytes],
+				"<MaxRawLimit>\n");
 		for (i = 0; i < tx + rx; i++) {
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "%d,",
-					ts_test->test_params.self_max_limits[i]);
+			bytes += sprintf(&data[bytes], "%d,",
+				ts_test->test_params.self_max_limits[i]);
 			if ((i + 1) % tx == 0)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
+				bytes += sprintf(&data[bytes], "\n");
 		}
 		if ((tx + rx) % tx != 0)
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</MaxRawLimit>\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<MinRawLimit>\n");
+			bytes += sprintf(&data[bytes], "\n");
+		bytes += sprintf(&data[bytes], "</MaxRawLimit>\n");
+		bytes += sprintf(&data[bytes], "<MinRawLimit>\n");
 		for (i = 0; i < tx + rx; i++) {
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "%d,",
-					ts_test->test_params.self_min_limits[i]);
+			bytes += sprintf(&data[bytes], "%d,",
+				ts_test->test_params.self_min_limits[i]);
 			if ((i + 1) % tx == 0)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
+				bytes += sprintf(&data[bytes], "\n");
 		}
 		if ((tx + rx) % tx != 0)
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</MinRawLimit>\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</Item>\n");
-		ret = fs_write(data, bytes, fp);
+			bytes += sprintf(&data[bytes], "\n");
+		bytes += sprintf(&data[bytes], "</MinRawLimit>\n");
+		bytes += sprintf(&data[bytes], "</Item>\n");
+		ret = fs_write(data, bytes);
 		if (ret < 0) {
 			ts_err("self rawdata limit write failed");
 			goto save_end;
@@ -2435,15 +3077,15 @@ static int goodix_save_limits(struct goodix_ts_test *ts_test,
 
 	/* save selfnoise limit */
 	if (ts_test->test_result[GTP_SELFNOISE_TEST]) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
+		bytes += sprintf(&data[bytes],
 				"<Item name=\"Self Diffdata Test Sets\">\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
+		bytes += sprintf(&data[bytes],
 				"<TotalFrameCnt>1</TotalFrameCnt>\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
+		bytes += sprintf(&data[bytes],
 				"<MaxJitterLimit>%d</MaxJitterLimit>\n",
 				ts_test->test_params.self_noise_threshold);
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</Item>\n");
-		ret = fs_write(data, bytes, fp);
+		bytes += sprintf(&data[bytes], "</Item>\n");
+		ret = fs_write(data, bytes);
 		if (ret < 0) {
 			ts_err("raw limit write failed");
 			goto save_end;
@@ -2451,18 +3093,17 @@ static int goodix_save_limits(struct goodix_ts_test *ts_test,
 		bytes = 0;
 	}
 
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</TestItems>\n");
-	ret = fs_write(data, bytes, fp);
+	bytes += sprintf(&data[bytes], "</TestItems>\n");
+	ret = fs_write(data, bytes);
 	if (ret < 0)
 		ts_err("limit write fail.");
 
 save_end:
-	kfree(data);
+	vfree(data);
 	return ret;
 }
 
-static int goodix_save_rawdata(struct goodix_ts_test *ts_test,
-		struct file *fp)
+static int goodix_save_rawdata(struct goodix_ts_test *ts_test)
 {
 	int i;
 	int j;
@@ -2474,35 +3115,35 @@ static int goodix_save_rawdata(struct goodix_ts_test *ts_test,
 	int rx = ts_test->test_params.sen_num;
 	int len = tx * rx;
 
-	data = kzalloc(MAX_DATA_BUFFER, GFP_KERNEL);
+	data = vzalloc(MAX_DATA_BUFFER);
 	if (!data)
 		return -ENOMEM;
 
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<RawDataRecord>\n");
+	bytes += sprintf(&data[bytes], "<RawDataRecord>\n");
 	for (i = 0; i < TOTAL_FRAME_NUM; i++) {
 		goodix_data_cal(ts_test->rawdata[i].data, len, stat_result);
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
+		bytes += sprintf(&data[bytes],
 			"<DataContent No.=\"%d\" DataCount=\"%d\" Maximum=\"%d\" Minimum=\"%d\" Average=\"%d\">\n",
 			i, len, stat_result[1], stat_result[2], stat_result[0]);
 		for (j = 0; j < len; j++) {
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-					"%d,", ts_test->rawdata[i].data[j]);
+			bytes += sprintf(&data[bytes], "%d,",
+					ts_test->rawdata[i].data[j]);
 			if ((j + 1) % tx == 0)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
+				bytes += sprintf(&data[bytes], "\n");
 		}
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</DataContent>\n");
+		bytes += sprintf(&data[bytes], "</DataContent>\n");
 		goodix_data_cal(ts_test->accord_arr[i].data, len, stat_result);
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
+		bytes += sprintf(&data[bytes],
 			"<RawAccord No.=\"%d\" DataCount=\"%d\" Maximum=\"%d\" Minimum=\"%d\" Average=\"%d\">\n",
 			i, len, stat_result[1], stat_result[2], stat_result[0]);
 		for (j = 0; j < len; j++) {
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-					"%d,", ts_test->accord_arr[i].data[j]);
+			bytes += sprintf(&data[bytes], "%d,",
+					ts_test->accord_arr[i].data[j]);
 			if ((j + 1) % tx == 0)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
+				bytes += sprintf(&data[bytes], "\n");
 		}
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</RawAccord>\n");
-		ret = fs_write(data, bytes, fp);
+		bytes += sprintf(&data[bytes], "</RawAccord>\n");
+		ret = fs_write(data, bytes);
 		if (ret < 0) {
 			ts_err("rawdata write fail.");
 			goto save_end;
@@ -2510,18 +3151,17 @@ static int goodix_save_rawdata(struct goodix_ts_test *ts_test,
 		bytes = 0;
 	}
 
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</RawDataRecord>\n");
-	ret = fs_write(data, bytes, fp);
+	bytes += sprintf(&data[bytes], "</RawDataRecord>\n");
+	ret = fs_write(data, bytes);
 	if (ret < 0)
 		ts_err("rawdata write fail.");
 
 save_end:
-	kfree(data);
+	vfree(data);
 	return ret;
 }
 
-static int goodix_save_noise_data(struct goodix_ts_test *ts_test,
-		struct file *fp)
+static int goodix_save_noise_data(struct goodix_ts_test *ts_test)
 {
 	int i;
 	int j;
@@ -2531,45 +3171,51 @@ static int goodix_save_noise_data(struct goodix_ts_test *ts_test,
 	char *data = NULL;
 	int tx = ts_test->test_params.drv_num;
 	int rx = ts_test->test_params.sen_num;
+	int freq_num = ts_test->ts->ic_info.parm.mutual_freq_num;
+	int freq_cnt;
 	int len = tx * rx;
 
-	data = kzalloc(MAX_DATA_BUFFER, GFP_KERNEL);
+	data = vzalloc(MAX_DATA_BUFFER);
 	if (!data)
 		return -ENOMEM;
 
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<DiffDataRecord>\n");
-	for (i = 0; i < NOISEDATA_TEST_TIMES; i++) {
-		goodix_data_cal(ts_test->noisedata[i].data, len, stat_result);
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			"<DataContent No.=\"%d\" DataCount=\"%d\" Maximum=\"%d\" Minimum=\"%d\" Average=\"%d\">\n",
-			i, len, stat_result[1], stat_result[2], stat_result[0]);
-		for (j = 0; j < len; j++) {
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-					"%d,", ts_test->noisedata[i].data[j]);
-			if ((j + 1) % tx == 0)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
+	bytes += sprintf(&data[bytes], "<DiffDataRecord>\n");
+	for (freq_cnt = 0; freq_cnt < freq_num; freq_cnt++) {
+		bytes += sprintf(&data[bytes], "<MutualFreq>%d</MutualFreq>\n",
+			ts_test->ts->ic_info.parm.mutual_freq[freq_cnt]);
+		for (i = 0; i < NOISEDATA_TEST_TIMES; i++) {
+			goodix_data_cal(ts_test->mutual_freq_diff[freq_cnt].noisedata[i].data, len, stat_result);
+			bytes += sprintf(&data[bytes],
+				"<DataContent No.=\"%d\" DataCount=\"%d\" Maximum=\"%d\" Minimum=\"%d\" Average=\"%d\">\n",
+				i, len, stat_result[1], stat_result[2], stat_result[0]);
+			for (j = 0; j < len; j++) {
+				bytes += sprintf(&data[bytes], "%d,",
+						ts_test->mutual_freq_diff[freq_cnt].noisedata[i].data[j]);
+				if ((j + 1) % tx == 0)
+					bytes += sprintf(&data[bytes], "\n");
+			}
+			bytes += sprintf(&data[bytes], "</DataContent>\n");
+			ret = fs_write(data, bytes);
+			if (ret < 0) {
+				ts_err("noisedata write fail.");
+				goto save_end;
+			}
+			bytes = 0;
 		}
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</DataContent>\n");
-		ret = fs_write(data, bytes, fp);
-		if (ret < 0) {
-			ts_err("noisedata write fail.");
-			goto save_end;
-		}
-		bytes = 0;
 	}
 
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</DiffDataRecord>\n");
-	ret = fs_write(data, bytes, fp);
+	bytes += sprintf(&data[bytes], "</DiffDataRecord>\n");
+	ret = fs_write(data, bytes);
 	if (ret < 0)
 		ts_err("noisedata write fail.");
 
 save_end:
-	kfree(data);
+	vfree(data);
 	return ret;
 }
 
 static int goodix_save_self_data(struct goodix_ts_test *ts_test,
-		struct file *fp, s16 *src_data, u8 *title, int len)
+		s16 *src_data, u8 *title, int len)
 {
 	int i;
 	int ret = 0;
@@ -2578,12 +3224,12 @@ static int goodix_save_self_data(struct goodix_ts_test *ts_test,
 	s16 stat_result[3];
 	int tx = ts_test->test_params.drv_num;
 
-	data = kzalloc(MAX_DATA_BUFFER, GFP_KERNEL);
+	data = vzalloc(MAX_DATA_BUFFER);
 	if (!data)
 		return -ENOMEM;
 
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<%s>\n",title);
-	ret = fs_write(data, bytes, fp);
+	bytes += sprintf(&data[bytes], "<%s>\n", title);
+	ret = fs_write(data, bytes);
 	if (ret < 0) {
 		ts_err("rawdata write fail.");
 		goto save_end;
@@ -2591,58 +3237,107 @@ static int goodix_save_self_data(struct goodix_ts_test *ts_test,
 	bytes = 0;
 
 	goodix_data_cal(src_data, len, stat_result);
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
+	bytes += sprintf(&data[bytes],
 		"<DataContent No.=\"0\" DataCount=\"%d\" Maximum=\"%d\" Minimum=\"%d\" Average=\"%d\">\n",
 		len, stat_result[1], stat_result[2], stat_result[0]);
 	for (i = 0; i < len; i++) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "%d,", src_data[i]);
+		bytes += sprintf(&data[bytes], "%d,", src_data[i]);
 		if ((i + 1) % tx == 0)
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
+			bytes += sprintf(&data[bytes], "\n");
 	}
 	if (len % tx != 0)
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</DataContent>\n");
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</%s>\n",title);
-	ret = fs_write(data, bytes, fp);
+		bytes += sprintf(&data[bytes], "\n");
+	bytes += sprintf(&data[bytes], "</DataContent>\n");
+	bytes += sprintf(&data[bytes], "</%s>\n", title);
+	ret = fs_write(data, bytes);
 	if (ret < 0)
 		ts_err("rawdata write fail.");
+
+save_end:
+	vfree(data);
+	return ret;
+}
+
+static int goodix_save_diff_shift_data(struct goodix_ts_test *ts_test)
+{
+	int i;
+	int j;
+	int ret = 0;
+	int bytes = 0;
+	s16 stat_result[3];
+	char *data = NULL;
+	int tx = ts_test->test_params.drv_num;
+	int rx = ts_test->test_params.sen_num;
+	int len = tx * rx;
+
+	data = kzalloc(MAX_DATA_BUFFER, GFP_KERNEL);
+	if (!data) {
+		ts_err("alloc memory failed for ");
+		return -ENOMEM;
+	}
+
+	bytes += sprintf(&data[bytes], "<DiffShiftDataRecord>\n");
+	for (i = 0; i < MAX_SCAN_FREQ_NUM; i++) {
+		if (!ts_test->test_params.diff_shift_freq[i])
+			continue;
+		goodix_data_cal(ts_test->diff_shift_noise[i], len, stat_result);
+		bytes += sprintf(&data[bytes],
+			"<DataContent No.=\"%d\" DataCount=\"%d\" Maximum=\"%d\" Minimum=\"%d\" Average=\"%d\">\n",
+			i, len, stat_result[1], stat_result[2], stat_result[0]);
+		for (j = 0; j < len; j++) {
+			bytes += sprintf(&data[bytes], "%d,", ts_test->diff_shift_noise[i][j]);
+			if ((j + 1) % tx == 0)
+				bytes += sprintf(&data[bytes], "\n");
+		}
+		bytes += sprintf(&data[bytes], "</DataContent>\n");
+		ret = fs_write(data, bytes);
+		if (ret < 0) {
+			ts_err("diff shift data write fail.");
+			goto save_end;
+		}
+		bytes = 0;
+	}
+
+	bytes += sprintf(&data[bytes], "</DiffShiftDataRecord>\n");
+	ret = fs_write(data, bytes);
+	if (ret < 0)
+		ts_err("raw shift data write fail.");
 
 save_end:
 	kfree(data);
 	return ret;
 }
 
-static int goodix_save_data(struct goodix_ts_test *ts_test,
-		struct file *fp)
+static int goodix_save_data(struct goodix_ts_test *ts_test)
 {
 	int ret;
 	int bytes = 0;
 	char *data = NULL;
 
-	data = kzalloc(MAX_DATA_BUFFER, GFP_KERNEL);
+	data = vzalloc(MAX_DATA_BUFFER);
 	if (!data)
 		return -ENOMEM;
 
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<DataRecord>\n");
-	ret = fs_write(data, bytes, fp);
+	bytes += sprintf(&data[bytes], "<DataRecord>\n");
+	ret = fs_write(data, bytes);
 	if (ret < 0) {
 		ts_err("rawdata record lable failed");
 		goto save_end;
 	}
 	bytes = 0;
 
-	ret = goodix_save_rawdata(ts_test, fp);
+	ret = goodix_save_rawdata(ts_test);
 	if (ret < 0)
 		goto save_end;
 
 	if (ts_test->test_result[GTP_NOISE_TEST]) {
-		ret = goodix_save_noise_data(ts_test, fp);
+		ret = goodix_save_noise_data(ts_test);
 		if (ret < 0)
 			goto save_end;
 	}
 
 	if (ts_test->test_result[GTP_SELFCAP_TEST]) {
-		ret = goodix_save_self_data(ts_test, fp,
+		ret = goodix_save_self_data(ts_test,
 				ts_test->self_rawdata.data,
 				"selfDataRecord",
 				ts_test->self_rawdata.size);
@@ -2651,7 +3346,7 @@ static int goodix_save_data(struct goodix_ts_test *ts_test,
 	}
 
 	if (ts_test->test_result[GTP_SELFNOISE_TEST]) {
-		ret = goodix_save_self_data(ts_test, fp,
+		ret = goodix_save_self_data(ts_test,
 				ts_test->self_noisedata.data,
 				"selfDiffDataRecord",
 				ts_test->self_noisedata.size);
@@ -2659,81 +3354,70 @@ static int goodix_save_data(struct goodix_ts_test *ts_test,
 			goto save_end;
 	}
 
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</DataRecord>\n");
-	ret = fs_write(data, bytes, fp);
+	if (ts_test->test_result[GTP_DIFF_SHIFT_TEST]) {
+		ret = goodix_save_diff_shift_data(ts_test);
+		if (ret < 0)
+			goto save_end;
+	}
+
+	bytes += sprintf(&data[bytes], "</DataRecord>\n");
+	ret = fs_write(data, bytes);
 	if (ret < 0)
 		ts_err("rawdata data record lable fail.");
 
 save_end:
-	kfree(data);
+	vfree(data);
 	return ret;
 }
 
 /* save end tag in csv file */
-static int goodix_save_tail(struct goodix_ts_test *ts_test,
-		struct file *fp)
+static int goodix_save_tail(struct goodix_ts_test *ts_test)
 {
 	int ret = 0;
 	int bytes = 0;
 	char *data = NULL;
 
-	data = kzalloc(MAX_DATA_BUFFER, GFP_KERNEL);
+	data = vzalloc(MAX_DATA_BUFFER);
 	if (!data)
 		return -ENOMEM;
 
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER, "</TESTLOG>\n");
-	ret = fs_write(data, bytes, fp);
+	bytes += sprintf(&data[bytes], "</TESTLOG>\n");
+	ret = fs_write(data, bytes);
 	if (ret < 0)
 		ts_err("tail write failed");
 
-	kfree(data);
+	vfree(data);
 	return ret;
 }
 
 static void goodix_save_result_data(struct goodix_ts_test *ts_test)
 {
-	int ret = 0;
-	char save_path[100];
-	struct file *fp = NULL;
-
-	/* format result file */
-	scnprintf(save_path, ARRAY_SIZE(save_path), GOODIX_RESULT_SAVE_PATH);
-	ts_info("save result IN, file_name:%s", save_path);
-
-	fp = filp_open(save_path, O_CREAT | O_WRONLY | O_TRUNC, 0666);
-	if (IS_ERR(fp)) {
-		ts_err("create file:%s failed, fp:%ld", save_path, PTR_ERR(fp));
-		return;
-	}
+	int ret;
 
 	/* save header */
-	ret = goodix_save_header(ts_test, fp);
+	ret = goodix_save_header(ts_test);
 	if (ret < 0)
-		goto save_end;
+		return;
 
 	/* save limits */
-	ret = goodix_save_limits(ts_test, fp);
+	ret = goodix_save_limits(ts_test);
 	if (ret < 0)
-		goto save_end;
+		return;
 
 	/* save data */
-	ret = goodix_save_data(ts_test, fp);
+	ret = goodix_save_data(ts_test);
 	if (ret < 0)
-		goto save_end;
+		return;
 
 	/* save tail */
-	ret = goodix_save_tail(ts_test, fp);
+	ret = goodix_save_tail(ts_test);
 	if (ret < 0)
-		goto save_end;
+		return;
 
-	ts_info("the test result save in %s", save_path);
-save_end:
-	filp_close(fp, NULL);
+	fs_write(ts_test->test_info, strlen(ts_test->test_info));
 }
-#endif // SAVE_IN_CSV
 
-static void goodix_put_test_result(struct goodix_ts_test *ts_test,
-		struct ts_rawdata_info *info)
+static void goodix_put_test_result(struct goodix_ts_test *ts_test)
 {
 	int i;
 	bool have_bus_error = false;
@@ -2742,37 +3426,6 @@ static void goodix_put_test_result(struct goodix_ts_test *ts_test,
 	struct goodix_ts_core *ts = ts_test->ts;
 
 	ts_info("put test result IN");
-
-	info->buff[0] = ts_test->test_params.sen_num;
-	info->buff[1] = ts_test->test_params.drv_num;
-	info->used_size = 2;
-	/* save rawdata to info->buff, only one frame */
-	if (ts_test->rawdata[0].size) {
-		for (i = 0; i < ts_test->rawdata[0].size; i++)
-			info->buff[info->used_size + i] = ts_test->rawdata[0].data[i];
-		info->used_size += ts_test->rawdata[0].size;
-	}
-
-	/* save noisedata to info->buff */
-	if (ts_test->noisedata[0].size) {
-		for (i = 0; i < ts_test->noisedata[0].size; i++)
-			info->buff[info->used_size + i] = ts_test->noisedata[0].data[i];
-		info->used_size += ts_test->noisedata[0].size;
-	}
-
-	/* save self_noisedata to info->buff */
-	if (ts_test->self_noisedata.size) {
-		for (i = 0; i < ts_test->self_noisedata.size; i++)
-			info->buff[info->used_size + i] = ts_test->self_noisedata.data[i];
-		info->used_size += ts_test->self_noisedata.size;
-	}
-
-	/* save self_rawdata to info->buff */
-	if (ts_test->self_rawdata.size) {
-		for (i = 0; i < ts_test->self_rawdata.size; i++)
-			info->buff[info->used_size + i] = ts_test->self_rawdata.data[i];
-		info->used_size += ts_test->self_rawdata.size;
-	}
 
 	/* check if there have bus error */
 	for (i = 0; i < MAX_TEST_ITEMS; i++) {
@@ -2825,10 +3478,10 @@ static void goodix_put_test_result(struct goodix_ts_test *ts_test,
 
 	/* calculate noisedata min avg max value*/
 	if (ts_test->test_params.test_items[GTP_NOISE_TEST]) {
-		if (ts_test->noisedata[0].size) {
+		if (ts_test->mutual_freq_diff->noisedata[0].size) {
 			goodix_data_statistics(
-					ts_test->noisedata[0].data,
-					ts_test->noisedata[0].size,
+					ts_test->mutual_freq_diff->noisedata[0].data,
+					ts_test->mutual_freq_diff->noisedata[0].size,
 					statistics_data,
 					STATISTICS_DATA_LEN);
 			goodix_strncat(ts_test->test_info, statistics_data,
@@ -2842,8 +3495,7 @@ static void goodix_put_test_result(struct goodix_ts_test *ts_test,
 
 	/* calculate self_rawdata min avg max value*/
 	if (ts_test->test_params.test_items[GTP_SELFCAP_TEST]) {
-		if (ts_test->self_rawdata.size <=
-			sizeof(ts_test->self_rawdata.data) / sizeof(ts_test->self_rawdata.data[0])) {
+		if (ts_test->self_rawdata.size) {
 			goodix_data_statistics(
 					ts_test->self_rawdata.data,
 					ts_test->self_rawdata.size,
@@ -2860,8 +3512,7 @@ static void goodix_put_test_result(struct goodix_ts_test *ts_test,
 
 	/* calculate self_noisedata min avg max value*/
 	if (ts_test->test_params.test_items[GTP_SELFNOISE_TEST]) {
-		if (ts_test->self_noisedata.size <=
-			sizeof(ts_test->self_noisedata.data) / sizeof(ts_test->self_noisedata.data[0])) {
+		if (ts_test->self_noisedata.size) {
 			goodix_data_statistics(
 					ts_test->self_noisedata.data,
 					ts_test->self_noisedata.size,
@@ -2880,36 +3531,150 @@ static void goodix_put_test_result(struct goodix_ts_test *ts_test,
 		TS_RAWDATA_RESULT_MAX);
 	goodix_strncat(ts_test->test_info, ts->fw_version.patch_pid,
 		TS_RAWDATA_RESULT_MAX);
-	goodix_strncat(ts_test->test_info, "\n",
-		TS_RAWDATA_RESULT_MAX);
-	strlcpy(info->result, ts_test->test_info, TS_RAWDATA_RESULT_MAX - 1);
 
-#ifdef SAVE_IN_CSV
-	/* save result to file */
+	ts_info("%s", ts_test->test_info);
+	/* save result */
 	goodix_save_result_data(ts_test);
-#endif
 }
 
-static int goodix_do_inspect(struct goodix_ts_core *cd, struct ts_rawdata_info *info)
+static int goodix_do_inspect_thread(void *arg)
 {
 	int ret;
+	struct goodix_ts_test *ts_test;
+	struct goodix_ts_core *cd = arg;
+	char tmp_uid[16];
+	if (!cd) {
+		ts_err("core_data is NULL");
+		return -ENODEV;
+	}
+
+	ts_test = vzalloc(sizeof(*ts_test));
+	if (!ts_test)
+		return -ENOMEM;
+
+	if (!g_ts_test) {
+		g_ts_test = kzalloc(sizeof(*g_ts_test), GFP_KERNEL);
+		if (!g_ts_test) {
+			ts_err("Failed to alloc mem");
+			return -ENOMEM;
+		}
+	} else {
+		memset(g_ts_test, 0, sizeof(*g_ts_test));
+	}
+	ts_test = g_ts_test;
+
+	cd->hw_ops->read_uid(cd, tmp_uid);
+	if (memcmp(cd->chip_uid, tmp_uid, 16)) {
+		ts_err("chip uid is not match, original:%*ph, current:%*ph",
+				16, cd->chip_uid,
+				16, tmp_uid);
+	}
+
+	g_test_stage = TEST_STAGE_PREPARE;
+	ts_test->ts = cd;
+	ret = goodix_tptest_prepare(ts_test);
+	if (ret < 0) {
+		ts_err("[FAIL]-0F-software reason");
+		fs_write("[FAIL]-0F-software reason\n", strlen("[FAIL]-0F-software reason\n"));
+		goto exit_finish;
+	}
+	ts_info("TP test prepare OK");
+	g_test_stage = TEST_STAGE_OPEN_SHORT_S;
+	goodix_version_test(ts_test);
+	goodix_check_key_info_test(ts_test);
+	goodix_custom_info_test(ts_test);
+	goodix_reset_test(ts_test);
+	goodix_capacitance_test(ts_test); /* 1F 3F 6F 7F test */
+	if (ts_test->test_params.test_items[GTP_SHORT_TEST])
+		goodix_shortcircut_test(ts_test); /* 5F test */
+	goodix_tptest_finish(ts_test);
+	g_test_stage = TEST_STAGE_OPEN_SHORT_E;
+
+exit_finish:
+	return ret;
+}
+
+int goodix_inspect_run(struct goodix_ts_core *cd, const char *name)
+{
+	int i;
+
+	/* create and run update thread */
+	memset(g_limit_file_name, 0, sizeof(g_limit_file_name));
+	for (i = 0; i < sizeof(g_limit_file_name); i++) {
+		if (name[i] == '\0' || name[i] == '\n' || name[i] == '\r')
+			break;
+		g_limit_file_name[i] = name[i];
+	}
+
+	goodix_do_inspect_thread(cd);
+	return 0;
+}
+
+static int auto_test_result_show(struct seq_file *m, void *v)
+{
+	int ret;
+
+	if (!g_ts_test) {
+		ts_info("no test result, please retry");
+		return -EAGAIN;
+	}
+
+	/* check diff shift test result */
+	goodix_diff_shift_result_check(g_ts_test);
+	goodix_put_test_result(g_ts_test);
+	ret = seq_write(m, g_test_result_buf, g_test_result_size);
+	deinit_test_result_buf();
+
+	kfree(g_ts_test);
+	g_ts_test = NULL;
+	return ret;
+}
+
+static int auto_test_open(struct inode *inode, struct file *file)
+{
+	return single_open_size(file, auto_test_result_show,
+			pde_data(inode), DEFAULT_SEQ_FILE_SIZE);
+}
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0))
+static const struct proc_ops auto_test_ops = {
+	.proc_open = auto_test_open,
+	.proc_read = seq_read,
+	.proc_lseek = seq_lseek,
+	.proc_release = single_release,
+};
+#else
+static const struct file_operations auto_test_ops = {
+	.open = auto_test_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+#endif
+
+int goodix_get_rawdata(struct device *dev, struct ts_rawdata_info *info)
+{
+	int ret;
+	int i;
 	struct goodix_ts_test *ts_test = NULL;
 
-	if (!cd || !info) {
+	ts_info("tp self test start");
+
+	if (!dev || !info) {
 		ts_err("core_data or info is NULL");
 		return -ENODEV;
 	}
 
-	ts_test = kzalloc(sizeof(*ts_test), GFP_KERNEL);
-	if (!ts_test)
+	ts_test = vzalloc(sizeof(*ts_test));
+	if (!ts_test) {
+		ts_err("Failed to alloc mem");
 		return -ENOMEM;
+	}
 
-	ts_test->ts = cd;
+	ts_test->ts = dev_get_drvdata(dev);
 	ret = goodix_tptest_prepare(ts_test);
 	if (ret < 0) {
 		ts_err("Failed to prepare TP test, exit");
-		strlcpy(info->result, "[FAIL]-0F-software reason\n",
-				TS_RAWDATA_RESULT_MAX - 1);
 		goto exit_finish;
 	}
 	ts_info("TP test prepare OK");
@@ -2917,65 +3682,49 @@ static int goodix_do_inspect(struct goodix_ts_core *cd, struct ts_rawdata_info *
 	goodix_capacitance_test(ts_test); /* 1F 3F 6F 7F test */
 	if (ts_test->test_params.test_items[GTP_SHORT_TEST])
 		goodix_shortcircut_test(ts_test); /* 5F test */
-	goodix_put_test_result(ts_test, info);
+	goodix_put_test_result(ts_test);
 	goodix_tptest_finish(ts_test);
+	info->result[0] = 2;//pass
+	for (i = 0; i < MAX_TEST_ITEMS; i++) {
+		/* if have tested, show result */
+		if (ts_test->test_result[i]) {
+			if (ts_test->test_result[i] != GTP_TEST_PASS)
+				info->result[0] = 1;//fail
+		}
+	}
 
 exit_finish:
-	kfree(ts_test);
+	vfree(ts_test);
 	return ret;
 }
 
-/* show rawdata */
-static ssize_t get_rawdata_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
+int inspect_module_init(struct goodix_ts_core *core_data)
 {
-	int ret = 0;
-	struct ts_rawdata_info *info = NULL;
-	struct goodix_ts_core *cd = dev_get_drvdata(dev);
+	struct proc_dir_entry *proc_entry;
 
-	info = kzalloc(sizeof(*info), GFP_KERNEL);
-	if (!info)
-		return -ENOMEM;
-
-	goodix_do_inspect(cd, info);
-
-	ret = snprintf(buf, PAGE_SIZE, "resultInfo: %s", info->result);
-
-	kfree(info);
-	return ret;
-}
-
-static DEVICE_ATTR(get_rawdata, 0444, get_rawdata_show, NULL);
-
-int inspect_module_init(void)
-{
-	int ret;
-	struct kobject *def_kobj = goodix_get_default_kobj();
-
-	/* create sysfs */
-	ret = sysfs_create_file(def_kobj, &dev_attr_get_rawdata.attr);
-	if (ret < 0) {
-		ts_err("create sysfs of get_rawdata failed");
-		goto err_out;
+	if (module_initialized) {
+		ts_info("inspect module has already init");
+		return 0;
 	}
+
+	proc_entry = proc_create_data("goodix_ts/auto_test",
+			0660, NULL, &auto_test_ops, core_data);
+	if (!proc_entry) {
+        ts_err("failed to create proc entry");
+        return -ENOMEM;
+    }
 
 	module_initialized = true;
 	ts_info("inspect module init success");
 	return 0;
-
-err_out:
-	ts_err("inspect module init failed!");
-	return ret;
 }
 
 void inspect_module_exit(void)
 {
-	struct kobject *def_kobj = goodix_get_default_kobj();
-
 	ts_info("inspect module exit");
 	if (!module_initialized)
 		return;
 
-	sysfs_remove_file(def_kobj, &dev_attr_get_rawdata.attr);
+	remove_proc_entry("goodix_ts/auto_test", NULL);
 	module_initialized = false;
 }

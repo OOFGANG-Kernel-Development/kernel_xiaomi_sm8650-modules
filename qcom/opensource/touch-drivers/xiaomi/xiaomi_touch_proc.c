@@ -216,6 +216,8 @@ static ssize_t proc_tp_write(struct file *file, const char __user *buf, size_t c
 	} else if (!strncmp("tp_selftest", name, 11)) {
 		static char self_test_cmd[64];
 		size_t temp_count = count;
+		int maxCount = 5;
+		int retry = 0;
 		memset(self_test_cmd, 0, 64);
 		if (temp_count >= 64) {
 			LOG_ERROR("write self test cmd length too long, current length is %zu", temp_count);
@@ -225,9 +227,16 @@ static ssize_t proc_tp_write(struct file *file, const char __user *buf, size_t c
 			LOG_ERROR("copy self test has error");
 			return -EFAULT;
 		}
-		if (xiaomi_touch_driver_param->hardware_operation.ic_self_test)
+		if (xiaomi_touch_driver_param->hardware_operation.ic_self_test) {
+		ic_self_test:
 			xiaomi_touch_driver_param->hardware_operation.ic_self_test(self_test_cmd, &self_test_result[touch_id]);
-		LOG_ERROR("start self test cmd: %s", self_test_cmd);
+			LOG_ERROR("start self test cmd: %s", self_test_cmd);
+			if (retry < maxCount && self_test_result[touch_id] != 2) {
+				LOG_ERROR("self test failed, result is %d, retry %d times", self_test_result[touch_id], retry);
+				retry++;
+				goto ic_self_test;
+			}
+		}
 	}
 
 	return count;
