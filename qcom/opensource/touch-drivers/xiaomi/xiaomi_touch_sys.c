@@ -605,7 +605,7 @@ int xiaomi_touch_sys_init(void)
 {
 	int ret = 0;
 	LOG_ALWAYS("enter");
-	xiaomi_touch_class = class_create("touch");
+	xiaomi_touch_class = class_create(THIS_MODULE, "touch");
 
 	if (!xiaomi_touch_class) {
 		LOG_ERROR("create device class err");
