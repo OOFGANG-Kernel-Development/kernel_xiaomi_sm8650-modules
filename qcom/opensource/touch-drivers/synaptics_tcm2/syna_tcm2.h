@@ -164,6 +164,7 @@
  *        This property is available only when SYNA_TCM2_REFLASH
  *        feature is enabled.
  */
+#define HAS_REFLASH_FEATURE
 #if defined(HAS_REFLASH_FEATURE) || defined(HAS_ROMBOOT_REFLASH_FEATURE)
 #define STARTUP_REFLASH
 #endif
