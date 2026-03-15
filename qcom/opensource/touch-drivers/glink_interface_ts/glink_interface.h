@@ -62,7 +62,7 @@ void glink_touch_channel_init(void (*fn1)(bool), void (*fn2)(void *, int));
 
 
 
-#if IS_ENABLED(CONFIG_MSM_SLATERSB_RPMSG)
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_MSM_GLINK)
 int glink_touch_tx_msg(void  *msg, size_t len);
 #else
 static inline int glink_touch_tx_msg(void  *msg, size_t len)
