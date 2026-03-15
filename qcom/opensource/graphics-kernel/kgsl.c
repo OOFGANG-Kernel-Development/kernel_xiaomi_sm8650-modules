@@ -2943,7 +2943,7 @@ static int memdesc_sg_virt(struct kgsl_device *device, struct kgsl_memdesc *memd
 		goto out;
 	}
 
-	npages = get_user_pages(useraddr, sglen, write, pages, NULL);
+	npages = get_user_pages(useraddr, sglen, write, pages);
 	mmap_read_unlock(current->mm);
 
 	ret = (npages < 0) ? (int)npages : 0;

@@ -2996,11 +2996,7 @@ static int icnss_ramdump_devnode_init(struct icnss_priv *priv)
 {
 	int ret = 0;
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 2, 0))
 	priv->icnss_ramdump_class = class_create(THIS_MODULE, ICNSS_RAMDUMP_NAME);
-#else
-	priv->icnss_ramdump_class = class_create(ICNSS_RAMDUMP_NAME);
-#endif
 	if (IS_ERR_OR_NULL(priv->icnss_ramdump_class)) {
 		ret = PTR_ERR(priv->icnss_ramdump_class);
 		icnss_pr_err("%s:Class create failed for ramdump devices (%d)\n", __func__, ret);
