@@ -27,3 +27,7 @@ define_volcano()
 load(":target.bzl", "define_seraph")
 
 define_seraph()
+
+load(":target.bzl", "define_peridot")
+
+define_peridot()

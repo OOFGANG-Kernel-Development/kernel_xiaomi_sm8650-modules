@@ -35,4 +35,6 @@ ddk_headers(
 
 
 load(":pineapple.bzl", "define_pineapple")
+load(":peridot.bzl", "define_peridot")
 define_pineapple()
+define_peridot()

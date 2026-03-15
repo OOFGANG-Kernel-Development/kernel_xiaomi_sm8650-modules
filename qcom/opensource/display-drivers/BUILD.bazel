@@ -1,4 +1,4 @@
-load("//build/kernel/kleaf:kernel.bzl", "ddk_headers", "ddk_uapi_headers")
+load("//build/kernel/kleaf:kernel.bzl", "ddk_headers")
 
 package(
     default_visibility = [
@@ -75,14 +75,6 @@ ddk_headers(
     hdrs = [ ":linux_includes", ":uapi_headers", ":msm_headers",":dp_headers",":dsi_headers",":sde_headers",":rotator_headers"]
 )
 
-ddk_uapi_headers(
-    name = "msm_display_ddk_uapi_headers",
-    srcs = [
-        ":_display_uapi_headers",
-    ],
-    out = "display-uapi-headers.tar.gz",
-    kernel_build = "//:target_kernel_build",
-)
 
 load(":target.bzl", "define_display_target")
 define_display_target()

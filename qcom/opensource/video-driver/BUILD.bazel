@@ -22,6 +22,14 @@ ddk_headers(
 )
 
 ddk_headers(
+    name = "peridot_headers",
+    hdrs = glob([
+      "driver/platform/pineapple/inc/*.h",
+    ]),
+    includes = ["driver/platform/pineapple/inc"]
+)
+
+ddk_headers(
     name = "cliffs_headers",
     hdrs = glob([
       "driver/platform/cliffs/inc/*.h",

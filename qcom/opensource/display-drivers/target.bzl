@@ -145,6 +145,8 @@ def define_display_target():
             define_pineapple(t, v)
         if t == "neo-la":
             define_neo_la(t, v)
+        if t == "peridot":
+            define_pineapple(t, v)
 
     for (lt, t, v) in get_all_lunch_target_base_target_variants():
         if lt == "volcano":

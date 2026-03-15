@@ -9,3 +9,12 @@ def define_pineapple():
             "msm-mmrm"
         ],
 )
+
+def define_peridot():
+    define_consolidate_gki_modules(
+        target = "peridot",
+        registry = mmrm_driver_modules,
+        modules = [
+            "msm-mmrm"
+        ],
+)

@@ -128,3 +128,25 @@ def define_seraph():
 	    "CONFIG_BT_HW_SECURE_DISABLE",
 	]
    )
+
+def define_peridot():
+    define_bt_modules(
+        target = "peridot",
+        modules = [
+            "btpower",
+            "bt_fm_slim",
+            "radio-i2c-rtc6226-qca",
+            "bt_fm_swr",
+            "btfmcodec",
+            "btfm_slim_codec",
+        ],
+        config_options = [
+            "CONFIG_MSM_BT_POWER",
+            "CONFIG_BTFM_SLIM",
+            "CONFIG_I2C_RTC6226_QCA",
+            "CONFIG_BTFM_SWR",
+            "CONFIG_BTFM_CODEC",
+            "CONFIG_BT_HW_SECURE_DISABLE",
+            "CONFIG_SLIM_BTFM_CODEC",
+        ]
+    )

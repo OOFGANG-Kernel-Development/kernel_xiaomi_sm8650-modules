@@ -372,6 +372,8 @@ def define_audio_target():
             define_kalama(t, v)
         if t == "niobe":
             define_niobe(t, v)
+        if t == "peridot":
+            define_pineapple(t, v)
 
     for (lt, t, v) in get_all_lunch_target_base_target_variants():
         print(lt)

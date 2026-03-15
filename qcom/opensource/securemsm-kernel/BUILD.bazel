@@ -4,7 +4,7 @@ package(
     ],
 )
 
-load("//build/kernel/kleaf:kernel.bzl", "ddk_headers", "ddk_uapi_headers")
+load("//build/kernel/kleaf:kernel.bzl", "ddk_headers")
 
 ddk_headers(
     name = "smcinvoke_kernel_headers",
@@ -85,14 +85,6 @@ filegroup(
     ]),
 )
 
-ddk_uapi_headers(
-    name = "msm_securemsm_ddk_uapi_headers",
-    srcs = [
-        ":_securemsm_uapi_headers",
-    ],
-    out = "securemsm-uapi-headers.tar.gz",
-        kernel_build = "//:target_kernel_build",
-)
 
 load(":build/pineapple.bzl", "define_pineapple")
 load(":build/anorak.bzl", "define_anorak")
@@ -101,6 +93,7 @@ load(":build/sun.bzl", "define_sun")
 load(":build/niobe.bzl", "define_niobe")
 load(":build/monaco.bzl", "define_monaco")
 load(":build/neo.bzl", "define_neo")
+load(":build/peridot.bzl", "define_peridot")
 
 define_pineapple()
 define_anorak()
@@ -109,3 +102,4 @@ define_niobe()
 define_monaco()
 define_sun()
 define_neo()
+define_peridot()

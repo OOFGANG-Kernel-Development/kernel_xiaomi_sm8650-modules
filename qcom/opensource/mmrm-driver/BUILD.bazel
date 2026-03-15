@@ -26,5 +26,6 @@ ddk_headers(
     hdrs = [":mmrm_drivers_configs", "driver_headers"]
 )
 
-load(":target.bzl", "define_pineapple")
+load(":target.bzl", "define_pineapple", "define_peridot")
 define_pineapple()
+define_peridot()
