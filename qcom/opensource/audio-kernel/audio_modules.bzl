@@ -444,7 +444,8 @@ audio_modules.register(
         "wcd939x-regmap.c",
         "wcd939x-tables.c",
         "wcd939x-mbhc.c",
-    ]
+    ],
+    deps = ["//msm-kernel:hwid_headers"],
 )
 audio_modules.register(
     name = "wcd939x_slave_dlkm",
