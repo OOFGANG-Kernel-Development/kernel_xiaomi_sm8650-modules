@@ -9,7 +9,7 @@ def _define_module(target, variant):
         ":camera_banner",
         "//msm-kernel:all_headers",
     ]
-    if target == "pineapple":
+    if target in ["pineapple", "peridot"]:
         deps.extend([
             "//vendor/qcom/opensource/synx-kernel:synx_headers",
             "//vendor/qcom/opensource/synx-kernel:{}_modules".format(tv),
@@ -274,4 +274,5 @@ def define_camera_module():
     if skip == "true":
         _define_module("pineapple", "gki")
         _define_module("pineapple", "consolidate")
+        _define_module("peridot", "gki")
 
