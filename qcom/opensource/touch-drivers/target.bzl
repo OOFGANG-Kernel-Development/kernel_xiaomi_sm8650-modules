@@ -137,6 +137,34 @@ def define_volcano(t,v):
         ],
 )
 
+def define_peridot(t, v):
+    define_target_variant_modules(
+        target = t,
+        variant = v,
+        registry = touch_driver_modules,
+        modules = [
+            "nt36xxx-i2c",
+            "goodix_ts",
+            "focaltech_fts",
+            "qts",
+            "synaptics_tcm_ts",
+            "glink_comm",
+            "xiaomi_touch",
+        ],
+        config_options = [
+            "TOUCH_DLKM_ENABLE",
+            "CONFIG_ARCH_PINEAPPLE",
+            "CONFIG_MSM_TOUCH",
+            "CONFIG_TOUCHSCREEN_GOODIX_BRL",
+            "CONFIG_TOUCHSCREEN_NT36XXX_I2C",
+            "CONFIG_TOUCH_FOCALTECH",
+            "CONFIG_QTS_ENABLE",
+            "CONFIG_TOUCHSCREEN_SYNAPTICS_TCM",
+            "CONFIG_TOUCHSCREEN_MSM_GLINK",
+            "CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE",
+        ],
+)
+
 def define_touch_target():
     for (t, v) in get_all_la_variants() + get_all_le_variants() + get_all_lxc_variants():
         if t == "blair":
@@ -147,5 +175,7 @@ def define_touch_target():
             define_monaco(t, v)
         elif t == "volcano":
             define_volcano(t, v)
+        elif t == "peridot":
+            define_peridot(t, v)
         else:
             define_pineapple(t, v)
