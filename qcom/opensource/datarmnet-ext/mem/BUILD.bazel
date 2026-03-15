@@ -5,6 +5,10 @@ define_mem("pineapple", "consolidate")
 
 define_mem("pineapple", "gki")
 
+define_mem("peridot", "consolidate")
+
+define_mem("peridot", "gki")
+
 define_mem("blair", "consolidate")
 
 define_mem("blair", "gki")

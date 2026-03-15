@@ -1,8 +1,16 @@
+package(
+    default_visibility = ["//visibility:public"],
+)
+
 load(":define_shs.bzl", "define_shs")
 
 define_shs("pineapple", "consolidate")
 
 define_shs("pineapple", "gki")
+
+define_shs("peridot", "consolidate")
+
+define_shs("peridot", "gki")
 
 define_shs("blair", "consolidate")
 
