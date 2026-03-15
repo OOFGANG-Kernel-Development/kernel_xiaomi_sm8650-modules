@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -468,12 +468,14 @@ dp_tx_mon_generate_rts_frm(struct dp_pdev *pdev,
  * dp_tx_mon_generate_ack_frm() - API to generate ack frame
  * @pdev: pdev Handle
  * @tx_ppdu_info: pointer to tx ppdu info structure
+ * @window_flag: frame generated window
  *
  * Return: void
  */
 static void
 dp_tx_mon_generate_ack_frm(struct dp_pdev *pdev,
-			   struct dp_tx_ppdu_info *tx_ppdu_info)
+			   struct dp_tx_ppdu_info *tx_ppdu_info,
+			   uint8_t window_flag)
 {
 	/* allocate and populate ACK frame */
 	/* enqueue 802.11 payload to per user mpdu_q */
@@ -518,9 +520,15 @@ dp_tx_mon_generate_ack_frm(struct dp_pdev *pdev,
 	wh_addr1->i_fc[1] = 0;
 	wh_addr1->i_fc[0] = frm_ctl;
 
-	qdf_mem_copy(wh_addr1->i_addr1,
-		     TXMON_STATUS_INFO(tx_status_info, addr1),
-		     QDF_MAC_ADDR_SIZE);
+	if (window_flag == INITIATOR_WINDOW) {
+		qdf_mem_copy(wh_addr1->i_addr1,
+			     TXMON_STATUS_INFO(tx_status_info, addr1),
+			     QDF_MAC_ADDR_SIZE);
+	} else {
+		qdf_mem_copy(wh_addr1->i_addr1,
+			     TXMON_STATUS_INFO(tx_status_info, addr2),
+			     QDF_MAC_ADDR_SIZE);
+	}
 
 	/* set duration zero for ack frame */
 	*(u_int16_t *)(&wh_addr1->i_dur) = qdf_cpu_to_le16(0x0000);
@@ -1159,7 +1167,7 @@ dp_tx_mon_generated_response_frm(struct dp_pdev *pdev,
 	switch (gen_response) {
 	case TXMON_GEN_RESP_SELFGEN_ACK:
 	{
-		dp_tx_mon_generate_ack_frm(pdev, tx_ppdu_info);
+		dp_tx_mon_generate_ack_frm(pdev, tx_ppdu_info, RESPONSE_WINDOW);
 		break;
 	}
 	case TXMON_GEN_RESP_SELFGEN_CTS:

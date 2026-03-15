@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -24,6 +24,7 @@
 #include <wlan_hdd_wowl.h>
 #include <wlan_hdd_stats.h>
 #include "cfg_ucfg_api.h"
+#include "wlan_hdd_wext.h"
 #include "wlan_hdd_trace.h"
 #include "wlan_hdd_ioctl.h"
 #include "wlan_hdd_power.h"
@@ -50,13 +51,10 @@
 #include "wlan_reg_ucfg_api.h"
 #include "qdf_func_tracker.h"
 #include "wlan_cm_roam_ucfg_api.h"
-#include "wlan_tdls_api.h"
 
 #if defined(LINUX_QCMBR)
 #define SIOCIOCTLTX99 (SIOCDEVPRIVATE+13)
 #endif
-
-#define SIZE_OF_WIFI6E_CHAN_LIST       512
 
 /*
  * Size of Driver command strings from upper layer
@@ -2649,102 +2647,6 @@ static int drv_cmd_set_wmmps(struct wlan_hdd_link_info *link_info,
 	return hdd_wmmps_helper(link_info->adapter, command);
 }
 
-#ifdef CONFIG_BAND_6GHZ
-/**
- * drv_cmd_get_wifi6e_channels() - Handler for GET_WIFI6E_CHANNELS driver
- *                                 command
- * @link_info: Link info pointer in adapter
- * @hdd_ctx: pointer to hdd context
- * @command: command name
- * @command_len: command buffer length
- * @priv_data: output pointer to hold current country code
- *
- * Return: On success 0, negative value on error.
- */
-static int drv_cmd_get_wifi6e_channels(struct wlan_hdd_link_info *link_info,
-				       struct hdd_context *hdd_ctx,
-				       uint8_t *command,
-				       uint8_t command_len,
-				       struct hdd_priv_data *priv_data)
-{
-	uint8_t power_type;
-	char extra[SIZE_OF_WIFI6E_CHAN_LIST] = {0};
-	int i, ret, copied_length = 0;
-	enum channel_state state;
-	struct regulatory_channel *chan_list;
-	size_t max_buf_len = QDF_MIN(priv_data->total_len,
-				     SIZE_OF_WIFI6E_CHAN_LIST);
-	QDF_STATUS status;
-
-	if (wlan_hdd_validate_context(hdd_ctx))
-		return -EINVAL;
-
-	ret = kstrtou8(command + command_len + 1, 10, &power_type);
-	if (ret) {
-		hdd_err("error %d parsing userspace 6 GHz power type parameter",
-			ret);
-		return -EINVAL;
-	}
-
-	switch (power_type) {
-	case 0:
-		power_type = REG_CLI_DEF_LPI;
-		break;
-	case 1:
-		power_type = REG_CLI_DEF_VLP;
-		break;
-	case 2:
-		power_type = REG_CLI_DEF_SP;
-		break;
-	default:
-		hdd_err("The power type : %u, is incorrect", power_type);
-		return -EINVAL;
-	}
-
-	chan_list = qdf_mem_malloc(NUM_CHANNELS * sizeof(*chan_list));
-	if (!chan_list)
-		return -ENOMEM;
-
-	status = wlan_reg_get_pwrmode_chan_list(hdd_ctx->pdev, chan_list,
-						power_type);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		hdd_err("Failed to get wifi6e channel list for given power type %u",
-			power_type);
-		ret =  qdf_status_to_os_return(status);
-		goto free;
-	}
-
-	for (i = 0; i < NUM_6GHZ_CHANNELS && copied_length < max_buf_len - 1;
-	     i++) {
-		state = chan_list[i + MIN_6GHZ_CHANNEL].state;
-		if (state == CHANNEL_STATE_INVALID ||
-		    state == CHANNEL_STATE_DISABLE)
-			continue;
-		copied_length += scnprintf(extra + copied_length,
-				max_buf_len - copied_length, "%u ",
-				chan_list[i + MIN_6GHZ_CHANNEL].chan_num);
-	}
-
-	if (copied_length == 0) {
-		hdd_err("No Channel List found for given power type %u",
-			power_type);
-		ret = -EINVAL;
-		goto free;
-	}
-
-	if (copy_to_user(priv_data->buf, &extra, copied_length + 1)) {
-		hdd_err("failed to copy data to user buffer");
-		ret = -EFAULT;
-		goto free;
-	}
-
-	hdd_debug("Power type = %u, Data = %s", power_type, extra);
-free:
-	qdf_mem_free(chan_list);
-	return ret;
-}
-#endif
-
 static inline int __drv_cmd_country(struct wlan_hdd_link_info *link_info,
 				    struct hdd_context *hdd_ctx,
 				    uint8_t *command,
@@ -2828,6 +2730,27 @@ static int drv_cmd_get_country(struct wlan_hdd_link_info *link_info,
 	}
 
 	return ret;
+}
+
+/**
+ * set APF working status per WLAN chip's suspend monitor mode
+ * @adapter: pointer to adapter on which request is received
+ * Return: On success 0, negative value on error.
+ */
+static int drv_apf_enable(struct hdd_adapter *adapter, bool apf_enable)
+{
+	QDF_STATUS status;
+	hdd_prevent_suspend(WIFI_POWER_EVENT_WAKELOCK_WOW);
+	status = sme_set_apf_enable_disable(hdd_adapter_get_mac_handle(adapter),
+					    adapter->deflink->vdev_id, apf_enable);
+	if (!QDF_IS_STATUS_SUCCESS(status)) {
+		hdd_err("Unable to post sme apf enable/disable message (status-%d)",
+				status);
+		return -EINVAL;
+	}
+	adapter->apf_context.apf_enabled = apf_enable;
+	hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_WOW);
+	return 0;
 }
 
 static int drv_cmd_set_roam_trigger(struct wlan_hdd_link_info *link_info,
@@ -3193,36 +3116,6 @@ exit:
 	return ret;
 }
 
-#ifdef FEATURE_WLAN_APF
-static void hdd_enable_active_apf_mode(struct wlan_hdd_link_info *link_info)
-{
-	struct hdd_adapter *adapter = link_info->adapter;
-	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
-
-	sme_enable_active_apf_mode_ind(hdd_ctx->mac_handle, adapter->device_mode,
-				       adapter->mac_addr.bytes, link_info->vdev_id);
-}
-
-static void hdd_disable_active_apf_mode(struct wlan_hdd_link_info *link_info)
-{
-	struct hdd_adapter *adapter = link_info->adapter;
-	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
-
-	sme_disable_active_apf_mode_ind(hdd_ctx->mac_handle, adapter->device_mode,
-					adapter->mac_addr.bytes, link_info->vdev_id);
-}
-#else
-static void
-hdd_enable_active_apf_mode(struct wlan_hdd_link_info *link_info)
-{
-}
-
-static void
-hdd_disable_active_apf_mode(struct wlan_hdd_link_info *link_info)
-{
-}
-#endif
-
 static int drv_cmd_set_suspend_mode(struct wlan_hdd_link_info *link_info,
 				    struct hdd_context *hdd_ctx,
 				    uint8_t *command,
@@ -3254,26 +3147,10 @@ static int drv_cmd_set_suspend_mode(struct wlan_hdd_link_info *link_info,
 		return -EINVAL;
 	}
 
-	hdd_debug("idle_monitor:%d, configure apf per screen state = %d",
-		  idle_monitor,
-		  ucfg_pmo_is_configure_apf_per_screen_state(hdd_ctx->psoc));
-
-	if (sme_get_dhcp_status(hdd_ctx->mac_handle, link_info->vdev_id)) {
-		hdd_nofl_debug("DHCP in progress. Ignore SETSUSPEND command");
-		return 0;
-	}
-
-	if (ucfg_pmo_is_configure_apf_per_screen_state(hdd_ctx->psoc)) {
-		if (idle_monitor == 0)
-			hdd_disable_active_apf_mode(link_info);
-		else if (idle_monitor == 1)
-			hdd_enable_active_apf_mode(link_info);
-	}
-
-	if (sme_get_dhcp_status(hdd_ctx->mac_handle, link_info->vdev_id)) {
-		hdd_nofl_debug("DHCP in progress. Ignore SETSUSPEND command");
-		return 0;
-	}
+	//MIUI: ADD
+	//idle_monitor: 0-screen on/monitor off/APF disable, 1: screen off/monitor on/APF enable.
+	drv_apf_enable(adapter, idle_monitor);
+	hdd_debug("APF status and idle_monitor:%d, ", idle_monitor);
 
 	status = ucfg_pmo_tgt_psoc_send_idle_roam_suspend_mode(hdd_ctx->psoc,
 							       idle_monitor);
@@ -3558,7 +3435,7 @@ void hdd_get_roam_scan_ch_cb(hdd_handle_t hdd_handle,
 	osif_request_put(request);
 }
 
-static int
+static uint32_t
 hdd_get_roam_chan_from_fw(struct hdd_adapter *adapter, uint32_t *chan_list,
 			  uint8_t *num_channels)
 {
@@ -3628,7 +3505,7 @@ hdd_get_roam_scan_freq(struct hdd_adapter *adapter, mac_handle_t mac_handle,
 	if (is_roam_ch_from_fw_supported(adapter->hdd_ctx)) {
 		ret = hdd_get_roam_chan_from_fw(adapter, chan_list,
 						num_channels);
-		if (ret) {
+		if (ret != QDF_STATUS_SUCCESS) {
 			hdd_err("failed to get roam scan channel list from FW");
 			return -EFAULT;
 		}
@@ -5503,6 +5380,41 @@ static int drv_cmd_set_app2_params(struct wlan_hdd_link_info *link_info,
 }
 #endif /* WLAN_FEATURE_EXTWOW_SUPPORT */
 
+#ifdef CFG_SUPPORT_SCAN_EXT_FLAG
+/*
+ * argv: 1 means that force scan on gaming mode
+ */
+static int driver_cmd_set_scan_ext_flag(struct wlan_hdd_link_info *link_info,
+				   struct hdd_context *hdd_ctx,
+				   uint8_t *command,
+				   uint8_t command_len,
+				   struct hdd_priv_data *priv_data)
+{
+	int ret = 0;
+	uint8_t *value = command;
+	uint8_t external_flag = 0;
+
+	/* Move pointer to ahead of SetScanExtFlag */
+	value = value + command_len + 1;
+
+	/* Convert the value from ascii to integer */
+	ret = kstrtou8(value, 10, &external_flag);
+	if (ret < 0) {
+		/*
+		 * If the input value is greater than max value of datatype,
+		 * then also kstrtou8 fails
+		 */
+		hdd_err("kstrtou8 failed Input value may be out of range");
+		ret = -EINVAL;
+		return ret;
+	}
+
+	link_info->adapter->scan_ext_flag = external_flag;
+	hdd_debug("driver_cmd_set_scan_ext_flag: %d ", link_info->adapter->scan_ext_flag);
+	return ret;
+}
+#endif /* CFG_SUPPORT_SCAN_EXT_FLAG */
+
 #ifdef FEATURE_WLAN_TDLS
 /**
  * drv_cmd_tdls_secondary_channel_offset() - secondary tdls off channel offset
@@ -6055,7 +5967,30 @@ static bool hdd_is_supported_chain_mask_1x1(struct hdd_context *hdd_ctx)
 
 QDF_STATUS hdd_update_smps_antenna_mode(struct hdd_context *hdd_ctx, int mode)
 {
-	mac_handle_t mac_handle = hdd_ctx->mac_handle;
+	QDF_STATUS status;
+	uint8_t smps_mode;
+	uint8_t smps_enable;
+	mac_handle_t mac_handle;
+
+	/* Update SME SMPS config */
+	if (HDD_ANTENNA_MODE_1X1 == mode) {
+		smps_enable = true;
+		smps_mode = HDD_SMPS_MODE_STATIC;
+	} else {
+		smps_enable = false;
+		smps_mode = HDD_SMPS_MODE_DISABLED;
+	}
+
+	hdd_debug("Update SME SMPS enable: %d mode: %d",
+		 smps_enable, smps_mode);
+	mac_handle = hdd_ctx->mac_handle;
+	status = sme_update_mimo_power_save(mac_handle, smps_enable,
+					    smps_mode, false);
+	if (QDF_STATUS_SUCCESS != status) {
+		hdd_err("Update SMPS config failed enable: %d mode: %d status: %d",
+			smps_enable, smps_mode, status);
+		return QDF_STATUS_E_FAILURE;
+	}
 
 	hdd_ctx->current_antenna_mode = mode;
 	/*
@@ -6113,13 +6048,6 @@ int hdd_set_antenna_mode(struct wlan_hdd_link_info *link_info, int mode)
 		.priv_size = 0,
 		.timeout_ms = SME_POLICY_MGR_CMD_TIMEOUT,
 	};
-
-	if (QDF_STATUS_SUCCESS ==
-	    wlan_is_tdls_session_present(link_info->vdev)) {
-		hdd_debug("TDLS session exists");
-		ret = -EINVAL;
-		goto exit;
-	}
 
 	switch (mode) {
 	case HDD_ANTENNA_MODE_1X1:
@@ -6731,16 +6659,12 @@ static bool check_disable_channels(struct hdd_context *hdd_ctx,
 	    !hdd_ctx->original_channels->channel_info)
 		return false;
 
-	qdf_mutex_acquire(&hdd_ctx->cache_channel_lock);
 	num_channels = hdd_ctx->original_channels->num_channels;
 	for (i = 0; i < num_channels; i++) {
 		if (operating_freq ==
-		    hdd_ctx->original_channels->channel_info[i].freq) {
-			qdf_mutex_release(&hdd_ctx->cache_channel_lock);
+		    hdd_ctx->original_channels->channel_info[i].freq)
 			return true;
-		}
 	}
-	qdf_mutex_release(&hdd_ctx->cache_channel_lock);
 
 	return false;
 }
@@ -7362,6 +7286,33 @@ static int drv_cmd_get_function_call_map(struct wlan_hdd_link_info *link_info,
 }
 #endif
 
+static int drv_cmd_set_phymode(struct wlan_hdd_link_info *link_info,
+					struct hdd_context *hdd_ctx,
+					uint8_t *command,
+					uint8_t command_len,
+					struct hdd_priv_data *priv_data)
+{
+	int ret = 0;
+	uint8_t *value = command;
+	uint8_t new_phymode = 0;
+	/* Move pointer to ahead of SET_PHYMODE<delimiter> */
+	value = value + command_len + 1;
+	/* Convert the value from ascii to integer */
+	ret = kstrtou8(value, 10, &new_phymode);
+	if (ret < 0) {
+		/*
+		 * If the input value is greater than max value of datatype,
+		 * then also kstrtou8 fails
+		 */
+		hdd_err("kstrtou8 failed Input value may be out of range");
+		ret = -EINVAL;
+		goto exit;
+	}
+	//hdd_we_update_phymode(link_info, new_phymode);
+exit:
+	return ret;
+}
+
 /*
  * The following table contains all supported WLAN HDD
  * IOCTL driver commands and the handler for each of them.
@@ -7473,14 +7424,15 @@ static const struct hdd_drv_cmd hdd_drv_cmds[] = {
 	{"GET_FUNCTION_CALL_MAP",     drv_cmd_get_function_call_map, true},
 #endif
 	{"STOP",                      drv_cmd_dummy, false},
+	{"SET_PHYMODE",               drv_cmd_set_phymode, true},
 	/* Deprecated commands */
 	{"RXFILTER-START",            drv_cmd_dummy, false},
 	{"RXFILTER-STOP",             drv_cmd_dummy, false},
 	{"BTCOEXSCAN-START",          drv_cmd_dummy, false},
 	{"BTCOEXSCAN-STOP",           drv_cmd_dummy, false},
 	{"GET_SOFTAP_LINK_SPEED",     drv_cmd_get_sap_go_linkspeed, true},
-#ifdef CONFIG_BAND_6GHZ
-	{"GET_WIFI6E_CHANNELS",       drv_cmd_get_wifi6e_channels, true},
+#ifdef CFG_SUPPORT_SCAN_EXT_FLAG
+	{"SetScanExtFlag",            driver_cmd_set_scan_ext_flag, true},
 #endif
 };
 

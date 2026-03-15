@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/mutex.h>
@@ -137,13 +137,6 @@ static int cam_cre_mgr_process_cmd_io_buf_req(struct cam_cre_hw_mgr *hw_mgr,
 	struct   cam_buf_io_cfg *io_cfg_ptr = NULL;
 	struct   cam_cre_io_buf_info *acq_io_buf;
 
-	if (!ctx_data->cre_acquire.batch_size ||
-		(ctx_data->cre_acquire.batch_size > CRE_MAX_BATCH_SIZE)) {
-		CAM_ERR(CAM_CRE, "Invalid batch_size: %u ctx id: %u max_batch_size: %u",
-			ctx_data->cre_acquire.batch_size, ctx_data->ctx_id, CRE_MAX_BATCH_SIZE);
-		return -EINVAL;
-	}
-
 	io_cfg_ptr = (struct cam_buf_io_cfg *)((uint32_t *)&packet->payload +
 			packet->io_configs_offset / 4);
 
@@ -170,17 +163,6 @@ static int cam_cre_mgr_process_cmd_io_buf_req(struct cam_cre_hw_mgr *hw_mgr,
 			}
 
 			io_buf = cre_request->io_buf[i][j];
-
-			if (!acq_io_buf->num_planes ||
-				(acq_io_buf->num_planes > CAM_PACKET_MAX_PLANES)) {
-				CAM_ERR(CAM_CRE,
-					"i %d j %d res_type %d Invalid num_planes: %u ctx id: %u max_planes: %u",
-					i, j, acq_io_buf->res_id, acq_io_buf->num_planes,
-					ctx_data->ctx_id, CAM_PACKET_MAX_PLANES);
-				cam_cre_free_io_config(cre_request);
-				return -EINVAL;
-			}
-
 			io_buf->num_planes = acq_io_buf->num_planes;
 			io_buf->resource_type = acq_io_buf->res_id;
 			io_buf->direction = acq_io_buf->direction;
@@ -778,38 +760,38 @@ static int cam_cre_mgr_process_cmd(void *priv, void *data)
 	task_data = (struct cre_cmd_work_data *)data;
 
 	mutex_lock(&hw_mgr->hw_mgr_mutex);
-	mutex_lock(&ctx_data->ctx_mutex);
 
 	if (ctx_data->ctx_state != CRE_CTX_STATE_ACQUIRED) {
+		mutex_unlock(&hw_mgr->hw_mgr_mutex);
 		CAM_ERR(CAM_CRE, "ctx id :%u is not in use",
 			ctx_data->ctx_id);
-		rc = -EINVAL;
-		goto err;
+		return -EINVAL;
 	}
 
 	if (task_data->req_idx >= CAM_CTX_REQ_MAX) {
+		mutex_unlock(&hw_mgr->hw_mgr_mutex);
 		CAM_ERR(CAM_CRE, "Invalid reqIdx = %llu",
-			task_data->req_idx);
-		rc = -EINVAL;
-		goto err;
-	}
-
-	if (task_data->request_id <= ctx_data->last_flush_req) {
-		CAM_WARN(CAM_CRE,
-			"request %lld has been flushed, reject packet", task_data->request_id);
-		rc = -EINVAL;
-		goto err;
+				task_data->req_idx);
+		return -EINVAL;
 	}
 
 	cre_req = ctx_data->req_list[task_data->req_idx];
 	if (cre_req->request_id > ctx_data->last_flush_req)
 		ctx_data->last_flush_req = 0;
 
+	if (cre_req->request_id <= ctx_data->last_flush_req) {
+		CAM_WARN(CAM_CRE,
+			"request %lld has been flushed, reject packet",
+			cre_req->request_id, ctx_data->last_flush_req);
+		mutex_unlock(&hw_mgr->hw_mgr_mutex);
+		return -EINVAL;
+	}
+
 	if (!cam_cre_is_pending_request(ctx_data)) {
 		CAM_WARN(CAM_CRE, "no pending req, req %lld last flush %lld",
 			cre_req->request_id, ctx_data->last_flush_req);
-		rc = -EINVAL;
-		goto err;
+		mutex_unlock(&hw_mgr->hw_mgr_mutex);
+		return -EINVAL;
 	}
 	hw_mgr = task_data->data;
 	num_batch = cre_req->num_batch;
@@ -833,8 +815,7 @@ static int cam_cre_mgr_process_cmd(void *priv, void *data)
 				cam_cre_device_timer_reset(cre_hw_mgr);
 				CAM_ERR(CAM_CRE,
 					"Timedout waiting for bufdone on last frame");
-				rc = -EINVAL;
-				goto err;
+				return -ETIMEDOUT;
 			} else {
 				reinit_completion(&ctx_data->cre_top->bufdone);
 				CAM_INFO(CAM_CRE,
@@ -846,8 +827,6 @@ static int cam_cre_mgr_process_cmd(void *priv, void *data)
 		cam_cre_mgr_update_reg_set(hw_mgr, cre_req, i);
 		cam_cre_ctx_wait_for_idle_irq(ctx_data);
 	}
-err:
-	mutex_unlock(&ctx_data->ctx_mutex);
 	mutex_unlock(&hw_mgr->hw_mgr_mutex);
 
 	return rc;
@@ -878,16 +857,16 @@ static int32_t cam_cre_mgr_process_msg(void *priv, void *data)
 	cfg_req = list_first_entry(&hw_mgr->hw_config_req_list,
 		struct cam_cre_hw_cfg_req, list);
 	if (!cfg_req) {
-		CAM_ERR(CAM_CRE, "Hw config req list empty");
+		CAM_ERR(CAM_JPEG, "no request");
 		rc = -EFAULT;
 		mutex_unlock(&hw_mgr->hw_mgr_mutex);
 		return rc;
 	}
 	list_del_init(&cfg_req->list);
+	mutex_unlock(&hw_mgr->hw_mgr_mutex);
 
 	if (cfg_req->ctx_id < 0) {
 		CAM_ERR(CAM_CRE, "No valid context to handle error");
-		mutex_unlock(&hw_mgr->hw_mgr_mutex);
 		return -EINVAL;
 	}
 
@@ -898,25 +877,18 @@ static int32_t cam_cre_mgr_process_msg(void *priv, void *data)
 	if (ctx->ctx_state != CRE_CTX_STATE_ACQUIRED) {
 		CAM_DBG(CAM_CRE, "ctx id: %d not in right state: %d",
 			cfg_req->ctx_id, ctx->ctx_state);
-		rc = -EINVAL;
-		goto end;
+		mutex_unlock(&ctx->ctx_mutex);
+		return -EINVAL;
 	}
 
 	active_req_idx = find_next_bit(ctx->bitmap, ctx->bits, ctx->last_done_req_idx);
 	CAM_DBG(CAM_CRE, "Ctx %d active_req_idx %d last_done_req_idx %d", ctx->ctx_id,
 		active_req_idx, ctx->last_done_req_idx);
 
-	if (active_req_idx >= CAM_CTX_REQ_MAX) {
-		CAM_WARN(CAM_CRE, "ctx %d not valid req idx active_req_idx %d", active_req_idx);
-		rc = -EINVAL;
-		goto end;
-	}
-
 	active_req = ctx->req_list[active_req_idx];
 	if (!active_req) {
 		CAM_ERR(CAM_CRE, "Active req cannot be null");
-		rc = -EINVAL;
-		goto end;
+		return -EINVAL;
 	}
 
 	if (irq_data.error) {
@@ -952,10 +924,8 @@ static int32_t cam_cre_mgr_process_msg(void *priv, void *data)
 			ctx->req_list[active_req_idx] = NULL;
 		}
 	}
-end:
 	list_add_tail(&cfg_req->list, &hw_mgr->free_req_list);
 	mutex_unlock(&ctx->ctx_mutex);
-	mutex_unlock(&hw_mgr->hw_mgr_mutex);
 	return rc;
 }
 
@@ -2374,7 +2344,6 @@ static int cam_cre_mgr_enqueue_config(struct cam_cre_hw_mgr *hw_mgr,
 	task_data = (struct cre_cmd_work_data *)task->payload;
 	task_data->data = (void *)hw_mgr;
 	task_data->req_idx = cre_req->req_idx;
-	task_data->request_id = cre_req->request_id;
 	task_data->type = CRE_WORKQ_TASK_CMD_TYPE;
 	task->process_cb = cam_cre_mgr_process_cmd;
 
@@ -2397,6 +2366,7 @@ static int cam_cre_mgr_config_hw(void *hw_priv, void *hw_config_args)
 	struct cam_cre_request *cre_req = NULL;
 	struct cam_cre_hw_cfg_req  *cfg_req = NULL;
 
+	CAM_DBG(CAM_CRE, "E");
 	if (!hw_mgr || !config_args) {
 		CAM_ERR(CAM_CRE, "Invalid arguments %pK %pK",
 			hw_mgr, config_args);
@@ -2412,16 +2382,18 @@ static int cam_cre_mgr_config_hw(void *hw_priv, void *hw_config_args)
 	mutex_lock(&hw_mgr->hw_mgr_mutex);
 	mutex_lock(&ctx_data->ctx_mutex);
 	if (ctx_data->ctx_state != CRE_CTX_STATE_ACQUIRED) {
+		mutex_unlock(&ctx_data->ctx_mutex);
+		mutex_unlock(&hw_mgr->hw_mgr_mutex);
 		CAM_ERR(CAM_CRE, "ctx id :%u is not in use",
 			ctx_data->ctx_id);
-		rc= -EINVAL;
-		goto end;
+		return -EINVAL;
 	}
 
 	if (list_empty(&hw_mgr->free_req_list)) {
-		CAM_ERR(CAM_CRE, "No request in free list");
-		rc = -ENOMEM;
-		goto end;
+		mutex_unlock(&ctx_data->ctx_mutex);
+		mutex_unlock(&hw_mgr->hw_mgr_mutex);
+		CAM_ERR(CAM_JPEG, "list empty");
+		return -ENOMEM;
 	}
 
 	cfg_req = list_first_entry(&hw_mgr->free_req_list,
@@ -2433,19 +2405,14 @@ static int cam_cre_mgr_config_hw(void *hw_priv, void *hw_config_args)
 	cam_cre_mgr_cre_clk_update(hw_mgr, ctx_data, cre_req->req_idx);
 	ctx_data->req_list[cre_req->req_idx]->submit_timestamp = ktime_get();
 
-	CAM_DBG(CAM_CRE, "ctx id :%u req id %lld", ctx_data->ctx_id, cre_req->request_id);
-
 	cfg_req->req_id = cre_req->request_id;
 	cfg_req->ctx_id = ctx_data->ctx_id;
 
-	if (cre_req->request_id <= ctx_data->last_flush_req) {
+	if (cre_req->request_id <= ctx_data->last_flush_req)
 		CAM_WARN(CAM_CRE,
 			"Anomaly submitting flushed req %llu [last_flush %llu] in ctx %u",
 			cre_req->request_id, ctx_data->last_flush_req,
 			ctx_data->ctx_id);
-		rc = -EINVAL;
-		goto end;
-	}
 
 	list_add_tail(&cfg_req->list, &hw_mgr->hw_config_req_list);
 
@@ -2462,7 +2429,6 @@ static int cam_cre_mgr_config_hw(void *hw_priv, void *hw_config_args)
 	return rc;
 config_err:
 	cam_cre_mgr_handle_config_err(config_args, ctx_data);
-end:
 	mutex_unlock(&ctx_data->ctx_mutex);
 	mutex_unlock(&hw_mgr->hw_mgr_mutex);
 	return rc;

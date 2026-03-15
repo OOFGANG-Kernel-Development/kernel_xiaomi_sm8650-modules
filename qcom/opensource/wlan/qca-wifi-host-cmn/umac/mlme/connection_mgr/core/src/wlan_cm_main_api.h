@@ -32,7 +32,6 @@
 #ifdef WLAN_CM_USE_SPINLOCK
 #include <scheduler_api.h>
 #endif
-#include <wlan_cp_stats_chipset_stats.h>
 
 #define CONNECT_REQ_PREFIX          0x0C000000
 #define DISCONNECT_REQ_PREFIX       0x0D000000
@@ -219,28 +218,6 @@ QDF_STATUS cm_try_next_candidate(struct cnx_mgr *cm_ctx,
 QDF_STATUS
 cm_resume_connect_after_peer_create(struct cnx_mgr *cm_ctx, wlan_cm_id *cm_id);
 
-#if defined(CONN_MGR_ADV_FEATURE) && defined(WLAN_FEATURE_11BE_MLO)
-/**
- * cm_bss_peer_create_resp_mlo_attach() - Create MLO peer and attach objmgr peer
- * @vdev: VDEV object manager pointer
- * @peer_mac: MAC addr pointer for BSS peer created
- *
- * Creates MLO peer for the peer with @peer_mac and adds the objmgr peer to
- * the created MLO peer context and holds reference for the MLO peer.
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS cm_bss_peer_create_resp_mlo_attach(struct wlan_objmgr_vdev *vdev,
-					      struct qdf_mac_addr *peer_mac);
-#else
-static inline QDF_STATUS
-cm_bss_peer_create_resp_mlo_attach(struct wlan_objmgr_vdev *vdev,
-				   struct qdf_mac_addr *peer_mac)
-{
-	return QDF_STATUS_SUCCESS;
-}
-#endif
-
 /**
  * cm_bss_peer_create_rsp() - handle bss peer create response
  * @vdev: vdev
@@ -278,36 +255,6 @@ QDF_STATUS cm_connect_rsp(struct wlan_objmgr_vdev *vdev,
 QDF_STATUS cm_notify_connect_complete(struct cnx_mgr *cm_ctx,
 				      struct wlan_cm_connect_resp *resp,
 				      bool acquire_lock);
-
-/**
- * cm_update_scan_mlme_info() - This API would be called after connect complete
- * request or roam synch completion.
- * @cm_ctx: connection manager context
- * @resp: Connection complete resp.
- *
- * This API would be called after connection completion resp or roam synch
- * propagation completion. This will update the assoc state in the scan
- * entries
- *
- * Return: QDF status
- */
-void cm_update_scan_mlme_info(struct cnx_mgr *cm_ctx,
-			      struct wlan_cm_connect_resp *resp);
-
-/**
- * cm_update_scan_mlme_info() - This API would be called after connect complete
- * request or roam synch completion.
- * @cm_ctx: connection manager context
- * @resp: Connection complete resp.
- *
- * This API would be called after connection completion resp or roam synch
- * propagation completion. This will update the assoc state in the scan
- * entries
- *
- * Return: QDF status
- */
-void cm_update_scan_mlme_info(struct cnx_mgr *cm_ctx,
-			      struct wlan_cm_connect_resp *resp);
 
 /**
  * cm_connect_complete() - This API would be called after connect complete
@@ -660,13 +607,13 @@ QDF_STATUS cm_set_key(struct cnx_mgr *cm_ctx, bool unicast,
 /**
  * cm_store_wep_key() - store wep keys in crypto on connect active
  * @cm_ctx: connection manager context
- * @req: Connect request params
+ * @crypto: connection crypto info
  * @cm_id: cm_id of the connection
  *
  * Return: void
  */
 void cm_store_wep_key(struct cnx_mgr *cm_ctx,
-		      struct wlan_cm_connect_req *req,
+		      struct wlan_cm_connect_crypto_info *crypto,
 		      wlan_cm_id cm_id);
 
 /**
@@ -772,7 +719,7 @@ cm_is_link_switch_connect_resp(struct wlan_cm_connect_resp *resp)
 }
 #else
 static inline void cm_store_wep_key(struct cnx_mgr *cm_ctx,
-				    struct wlan_cm_connect_req *req,
+				    struct wlan_cm_connect_crypto_info *crypto,
 				    wlan_cm_id cm_id)
 {}
 
@@ -1696,25 +1643,5 @@ cm_bss_mlo_type(struct wlan_objmgr_psoc *psoc,
 void cm_bearer_switch_resp(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
 			   wlan_cm_id cm_id, QDF_STATUS status);
 #endif
-#ifdef WLAN_CHIPSET_STATS
-/**
- * cm_cp_stats_cstats_log_connecting_event : Chipset stats connecting event
- * @vdev: pointer to vdev object
- * @req: pointer to wlan_cm_vdev_connect_req object
- * @cm_req: pointer to cm_req object
- *
- * Return: void
- */
-void
-cm_cp_stats_cstats_log_connecting_event(struct wlan_objmgr_vdev *vdev,
-					struct wlan_cm_vdev_connect_req *req,
-					struct cm_req *cm_req);
-#else
-static inline void
-cm_cp_stats_cstats_log_connecting_event(struct wlan_objmgr_vdev *vdev,
-					struct wlan_cm_vdev_connect_req *req,
-					struct cm_req *cm_req)
-{
-}
-#endif /* WLAN_CHIPSET_STATS */
+
 #endif /* __WLAN_CM_MAIN_API_H__ */

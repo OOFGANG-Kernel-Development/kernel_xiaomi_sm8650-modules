@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2015, 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -413,8 +413,7 @@ osif_get_partner_info_from_mlie(struct wlan_cm_connect_resp *connect_rsp,
 	osif_debug("ML IE found length %d", (int)ml_ie_len);
 
 	qdf_status = util_get_bvmlie_persta_partner_info(ml_ie, ml_ie_len,
-							 partner_info,
-							 WLAN_FC0_STYPE_INVALID);
+							 partner_info);
 	if (QDF_IS_STATUS_ERROR(qdf_status)) {
 		osif_err("Unable to find per-sta profile in ML IE");
 		return qdf_status;
@@ -463,15 +462,8 @@ osif_get_chan_bss_from_kernel(struct wlan_objmgr_vdev *vdev,
 					    rsp_link_info->link_addr.bytes,
 					    rsp->ssid.ssid, rsp->ssid.length);
 	if (!partner_bss) {
-		partner_bss = wlan_cfg80211_get_bss(osif_priv->wdev->wiphy, chan,
-						    rsp_link_info->link_addr.bytes,
-						    NULL, 0);
-		if (!partner_bss) {
-			osif_err("could not fetch partner bss from kernel vdev id %d freq %d ssid:" QDF_SSID_FMT " and BSSID " QDF_MAC_ADDR_FMT,
-				 wlan_vdev_get_id(vdev), rsp_link_info->chan_freq,
-				 QDF_SSID_REF(rsp->ssid.length, rsp->ssid.ssid),
-				 QDF_MAC_ADDR_REF(rsp->bssid.bytes));
-		}
+		osif_err("could not fetch partner bss from kernel");
+		return NULL;
 	}
 
 	return partner_bss;
@@ -493,16 +485,14 @@ static
 void osif_populate_connect_response_for_link(struct wlan_objmgr_vdev *vdev,
 					     struct cfg80211_connect_resp_params *conn_rsp_params,
 					     uint8_t link_id,
-					     uint8_t *link_addr, uint8_t *bssid,
+					     uint8_t *link_addr,
 					     struct cfg80211_bss *bss)
 {
 	osif_debug("Link_id :%d", link_id);
 	conn_rsp_params->valid_links |=  BIT(link_id);
-	conn_rsp_params->links[link_id].bssid = bssid;
+	conn_rsp_params->links[link_id].bssid = bss->bssid;
+	conn_rsp_params->links[link_id].bss = bss;
 	conn_rsp_params->links[link_id].addr = link_addr;
-	if (bss)
-		conn_rsp_params->links[link_id].bss = bss;
-
 	mlo_mgr_osif_update_connect_info(vdev, link_id);
 }
 
@@ -553,11 +543,12 @@ osif_populate_partner_links_mlo_params(struct wlan_objmgr_vdev *vdev,
 
 		bss = osif_get_chan_bss_from_kernel(vdev, rsp_partner_info,
 						    rsp);
+		if (!bss)
+			continue;
 
 		osif_populate_connect_response_for_link(vdev, conn_rsp_params,
 							link_id,
 							link_info->link_addr.bytes,
-							link_info->ap_link_addr.bytes,
 							bss);
 	}
 }
@@ -593,7 +584,6 @@ static void osif_fill_connect_resp_mlo_params(struct wlan_objmgr_vdev *vdev,
 	osif_populate_connect_response_for_link(vdev, conn_rsp_params,
 						assoc_link_id,
 						link_info->link_addr.bytes,
-						rsp->bssid.bytes,
 						bss);
 	osif_populate_partner_links_mlo_params(vdev, rsp, conn_rsp_params);
 }
@@ -857,11 +847,6 @@ static void osif_indcate_connect_results(struct wlan_objmgr_vdev *vdev,
 					    rsp->bssid.bytes,
 					    rsp->ssid.ssid,
 					    rsp->ssid.length);
-		if (!bss) {
-			bss = wlan_cfg80211_get_bss(osif_priv->wdev->wiphy,
-						    chan, rsp->bssid.bytes,
-						    NULL, 0);
-		}
 	}
 
 	if (!wlan_vdev_mlme_is_mlo_vdev(vdev)) {
@@ -1058,11 +1043,6 @@ static void osif_indcate_connect_results(struct wlan_objmgr_vdev *vdev,
 						    macaddr.bytes,
 						    rsp->ssid.ssid,
 						    rsp->ssid.length);
-			if (!bss) {
-				bss = wlan_cfg80211_get_bss(tmp_osif_priv->wdev->wiphy,
-							    chan, macaddr.bytes,
-							    NULL, 0);
-			}
 		}
 		qdf_mem_copy(resp.bssid.bytes, macaddr.bytes,
 			     QDF_MAC_ADDR_SIZE);
@@ -1082,32 +1062,6 @@ static void osif_indcate_connect_results(struct wlan_objmgr_vdev *vdev,
 }
 #endif /* WLAN_FEATURE_11BE_MLO_ADV_FEATURE */
 #else /* WLAN_FEATURE_11BE_MLO */
-#ifdef CONN_MGR_ADV_FEATURE
-static void osif_indcate_connect_results(struct wlan_objmgr_vdev *vdev,
-					 struct vdev_osif_priv *osif_priv,
-					 struct wlan_cm_connect_resp *rsp)
-{
-	struct cfg80211_bss *bss = NULL;
-	struct ieee80211_channel *chan;
-
-	if (QDF_IS_STATUS_SUCCESS(rsp->connect_status)) {
-		chan = ieee80211_get_channel(osif_priv->wdev->wiphy,
-					     rsp->freq);
-		bss = wlan_cfg80211_get_bss(osif_priv->wdev->wiphy, chan,
-					    rsp->bssid.bytes,
-					    rsp->ssid.ssid,
-					    rsp->ssid.length);
-		if (!bss) {
-			bss = wlan_cfg80211_get_bss(osif_priv->wdev->wiphy, chan,
-						    rsp->bssid.bytes, NULL, 0);
-		}
-	}
-
-	if (osif_update_connect_results(osif_priv->wdev->netdev, bss,
-					rsp, vdev))
-		osif_connect_bss(osif_priv->wdev->netdev, bss, rsp);
-}
-#else /* CONN_MGR_ADV_FEATURE */
 static void osif_indcate_connect_results(struct wlan_objmgr_vdev *vdev,
 					 struct vdev_osif_priv *osif_priv,
 					 struct wlan_cm_connect_resp *rsp)
@@ -1128,7 +1082,6 @@ static void osif_indcate_connect_results(struct wlan_objmgr_vdev *vdev,
 					rsp, vdev))
 		osif_connect_bss(osif_priv->wdev->netdev, bss, rsp);
 }
-#endif /* CONN_MGR_ADV_FEATURE */
 #endif /* WLAN_FEATURE_11BE_MLO */
 #else  /* CFG80211_CONNECT_BSS */
 #ifdef WLAN_FEATURE_11BE_MLO

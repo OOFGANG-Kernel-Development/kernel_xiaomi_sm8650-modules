@@ -19,6 +19,9 @@
 #ifndef __WLAN_DP_TXRX_H__
 #define __WLAN_DP_TXRX_H__
 
+#ifdef WLAN_FEATURE_OSRTP
+#include "xsk_buff_pool.h"
+#endif
 #include <cds_api.h>
 #include <qdf_tracepoint.h>
 #include <qdf_pkt_add_timestamp.h>
@@ -168,6 +171,19 @@ QDF_STATUS dp_rx_flush_packet_cbk(void *dp_link_context, uint8_t link_id);
  */
 QDF_STATUS dp_softap_start_xmit(qdf_nbuf_t nbuf, struct wlan_dp_link *dp_link);
 
+#ifdef WLAN_FEATURE_OSRTP
+/**
+ * dp_softap_start_xmit_osrtp() - Transmit a osrtp frame for SAP interface
+ * @dp_link: DP link handle
+ * @osrtp_desc: array of osrtp desc
+ * @pool: xsk buff pool
+ *
+ * Return: QDF_STATUS_SUCCESS on successful transmission
+ */
+QDF_STATUS dp_softap_start_xmit_osrtp(struct wlan_dp_link *dp_link,
+			struct cdp_tx_osrtp_desc *osrtp_desc, struct xsk_buff_pool *pool);
+#endif
+
 /**
  * dp_softap_tx_timeout() - TX timeout handler
  * @dp_intf: pointer to DP interface
@@ -228,6 +244,19 @@ void dp_tx_timeout(struct wlan_dp_intf *dp_intf);
  *	   QDF_STATUS_SUCCESS otherwise
  */
 QDF_STATUS dp_rx_packet_cbk(void *dp_link_context, qdf_nbuf_t rx_buf);
+
+#ifdef WLAN_FEATURE_OSRTP
+/**
+ * dp_rx_packet_cbk() - Receive packet handler
+ * @dp_link_context: pointer to DP link context
+ * @pool: xsk buff pool
+ * @rx_buf: pointer to rx qdf_nbuf
+ *
+ * Return: QDF_STATUS_E_FAILURE if any errors encountered,
+ *	   QDF_STATUS_SUCCESS otherwise
+ */
+QDF_STATUS dp_rx_osrtp_cbk(void *dp_link_context, struct xsk_buff_pool *pool, qdf_nbuf_t rxBuf);
+#endif
 
 #if defined(WLAN_SUPPORT_RX_FISA)
 /**
@@ -504,6 +533,19 @@ void dp_get_tx_resource(struct wlan_dp_link *dp_link,
  */
 QDF_STATUS
 dp_start_xmit(struct wlan_dp_link *dp_link, qdf_nbuf_t nbuf);
+
+#ifdef WLAN_FEATURE_OSRTP
+/**
+ * dp_start_xmit() - Transmit a osrtp frame
+ * @dp_link: DP link handle
+ * @nbuf: n/w buffer
+ *
+ * Return: Status of the transmission
+ */
+QDF_STATUS
+dp_start_xmit_osrtp(struct wlan_dp_link *dp_link, struct cdp_tx_osrtp_desc *osrtp_desc,
+            struct xsk_buff_pool *pool);
+#endif
 
 #ifdef FEATURE_MONITOR_MODE_SUPPORT
 /**

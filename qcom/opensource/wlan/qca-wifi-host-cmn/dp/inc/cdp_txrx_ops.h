@@ -25,6 +25,9 @@
 #ifndef _CDP_TXRX_CMN_OPS_H_
 #define _CDP_TXRX_CMN_OPS_H_
 
+#ifdef WLAN_FEATURE_OSRTP
+#include "xsk_buff_pool.h"
+#endif
 #include <cdp_txrx_cmn_struct.h>
 #include <cdp_txrx_stats_struct.h>
 #include "cdp_txrx_handle.h"
@@ -32,7 +35,6 @@
 #include "wlan_objmgr_psoc_obj.h"
 #include <wmi_unified_api.h>
 #include <wdi_event_api.h>
-
 #ifdef IPA_OFFLOAD
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)) || \
 	defined(CONFIG_IPA_WDI_UNIFIED_API)
@@ -366,7 +368,7 @@ struct cdp_cmn_ops {
 	 * Data Interface (B Interface)
 	 ********************************************************************/
 
-	struct cdp_vdev *
+	QDF_STATUS
 	(*txrx_vdev_register)(struct cdp_soc_t *soc, uint8_t vdev_id,
 			      ol_osif_vdev_handle osif_vdev,
 			      struct ol_txrx_ops *txrx_ops);
@@ -748,6 +750,11 @@ struct cdp_cmn_ops {
 	void (*txrx_get_tsf2_offset)(struct cdp_soc_t *soc_hdl, uint8_t mac_id,
 				     uint64_t *value);
 	void (*txrx_get_tqm_offset)(struct cdp_soc_t *soc_hdl, uint64_t *value);
+#ifdef WLAN_FEATURE_OSRTP
+	int (*set_osrtp_prog)(struct cdp_soc_t *soc, struct bpf_prog *prog);
+	int (*set_osrtp_xsk_pool)(struct cdp_soc_t *soc, struct net_device *netdev, struct xsk_buff_pool *new_pool, uint16_t qid);
+	struct xsk_buff_pool * (*get_osrtp_xsk_pool)(struct cdp_soc_t *soc);
+#endif
 	uint64_t (*get_fst_cmem_base)(struct cdp_soc_t *soc_hdl, uint64_t size);
 #ifdef WLAN_SUPPORT_DPDK
 	uint8_t (*dpdk_get_ring_info)(struct cdp_soc_t *soc_hdl,

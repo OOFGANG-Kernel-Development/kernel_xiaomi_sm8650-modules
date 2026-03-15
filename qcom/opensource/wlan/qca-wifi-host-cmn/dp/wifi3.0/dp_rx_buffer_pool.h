@@ -234,4 +234,5 @@ dp_rx_buffer_pool_nbuf_map(struct dp_soc *soc,
 static inline void dp_rx_schedule_refill_thread(struct dp_soc *soc) { }
 
 #endif /* WLAN_FEATURE_RX_PREALLOC_BUFFER_POOL */
+
 #endif /* _DP_RX_BUFFER_POOL_H_ */

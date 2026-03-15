@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -556,13 +556,9 @@ static QDF_STATUS tdls_process_rx_mgmt(
 				return QDF_STATUS_SUCCESS;
 			} else if (status == QDF_STATUS_SUCCESS) {
 				vdev = tdls_process_mlo_choice_tdls_vdev(vdev);
-				if (!vdev)
-					return QDF_STATUS_SUCCESS;
 				tdls_vdev =
 				     wlan_objmgr_vdev_get_comp_private_obj(vdev,
 							   WLAN_UMAC_COMP_TDLS);
-				if (!tdls_vdev)
-					return QDF_STATUS_E_EXISTS;
 				rx_mgmt = tdls_vdev->rx_mgmt;
 				tdls_vdev_select = true;
 				tdls_debug("choice vdev %d as tdls vdev",
@@ -900,8 +896,6 @@ QDF_STATUS tdls_set_link_mode(struct tdls_action_frame_request *req)
 	bool is_mlo_vdev;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	struct ml_nlink_change_event data;
-	uint8_t num_ml_sta = 0;
-	uint8_t ml_sta_vdev_lst[MAX_NUMBER_OF_CONC_CONNECTIONS] = {0};
 
 	is_mlo_vdev = wlan_vdev_mlme_is_mlo_vdev(req->vdev);
 	if (!is_mlo_vdev)
@@ -913,21 +907,11 @@ QDF_STATUS tdls_set_link_mode(struct tdls_action_frame_request *req)
 		return QDF_STATUS_E_NULL_VALUE;
 	}
 
-
 	if (req->tdls_mgmt.frame_type == TDLS_DISCOVERY_RESPONSE ||
 	    req->tdls_mgmt.frame_type == TDLS_DISCOVERY_REQUEST) {
 		mlo_tdls_vdev = wlan_mlo_get_tdls_link_vdev(req->vdev);
 		if (mlo_tdls_vdev)
 			return status;
-
-		status = policy_mgr_is_ml_links_in_mcc_allowed(
-						psoc, req->vdev,
-						ml_sta_vdev_lst,
-						&num_ml_sta);
-		if (QDF_IS_STATUS_SUCCESS(status)) {
-			tdls_err("ML STA Links in MCC, so don't send the TDLS frames");
-			return QDF_STATUS_E_FAILURE;
-		}
 
 		qdf_mem_zero(&data, sizeof(data));
 		data.evt.tdls.link_bitmap =
@@ -987,8 +971,7 @@ QDF_STATUS tdls_process_mgmt_req(
 
 	status = tdls_set_link_mode(tdls_mgmt_req);
 	if (status != QDF_STATUS_SUCCESS) {
-		tdls_err("failed to set link:%d active",
-			 wlan_vdev_get_link_id(tdls_mgmt_req->vdev));
+		tdls_err("failed to set link active");
 		status = tdls_internal_send_mgmt_tx_done(tdls_mgmt_req,
 							 status);
 		goto error_mgmt;

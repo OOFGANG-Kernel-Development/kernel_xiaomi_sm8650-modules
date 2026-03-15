@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -713,6 +713,7 @@ int wma_stats_ext_event_handler(void *handle, uint8_t *event_buf,
 			  param_buf->num_partner_link_stats);
 
 	stats_ext_info = param_buf->fixed_param;
+	buf_ptr = (uint8_t *)stats_ext_info;
 
 	alloc_len += sizeof(tSirStatsExtEvent);
 	alloc_len += stats_ext_info->data_len;
@@ -742,7 +743,7 @@ int wma_stats_ext_event_handler(void *handle, uint8_t *event_buf,
 	if (!stats_ext_event)
 		return -ENOMEM;
 
-	buf_ptr = (uint8_t *)param_buf->data;
+	buf_ptr += sizeof(wmi_stats_ext_event_fixed_param) + WMI_TLV_HDR_SIZE;
 
 	stats_ext_event->vdev_id = stats_ext_info->vdev_id;
 	stats_ext_event->event_data_len = stats_ext_info->data_len;
@@ -816,6 +817,7 @@ int wma_stats_ext_event_handler(void *handle, uint8_t *event_buf,
 	}
 
 	stats_ext_info = param_buf->fixed_param;
+	buf_ptr = (uint8_t *)stats_ext_info;
 
 	alloc_len = sizeof(tSirStatsExtEvent);
 	alloc_len += stats_ext_info->data_len;
@@ -831,7 +833,7 @@ int wma_stats_ext_event_handler(void *handle, uint8_t *event_buf,
 	if (!stats_ext_event)
 		return -ENOMEM;
 
-	buf_ptr = (uint8_t *)param_buf->data;
+	buf_ptr += sizeof(wmi_stats_ext_event_fixed_param) + WMI_TLV_HDR_SIZE;
 
 	stats_ext_event->vdev_id = stats_ext_info->vdev_id;
 	stats_ext_event->event_data_len = stats_ext_info->data_len;
@@ -4079,14 +4081,12 @@ QDF_STATUS wma_send_vdev_stop_to_fw(t_wma_handle *wma, uint8_t vdev_id)
 		return status;
 	}
 
-	wlan_mlme_reset_sta_keepalive_period(wma->psoc, iface->vdev);
-	iface->bss_max_idle_period = 0;
-
 	vdev_mlme = wlan_vdev_mlme_get_cmpt_obj(iface->vdev);
 	if (!vdev_mlme) {
 		wma_err("Failed to get vdev mlme obj for vdev id %d", vdev_id);
 		return status;
 	}
+
 	/*
 	 * Reset the dynamic nss chains config to the ini values, as when the
 	 * vdev gets its started again, this would be a fresh connection,
@@ -4448,8 +4448,6 @@ void wma_remove_bss_peer_on_failure(tp_wma_handle wma, uint8_t vdev_id)
 			QDF_MAC_ADDR_REF(bss_peer.bytes));
 		return;
 	}
-
-	wma_delete_peer_mlo(wma->psoc, bss_peer.bytes);
 
 	wma_remove_peer(wma, bss_peer.bytes, vdev_id, false);
 }

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1656,8 +1656,6 @@ static void hdd_country_change_update_sta(struct hdd_context *hdd_ctx)
 	eCsrPhyMode csr_phy_mode;
 	wlan_net_dev_ref_dbgid dbgid = NET_DEV_HOLD_COUNTRY_CHANGE_UPDATE_STA;
 	struct wlan_hdd_link_info *link_info;
-	enum qca_wlan_vendor_phy_mode vendor_phy_mode =
-						QCA_WLAN_VENDOR_PHY_MODE_AUTO;
 
 	pdev = hdd_ctx->pdev;
 
@@ -1680,11 +1678,6 @@ static void hdd_country_change_update_sta(struct hdd_context *hdd_ctx)
 				 * continue to next statement
 				 */
 			case QDF_STA_MODE:
-				hdd_debug("Update vdev %d CAP IE", link_info->vdev_id);
-				sme_set_vdev_ies_per_band(hdd_ctx->mac_handle,
-							  link_info->vdev_id,
-							  QDF_STA_MODE);
-
 				sta_ctx =
 					WLAN_HDD_GET_STATION_CTX_PTR(link_info);
 				new_phy_mode = wlan_reg_get_max_phymode(pdev,
@@ -1699,11 +1692,8 @@ static void hdd_country_change_update_sta(struct hdd_context *hdd_ctx)
 					hdd_country_change_bw_check(link_info,
 								    oper_freq);
 
-				if (!hdd_is_vdev_in_conn_state(link_info)) {
-					hdd_set_vdev_phy_mode(adapter,
-							      vendor_phy_mode);
+				if (!hdd_is_vdev_in_conn_state(link_info))
 					continue;
-				}
 
 				if (phy_changed || freq_changed ||
 				    width_changed) {
@@ -1714,8 +1704,6 @@ static void hdd_country_change_update_sta(struct hdd_context *hdd_ctx)
 							link_info,
 							REASON_UNSPEC_FAILURE,
 							false);
-					hdd_set_vdev_phy_mode(adapter,
-							      vendor_phy_mode);
 					sta_ctx->reg_phymode = csr_phy_mode;
 				} else {
 					hdd_debug("Remain on current channel but update tx power");
@@ -1723,6 +1711,9 @@ static void hdd_country_change_update_sta(struct hdd_context *hdd_ctx)
 							    pdev,
 							    link_info->vdev_id);
 				}
+				sme_set_vdev_ies_per_band(hdd_ctx->mac_handle,
+							  link_info->vdev_id,
+							  QDF_STA_MODE);
 				break;
 			default:
 				break;
@@ -1911,16 +1902,6 @@ static void hdd_handle_country_change_work_error(struct hdd_context *hdd_ctx,
 		qdf_sched_work(0, &hdd_ctx->country_change_work);
 	} else {
 		hdd_err("can not handle country change %d", errno);
-		/**
-		 * The error -ENODEV occurs if the HDD context is null or
-		 * the driver is unloading; hence, return.
-		 */
-		if (errno == -ENODEV)
-			return;
-		qdf_event_set_all(&hdd_ctx->regulatory_update_event);
-		qdf_mutex_acquire(&hdd_ctx->regulatory_status_lock);
-		hdd_ctx->is_regulatory_update_in_progress = false;
-		qdf_mutex_release(&hdd_ctx->regulatory_status_lock);
 	}
 }
 
@@ -1973,8 +1954,7 @@ static void hdd_regulatory_dyn_cbk(struct wlan_objmgr_psoc *psoc,
 	wiphy = pdev_priv->wiphy;
 	hdd_ctx = wiphy_priv(wiphy);
 
-	nb_flag = ucfg_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(
-								hdd_ctx->psoc);
+	nb_flag = ucfg_mlme_get_coex_unsafe_chan_nb_user_prefer(hdd_ctx->psoc);
 	reg_flag = ucfg_mlme_get_coex_unsafe_chan_reg_disable(hdd_ctx->psoc);
 
 	if (avoid_freq_ind && nb_flag && reg_flag)

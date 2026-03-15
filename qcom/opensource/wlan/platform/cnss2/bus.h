@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CNSS_BUS_H
@@ -30,7 +30,6 @@ int cnss_bus_load_m3(struct cnss_plat_data *plat_priv);
 int cnss_bus_load_aux(struct cnss_plat_data *plat_priv);
 int cnss_bus_handle_dev_sol_irq(struct cnss_plat_data *plat_priv);
 int cnss_bus_alloc_fw_mem(struct cnss_plat_data *plat_priv);
-void cnss_bus_free_fw_mem(struct cnss_plat_data *plat_priv, int k);
 int cnss_bus_alloc_qdss_mem(struct cnss_plat_data *plat_priv);
 void cnss_bus_free_qdss_mem(struct cnss_plat_data *plat_priv);
 u32 cnss_bus_get_wake_irq(struct cnss_plat_data *plat_priv);
@@ -78,10 +77,4 @@ int cnss_bus_get_msi_assignment(struct cnss_plat_data *plat_priv,
 				int *num_vectors,
 				u32 *user_base_data,
 				u32 *base_vector);
-int cnss_bus_dsp_link_control(struct cnss_plat_data *plat_priv,
-			      bool link_enable);
-int cnss_bus_set_dsp_link_status(struct cnss_plat_data *plat_priv,
-				 bool link_enable);
-int cnss_bus_get_dsp_link_status(struct cnss_plat_data *plat_priv);
-int cnss_bus_dsp_link_enable(struct cnss_plat_data *plat_priv);
 #endif /* _CNSS_BUS_H */

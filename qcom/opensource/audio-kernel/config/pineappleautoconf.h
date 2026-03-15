@@ -1,12 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #define CONFIG_SND_SOC_MSM_QDSP6V2_INTF 1
 #define CONFIG_SND_SOC_PINEAPPLE 1
-#define CONFIG_SND_SOC_VOLCANO 1
 #define CONFIG_SND_EVENT 1
 #define CONFIG_AUDIO_PKT_ION 1
 #define CONFIG_MSM_QDSP6_NOTIFIER 1
@@ -41,8 +40,6 @@
 #define CONFIG_SND_SOC_WCD938X_SLAVE 1
 #define CONFIG_SND_SOC_WCD939X 1
 #define CONFIG_SND_SOC_WCD939X_SLAVE 1
-#define CONFIG_SND_SOC_WCD9378 1
-#define CONFIG_SND_SOC_WCD9378_SLAVE 1
 #define CONFIG_SND_SOC_WCD_MBHC 1
 #define CONFIG_SND_SOC_WCD_MBHC_ADC 1
 #define CONFIG_SND_SWR_HAPTICS 1
@@ -50,7 +47,8 @@
 #define CONFIG_SND_SOC_MSM_HDMI_CODEC_RX 1
 #define CONFIG_MSM_EXT_DISPLAY 1
 #define CONFIG_SND_SOC_SWR_DMIC 1
-#define CONFIG_LPASS_BT_SWR 1
+#define CONFIG_SND_SOC_CS35L41 1
 #define CONFIG_SND_SOC_CS35L43 1
+#define CONFIG_SND_SOC_TLV320AIC3X 1
 #define CONFIG_SND_SOC_AW882XX 1
-#define CONFIG_SND_SOC_FS19XX 1
+#define CONFIG_SND_SOC_TEF668X 1

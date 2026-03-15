@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,6 +17,9 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
+#ifdef WLAN_FEATURE_OSRTP
+#include "xsk_buff_pool.h"
+#endif
 #include "hal_hw_headers.h"
 #include "dp_types.h"
 #include "dp_rx.h"
@@ -102,7 +105,7 @@ QDF_STATUS dp_rx_desc_sanity(struct dp_soc *soc, hal_soc_handle_t hal_soc,
 
 fail:
 	DP_STATS_INC(soc, rx.err.invalid_cookie, 1);
-	dp_err_rl("Sanity failed for ring Desc:");
+	dp_err("Ring Desc:");
 	hal_srng_dump_ring_desc(hal_soc, hal_ring_hdl,
 				ring_desc);
 	return QDF_STATUS_E_NULL_VALUE;
@@ -352,8 +355,6 @@ dp_pdev_nbuf_alloc_and_map_replenish(struct dp_soc *dp_soc,
 		DP_STATS_INC(dp_pdev, replenish.nbuf_alloc_fail, 1);
 		return QDF_STATUS_E_NOMEM;
 	}
-
-	DP_STATS_INC(dp_pdev, replenish.nbuf_alloc_succ, 1);
 
 	ret = dp_rx_buffer_pool_nbuf_map(dp_soc, rx_desc_pool,
 					 nbuf_frag_info_t);
@@ -1831,7 +1832,7 @@ static inline uint32_t dp_get_l3_hdr_pad_len(struct dp_soc *soc,
 
 qdf_nbuf_t dp_rx_sg_create(struct dp_soc *soc, qdf_nbuf_t nbuf)
 {
-	qdf_nbuf_t parent, frag_list, frag_tail, next = NULL;
+	qdf_nbuf_t parent, frag_list, next = NULL;
 	uint16_t frag_list_len = 0;
 	uint16_t mpdu_len;
 	bool last_nbuf;
@@ -1844,19 +1845,6 @@ qdf_nbuf_t dp_rx_sg_create(struct dp_soc *soc, qdf_nbuf_t nbuf)
 	 */
 	mpdu_len = QDF_NBUF_CB_RX_PKT_LEN(nbuf);
 
-	/*
-	 * If MSDU length of the first fragment is zero, need to
-	 * use the length of the last fragment to overwrite.
-	 */
-	if (!mpdu_len) {
-		frag_tail = nbuf;
-		while (frag_tail && qdf_nbuf_is_rx_chfrag_cont(frag_tail))
-			frag_tail = frag_tail->next;
-
-		if (frag_tail)
-			QDF_NBUF_CB_RX_PKT_LEN(nbuf) =
-			    QDF_NBUF_CB_RX_PKT_LEN(frag_tail);
-	}
 	/*
 	 * this is a case where the complete msdu fits in one single nbuf.
 	 * in this case HW sets both start and end bit and we only need to
@@ -2851,9 +2839,7 @@ void dp_rx_deliver_to_stack_no_peer(struct dp_soc *soc, qdf_nbuf_t nbuf)
 	uint32_t pkt_len = 0;
 	uint8_t *rx_tlv_hdr;
 	uint32_t frame_mask = FRAME_MASK_IPV4_ARP | FRAME_MASK_IPV4_DHCP |
-			      FRAME_MASK_IPV4_EAPOL | FRAME_MASK_IPV6_DHCP |
-			      FRAME_MASK_DNS_QUERY | FRAME_MASK_DNS_RESP;
-
+				FRAME_MASK_IPV4_EAPOL | FRAME_MASK_IPV6_DHCP;
 	bool is_special_frame = false;
 	struct dp_peer *peer = NULL;
 
@@ -3543,3 +3529,42 @@ bool dp_rx_multipass_process(struct dp_txrx_peer *txrx_peer, qdf_nbuf_t nbuf,
 	return true;
 }
 #endif /* QCA_MULTIPASS_SUPPORT */
+
+#ifdef WLAN_FEATURE_OSRTP
+bool dp_rx_osrtp_check(struct dp_soc *soc, qdf_nbuf_t nbuf,
+		struct xsk_buff_pool *xsk_pool, struct bpf_prog *prog)
+{
+	uint32_t res = 0;
+	struct xdp_buff xdp = {0};
+
+	if (!xsk_pool || !prog)
+		return false;
+
+	if (qdf_nbuf_is_nonlinear(nbuf))
+		return false;
+
+	xdp.data = qdf_nbuf_data(nbuf);
+	xdp.data_end = qdf_nbuf_data(nbuf) + qdf_nbuf_len(nbuf);
+
+	res = bpf_prog_run_xdp(prog, &xdp);
+
+	return (res == XDP_REDIRECT) ? true : false;
+}
+
+QDF_STATUS dp_rx_deliver_osrtp_to_stack(struct dp_soc *soc, struct dp_vdev *vdev, struct xsk_buff_pool *xsk_pool,
+				  qdf_nbuf_t nbuf_head, qdf_nbuf_t nbuf_tail)
+{
+	int num_nbuf = 0;
+
+	if (qdf_unlikely(!vdev || vdev->delete.pending) || !vdev->osif_rx_osrtp) {
+		num_nbuf = dp_rx_drop_nbuf_list(NULL, nbuf_head);
+		DP_STATS_INC(soc, rx.err.invalid_vdev, num_nbuf);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	vdev->osif_rx_osrtp(vdev->osif_vdev, xsk_pool, nbuf_head);
+
+	return QDF_STATUS_SUCCESS;
+}
+#endif
+

@@ -145,14 +145,6 @@ ifneq (, $(filter $(word 2,$(subst _, ,$(TARGET_PRODUCT))), peridot))
     CDEFINES += -DCONFIG_TARGET_PRODUCT_PERIDOT
 endif
 
-ifneq (, $(filter $(word 2,$(subst _, ,$(TARGET_PRODUCT))), muyu))
-    CDEFINES += -DCONFIG_TARGET_PRODUCT_MUYU
-endif
-
-ifneq (, $(filter $(word 2,$(subst _, ,$(TARGET_PRODUCT))), uke))
-    CDEFINES += -DCONFIG_TARGET_PRODUCT_UKE
-endif
-
 KBUILD_CPPFLAGS += $(CDEFINES)
 
 # Currently, for versions of gcc which support it, the kernel Makefile
@@ -169,11 +161,11 @@ EXTRA_CFLAGS += -Wheader-guard
 endif
 
 ifeq ($(KERNEL_BUILD), 0)
-KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/sm8650-modules/qcom/opensource/audio-kernel/ipc/Module.symvers
-KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/sm8650-modules/qcom/opensource/audio-kernel/dsp/Module.symvers
-KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/sm8650-modules/qcom/opensource/audio-kernel/asoc/Module.symvers
-KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/sm8650-modules/qcom/opensource/audio-kernel/asoc/codecs/Module.symvers
-KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/sm8650-modules/qcom/opensource/audio-kernel/soc/Module.symvers
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/ipc/Module.symvers
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/dsp/Module.symvers
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/asoc/Module.symvers
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/asoc/codecs/Module.symvers
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/soc/Module.symvers
 endif
 
 # Module information used by KBuild framework
@@ -194,3 +186,6 @@ lpass_cdc_tx_macro_dlkm-y := $(TX_OBJS)
 
 obj-$(CONFIG_LPASS_CDC_RX_MACRO) += lpass_cdc_rx_macro_dlkm.o
 lpass_cdc_rx_macro_dlkm-y := $(RX_OBJS)
+
+# inject some build related information
+DEFINES += -DBUILD_TIMESTAMP=\"$(shell date -u +'%Y-%m-%dT%H:%M:%SZ')\"

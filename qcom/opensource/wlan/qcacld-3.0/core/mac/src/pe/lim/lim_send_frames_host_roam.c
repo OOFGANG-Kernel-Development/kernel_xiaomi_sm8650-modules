@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -330,7 +330,7 @@ void lim_send_reassoc_req_with_ft_ies_mgmt_frame(struct mac_context *mac_ctx,
 		populate_dot11f_vht_caps(mac_ctx, pe_session, &frm->VHTCaps);
 		vht_enabled = true;
 		populate_dot11f_ext_cap(mac_ctx, vht_enabled, &frm->ExtCap,
-					vdev_id);
+			pe_session);
 	}
 	if (!vht_enabled &&
 			pe_session->is_vendor_specific_vhtcaps) {
@@ -386,7 +386,7 @@ void lim_send_reassoc_req_with_ft_ies_mgmt_frame(struct mac_context *mac_ctx,
 		 * the bits for TWT are unique to STA and AP and cannot be
 		 * intersected.
 		 */
-		populate_dot11f_twt_extended_caps(mac_ctx, vdev_id,
+		populate_dot11f_twt_extended_caps(mac_ctx, pe_session,
 						  &frm->ExtCap);
 	}
 
@@ -786,8 +786,7 @@ void lim_send_reassoc_req_mgmt_frame(struct mac_context *mac,
 		populate_dot11f_vht_caps(mac, pe_session, &frm->VHTCaps);
 		isVHTEnabled = true;
 	}
-	populate_dot11f_ext_cap(mac, isVHTEnabled, &frm->ExtCap,
-				pe_session->vdev_id);
+	populate_dot11f_ext_cap(mac, isVHTEnabled, &frm->ExtCap, pe_session);
 
 	if (lim_is_session_he_capable(pe_session)) {
 		pe_debug("Populate HE IEs");
@@ -836,7 +835,7 @@ void lim_send_reassoc_req_mgmt_frame(struct mac_context *mac,
 		 * the bits for TWT are unique to STA and AP and cannot be
 		 * intersected.
 		 */
-		populate_dot11f_twt_extended_caps(mac, pe_session->vdev_id,
+		populate_dot11f_twt_extended_caps(mac, pe_session,
 						  &frm->ExtCap);
 	}
 
@@ -897,15 +896,6 @@ void lim_send_reassoc_req_mgmt_frame(struct mac_context *mac,
 	} else if (DOT11F_WARNED(nStatus)) {
 		pe_warn("warning packing a Re-AssocReq: (0x%08x)", nStatus);
 	}
-
-	lim_cp_stats_cstats_log_assoc_req_evt(pe_session, CSTATS_DIR_TX,
-					      pMacHdr->bssId, pMacHdr->sa,
-					      frm->SSID.num_ssid,
-					      frm->SSID.ssid,
-					      frm->HTCaps.present,
-					      frm->VHTCaps.present,
-					      frm->he_cap.present,
-					      frm->eht_cap.present, true);
 
 	pe_debug("*** Sending Re-Association Request length: %d" "to", nBytes);
 

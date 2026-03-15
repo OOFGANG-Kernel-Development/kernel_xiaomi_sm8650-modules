@@ -1162,7 +1162,6 @@ struct wlan_connectivity_log_buf_data {
 
 #if (defined(CONNECTIVITY_DIAG_EVENT) && \
 	defined(WLAN_FEATURE_ROAM_OFFLOAD))
-
 /**
  * wlan_print_cached_sae_auth_logs() - Enqueue SAE authentication frame logs
  * @psoc: Global psoc pointer
@@ -1245,10 +1244,6 @@ void wlan_clear_sae_auth_logs_cache(struct wlan_objmgr_psoc *psoc,
 #endif
 
 #if defined(CONNECTIVITY_DIAG_EVENT)
-
-#define ACCEPTED_LINK_STATUS 0
-#define REJECTED_LINK_STATUS 1
-
 /**
  * wlan_connectivity_mgmt_event()  - Fill and enqueue a new record
  * for management frame information.
@@ -1320,12 +1315,10 @@ wlan_connectivity_mlo_reconfig_event(struct wlan_objmgr_vdev *vdev);
 /**
  * wlan_connectivity_mlo_setup_event() - Fill and send MLO setup data
  * @vdev: vdev pointer
- * @is_band_present: If Band is present(Associated link band is shared by FW)
  *
  * Return: None
  */
-void wlan_connectivity_mlo_setup_event(struct wlan_objmgr_vdev *vdev,
-				       bool is_band_present);
+void wlan_connectivity_mlo_setup_event(struct wlan_objmgr_vdev *vdev);
 
 /**
  * wlan_connectivity_t2lm_req_resp_event - API to send t2lm Req/resp
@@ -1389,8 +1382,7 @@ wlan_connectivity_mlo_reconfig_event(struct wlan_objmgr_vdev *vdev)
 }
 
 static inline void
-wlan_connectivity_mlo_setup_event(struct wlan_objmgr_vdev *vdev,
-				  bool is_band_present)
+wlan_connectivity_mlo_setup_event(struct wlan_objmgr_vdev *vdev)
 {
 }
 

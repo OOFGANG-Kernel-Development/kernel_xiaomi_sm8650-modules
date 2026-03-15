@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -20,6 +20,9 @@
 #ifndef _DP_RX_H
 #define _DP_RX_H
 
+#ifdef WLAN_FEATURE_OSRTP
+#include "xsk_buff_pool.h"
+#endif
 #include "hal_rx.h"
 #include "dp_peer.h"
 #include "dp_internal.h"
@@ -267,11 +270,7 @@ bool dp_rx_is_special_frame(qdf_nbuf_t nbuf, uint32_t frame_mask)
 	    ((frame_mask & FRAME_MASK_IPV4_EAPOL) &&
 	     qdf_nbuf_is_ipv4_eapol_pkt(nbuf)) ||
 	    ((frame_mask & FRAME_MASK_IPV6_DHCP) &&
-	     qdf_nbuf_is_ipv6_dhcp_pkt(nbuf)) ||
-	    ((frame_mask & FRAME_MASK_DNS_QUERY) &&
-	     qdf_nbuf_data_is_dns_query(nbuf)) ||
-	    ((frame_mask & FRAME_MASK_DNS_RESP) &&
-	     qdf_nbuf_data_is_dns_response(nbuf)))
+	     qdf_nbuf_is_ipv6_dhcp_pkt(nbuf)))
 		return true;
 
 	return false;
@@ -2335,36 +2334,39 @@ void dp_rx_cksum_offload(struct dp_pdev *pdev,
 	//TODO - Move this to ring desc api
 	//HAL_RX_MSDU_DESC_IP_CHKSUM_FAIL_GET
 	//HAL_RX_MSDU_DESC_TCP_UDP_CHKSUM_FAIL_GET
-	uint32_t ip_csum_err, tcp_udp_csum_er, ip_frag;
+	uint32_t ip_csum_err, tcp_udp_csum_er;
 
 	hal_rx_tlv_csum_err_get(pdev->soc->hal_soc, rx_tlv_hdr, &ip_csum_err,
-				&tcp_udp_csum_er, &ip_frag);
+				&tcp_udp_csum_er);
 
-	if (qdf_unlikely(ip_frag))
-		goto bypass_tcp_udp;
-
-	if (qdf_unlikely(ip_csum_err)) {
-		DP_STATS_INC(pdev, err.ip_csum_err, 1);
-		goto bypass_tcp_udp;
-	}
-
-	if (qdf_nbuf_is_ipv4_udp_pkt(nbuf) ||
-	    qdf_nbuf_is_ipv4_tcp_pkt(nbuf)) {
-		if (qdf_likely(!tcp_udp_csum_er)) {
+	if (qdf_nbuf_is_ipv4_pkt(nbuf)) {
+		if (qdf_likely(!ip_csum_err)) {
 			cksum.l4_result = QDF_NBUF_RX_CKSUM_TCP_UDP_UNNECESSARY;
-			cksum.csum_level = 1;
+			if (qdf_nbuf_is_ipv4_udp_pkt(nbuf) ||
+			    qdf_nbuf_is_ipv4_tcp_pkt(nbuf)) {
+				if (qdf_likely(!tcp_udp_csum_er)) {
+					cksum.csum_level = 1;
+				} else {
+					cksum.l4_result =
+						QDF_NBUF_RX_CKSUM_NONE;
+					DP_STATS_INC(pdev,
+						     err.tcp_udp_csum_err, 1);
+				}
+			}
 		} else {
-		    DP_STATS_INC(pdev, err.tcp_udp_csum_err, 1);
+			DP_STATS_INC(pdev, err.ip_csum_err, 1);
 		}
 	} else if (qdf_nbuf_is_ipv6_udp_pkt(nbuf) ||
 		   qdf_nbuf_is_ipv6_tcp_pkt(nbuf)) {
-		if (qdf_likely(!tcp_udp_csum_er))
+		if (qdf_likely(!ip_csum_err && !tcp_udp_csum_er))
 			cksum.l4_result = QDF_NBUF_RX_CKSUM_TCP_UDP_UNNECESSARY;
-		else
+		else if (ip_csum_err) {
+			DP_STATS_INC(pdev, err.ip_csum_err, 1);
+		} else {
 			DP_STATS_INC(pdev, err.tcp_udp_csum_err, 1);
+		}
 	}
 
-bypass_tcp_udp:
 	qdf_nbuf_set_rx_cksum(nbuf, &cksum);
 }
 #else
@@ -2741,11 +2743,8 @@ void dp_rx_buffers_lt_replenish_simple(struct dp_soc *soc, uint32_t mac_id,
 				       struct rx_desc_pool *rx_desc_pool,
 				       bool force_replenish)
 {
-	union dp_rx_desc_list_elem_t *desc_list = NULL;
-	union dp_rx_desc_list_elem_t *tail = NULL;
-
 	__dp_rx_buffers_replenish(soc, mac_id, rxdma_srng, rx_desc_pool,
-				  0, &desc_list, &tail, false, force_replenish,
+				  0, NULL, NULL, false, force_replenish,
 				  __func__);
 }
 
@@ -3594,5 +3593,12 @@ dp_rx_get_stats_arr_idx_from_link_id(qdf_nbuf_t nbuf,
 	return link_id;
 }
 #endif /* CONFIG_NBUF_AP_PLATFORM */
+
+#ifdef WLAN_FEATURE_OSRTP
+bool dp_rx_osrtp_check(struct dp_soc *soc, qdf_nbuf_t nbuf,
+		struct xsk_buff_pool *xsk_pool, struct bpf_prog *prog);
+QDF_STATUS dp_rx_deliver_osrtp_to_stack(struct dp_soc *soc, struct dp_vdev *vdev, struct xsk_buff_pool *xsk_pool,
+				  qdf_nbuf_t nbuf_head, qdf_nbuf_t nbuf_tail);
+#endif
 
 #endif /* _DP_RX_H */

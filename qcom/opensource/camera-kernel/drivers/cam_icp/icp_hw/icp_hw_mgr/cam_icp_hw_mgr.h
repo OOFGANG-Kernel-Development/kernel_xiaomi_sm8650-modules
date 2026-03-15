@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef CAM_ICP_HW_MGR_H
@@ -43,7 +43,7 @@
 #define ICP_FRAME_PROCESS_FAILURE 1
 
 /* size of buffer to drain from msg/dbq queue */
-#define ICP_MSG_BUF_SIZE_IN_WORDS 512
+#define ICP_MSG_BUF_SIZE_IN_WORDS 256
 #define ICP_DBG_BUF_SIZE_IN_WORDS 25600
 
 #define ICP_OVER_CLK_THRESHOLD  5
@@ -461,7 +461,6 @@ struct cam_icp_hw_ctx_data {
  * @disable_ubwc_comp: Disable UBWC compression
  * @synx_signaling_en: core to core fencing is enabled
  *                     using synx
- * @fw_feature_mask: indicate ICP FW feature mask
  */
 struct cam_icp_hw_mgr {
 	struct mutex hw_mgr_mutex;
@@ -512,7 +511,6 @@ struct cam_icp_hw_mgr {
 	bool icp_jtag_debug;
 	bool disable_ubwc_comp;
 	bool synx_signaling_en;
-	uint32_t fw_feature_mask;
 };
 
 /**

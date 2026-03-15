@@ -2631,6 +2631,7 @@ int32_t cam_cci_core_cfg(struct v4l2_subdev *sd,
 		mutex_unlock(&cci_dev->init_mutex);
 		break;
 	case MSM_CCI_I2C_READ:
+		mutex_lock(&cci_dev->cci_master_info[master].master_mutex);
 		/*
 		 * CCI version 1.2 does not support burst read
 		 * due to the absence of the read threshold register
@@ -2641,6 +2642,7 @@ int32_t cam_cci_core_cfg(struct v4l2_subdev *sd,
 		} else {
 			rc = cam_cci_read_bytes(sd, cci_ctrl);
 		}
+		mutex_unlock(&cci_dev->cci_master_info[master].master_mutex);
 		break;
 	case MSM_CCI_I2C_WRITE:
 	case MSM_CCI_I2C_WRITE_SEQ:
@@ -2648,7 +2650,16 @@ int32_t cam_cci_core_cfg(struct v4l2_subdev *sd,
 	case MSM_CCI_I2C_WRITE_SYNC:
 	case MSM_CCI_I2C_WRITE_ASYNC:
 	case MSM_CCI_I2C_WRITE_SYNC_BLOCK:
+		mutex_lock(&cci_dev->cci_master_info[master].master_mutex);
 		rc = cam_cci_write(sd, cci_ctrl);
+		if (rc < 0) {
+			CAM_ERR(CAM_CCI, "cam cci rc %d slav 0x%x on dev/master %d/%d",
+					rc,
+					cci_ctrl->cci_info->sid << 1,
+					cci_ctrl->cci_info->cci_device,
+					cci_ctrl->cci_info->cci_i2c_master);
+		}
+		mutex_unlock(&cci_dev->cci_master_info[master].master_mutex);
 		break;
 	case MSM_CCI_GPIO_WRITE:
 		break;

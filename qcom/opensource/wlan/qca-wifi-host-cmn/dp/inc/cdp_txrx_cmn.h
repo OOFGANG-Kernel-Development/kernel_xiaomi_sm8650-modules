@@ -25,6 +25,9 @@
 #ifndef _CDP_TXRX_CMN_H_
 #define _CDP_TXRX_CMN_H_
 
+#ifdef WLAN_FEATURE_OSRTP
+#include "xsk_buff_pool.h"
+#endif
 #include "qdf_types.h"
 #include "qdf_nbuf.h"
 #include "cdp_txrx_ops.h"
@@ -997,7 +1000,7 @@ cdp_set_monitor_filter(ol_txrx_soc_handle soc, uint8_t pdev_id,
 /******************************************************************************
  * Data Interface (B Interface)
  *****************************************************************************/
-static inline struct cdp_vdev *
+static inline void
 cdp_vdev_register(ol_txrx_soc_handle soc, uint8_t vdev_id,
 		  ol_osif_vdev_handle osif_vdev,
 		  struct ol_txrx_ops *txrx_ops)
@@ -1005,15 +1008,15 @@ cdp_vdev_register(ol_txrx_soc_handle soc, uint8_t vdev_id,
 	if (!soc || !soc->ops) {
 		dp_cdp_debug("Invalid Instance:");
 		QDF_BUG(0);
-		return NULL;
+		return;
 	}
 
 	if (!soc->ops->cmn_drv_ops ||
 	    !soc->ops->cmn_drv_ops->txrx_vdev_register)
-		return NULL;
+		return;
 
-	return soc->ops->cmn_drv_ops->txrx_vdev_register(soc, vdev_id,
-							 osif_vdev, txrx_ops);
+	soc->ops->cmn_drv_ops->txrx_vdev_register(soc, vdev_id,
+			osif_vdev, txrx_ops);
 }
 
 static inline int
@@ -3528,6 +3531,51 @@ int cdp_cfgmgr_get_peer_create_evt_info(struct cdp_soc_t *soc, uint16_t peer_id,
 
 	return soc->ops->cmn_drv_ops->cfgmgr_get_peer_create_evt_info(
 						soc, peer_id, ev_buf);
+}
+#endif
+
+#ifdef WLAN_FEATURE_OSRTP
+static inline int cdp_set_osrtp_prog(ol_txrx_soc_handle soc, struct bpf_prog *prog)
+{
+	if (!soc || !soc->ops) {
+		dp_cdp_debug("Invalid Instance");
+		return -EOPNOTSUPP;
+	}
+
+	if (!soc->ops->cmn_drv_ops ||
+		!soc->ops->cmn_drv_ops->set_osrtp_prog)
+		return 0;
+
+	return soc->ops->cmn_drv_ops->set_osrtp_prog(soc, prog);
+}
+
+static inline int cdp_set_osrtp_xsk_buff_pool(ol_txrx_soc_handle soc, struct net_device *netdev, struct xsk_buff_pool *pool, uint16_t qid)
+{
+	if (!soc || !soc->ops) {
+		dp_cdp_debug("Invalid Instance");
+		return -EOPNOTSUPP;
+	}
+
+	if (!soc->ops->cmn_drv_ops ||
+	    !soc->ops->cmn_drv_ops->set_osrtp_xsk_pool)
+		return 0;
+
+	return soc->ops->cmn_drv_ops->set_osrtp_xsk_pool(soc, netdev, pool, qid);
+}
+
+/* must be call in rcu_read_lock */
+static inline struct xsk_buff_pool *cdp_get_osrtp_xsk_buff_pool(ol_txrx_soc_handle soc)
+{
+	if (!soc || !soc->ops) {
+		dp_cdp_debug("Invalid Instance");
+		return NULL;
+	}
+
+	if (!soc->ops->cmn_drv_ops ||
+	    !soc->ops->cmn_drv_ops->get_osrtp_xsk_pool)
+		return NULL;
+
+	return soc->ops->cmn_drv_ops->get_osrtp_xsk_pool(soc);
 }
 #endif
 #endif /* _CDP_TXRX_CMN_H_ */

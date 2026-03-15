@@ -77,7 +77,7 @@ static int cs35l43_i2c_probe(struct i2c_client *client,
 	cs35l43->regmap = devm_regmap_init_i2c(client, regmap_config);
 	if (IS_ERR(cs35l43->regmap)) {
 		ret = PTR_ERR(cs35l43->regmap);
-		dev_err(cs35l43->dev, "Failed to allocate register map: %d\n",
+		dev_err(cs35l43->dev, "[TF-STABILITY]Failed to allocate register map: %d\n",
 			ret);
 	#if IS_ENABLED(CONFIG_MIEV)
 		mievent_report(906001353,"PA i2c exception",cs35l43->dev);

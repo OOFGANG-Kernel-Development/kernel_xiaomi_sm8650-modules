@@ -1296,7 +1296,6 @@ struct wlan_hdd_tx_power {
  * @tx_power: Structure to hold connection tx Power info
  * @tx_latency_cfg: configuration for per-link transmit latency statistics
  * @link_state_cached_timestamp: link state cached timestamp
- * @keep_alive_interval: user configured STA keep alive interval
  */
 struct hdd_adapter {
 	uint32_t magic;
@@ -1488,13 +1487,15 @@ struct hdd_adapter {
 	struct wlan_hdd_link_info *deflink;
 	struct wlan_hdd_link_info link_info[WLAN_MAX_ML_BSS_LINKS];
 	struct wlan_hdd_tx_power tx_power;
+#ifdef CFG_SUPPORT_SCAN_EXT_FLAG
+	uint8_t scan_ext_flag;
+#endif
 #ifdef WLAN_FEATURE_TX_LATENCY_STATS
 	struct cdp_tx_latency_config tx_latency_cfg;
 #endif
 #ifdef WLAN_FEATURE_11BE_MLO
 	qdf_time_t link_state_cached_timestamp;
 #endif
-	uint16_t keep_alive_interval;
 };
 
 #define WLAN_HDD_GET_STATION_CTX_PTR(link_info) (&(link_info)->session.station)
@@ -2841,18 +2842,15 @@ wlan_hdd_get_link_info_from_objmgr(struct wlan_objmgr_vdev *vdev);
 /**
  * hdd_adapter_disable_all_links() - Reset the links on stop adapter.
  * @adapter: HDD adapter
- * @clear_macaddr: Clears mac address if set to true
  *
  * Resets the MAC address in each link info and resets the link info
  * mapping in adapter array.
  *
  * Return: void
  */
-void
-hdd_adapter_disable_all_links(struct hdd_adapter *adapter, bool clear_macaddr);
+void hdd_adapter_disable_all_links(struct hdd_adapter *adapter);
 #else
-static inline void
-hdd_adapter_disable_all_links(struct hdd_adapter *adapter, bool clear_macaddr)
+static inline void hdd_adapter_disable_all_links(struct hdd_adapter *adapter)
 {
 }
 #endif
@@ -3723,21 +3721,6 @@ void wlan_hdd_stop_sap(struct hdd_adapter *ap_adapter);
  */
 void wlan_hdd_start_sap(struct wlan_hdd_link_info *link_info, bool reinit);
 
-/**
- * wlan_hdd_set_sap_beacon_protection() - this function will set beacon
- * protection for SAP.
- * @hdd_ctx: pointer to HDD context
- * @link_info: Link info pointer
- * @beacon: pointer to beacon data structure
- *
- * This function will enable beacon protection and cache the value in vdev
- * priv object.
- *
- * Return: None
- */
-void wlan_hdd_set_sap_beacon_protection(struct hdd_context *hdd_ctx,
-					struct wlan_hdd_link_info *link_info,
-					struct hdd_beacon_data *beacon);
 #ifdef QCA_CONFIG_SMP
 int wlan_hdd_get_cpu(void);
 #else
@@ -5096,7 +5079,6 @@ bool wlan_hdd_is_session_type_monitor(uint8_t session_type);
  * @name: name of the interface
  * @rtnl_held: True if RTNL lock is held
  * @name_assign_type: the name of assign type of the netdev
- * @is_rx_mon: if monitor mode is getting enabled
  *
  * Return: 0 - on success
  *         err code - on failure
@@ -5104,8 +5086,7 @@ bool wlan_hdd_is_session_type_monitor(uint8_t session_type);
 int wlan_hdd_add_monitor_check(struct hdd_context *hdd_ctx,
 			       struct hdd_adapter **adapter,
 			       const char *name, bool rtnl_held,
-			       unsigned char name_assign_type,
-			       bool is_rx_mon);
+			       unsigned char name_assign_type);
 
 #ifdef CONFIG_WLAN_DEBUG_CRASH_INJECT
 /**
@@ -5557,38 +5538,8 @@ hdd_lpc_is_work_scheduled(struct hdd_context *hdd_ctx)
 }
 #endif
 
-/**
- * hdd_allow_new_intf() - Allow new intf created or not
- * @hdd_ctx: hdd context
- * @mode: qdf opmode of new interface
- *
- * Return: true if allowed, otherwise false
- */
-bool hdd_allow_new_intf(struct hdd_context *hdd_ctx,
-			enum QDF_OPMODE mode);
-
-#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
-/**
- * wlan_hdd_is_link_switch_in_progress() - Function to check if there is any
- * link switch in progress
- * @link_info: Link info pointer in HDD adapter
- *
- * Return: true if link switch in progress, false otherwise
- */
-bool wlan_hdd_is_link_switch_in_progress(struct wlan_hdd_link_info *link_info);
-#else
-static inline bool
-wlan_hdd_is_link_switch_in_progress(struct wlan_hdd_link_info *link_info)
-{
-	return false;
-}
+#ifdef WLAN_FEATURE_OSRTP
+int hdd_bpf(struct net_device *dev, struct netdev_bpf *bpf);
 #endif
 
-/**
- * wlan_hdd_is_mlo_connection() - Check if connection is legacy or mlo
- * @link_info: Link info pointer in HDD adapter
- *
- * Return: True if MLO connection, else False
- */
-bool wlan_hdd_is_mlo_connection(struct wlan_hdd_link_info *link_info);
 #endif /* end #if !defined(WLAN_HDD_MAIN_H) */

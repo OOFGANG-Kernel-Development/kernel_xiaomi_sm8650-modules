@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -223,7 +223,7 @@ bool wlan_mlme_get_wlm_multi_client_ll_caps(struct wlan_objmgr_psoc *psoc)
 #endif
 
 #ifdef FEATURE_WLAN_CH_AVOID_EXT
-uint32_t wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(
+bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(
 		struct wlan_objmgr_psoc *psoc)
 {
 	struct wlan_mlme_psoc_ext_obj *mlme_obj;
@@ -233,22 +233,7 @@ uint32_t wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(
 		mlme_legacy_err("Failed to get MLME Obj");
 		return cfg_default(CFG_COEX_UNSAFE_CHAN_NB_USER_PREFER);
 	}
-
 	return mlme_obj->cfg.reg.coex_unsafe_chan_nb_user_prefer;
-}
-
-bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(
-		struct wlan_objmgr_psoc *psoc)
-{
-	return !!(wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(psoc) &
-					IGNORE_FW_COEX_INFO_ON_SAP_MODE);
-}
-
-bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_p2p_go(
-		struct wlan_objmgr_psoc *psoc)
-{
-	return !!(wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(psoc) &
-					IGNORE_FW_COEX_INFO_ON_P2P_GO_MODE);
 }
 #endif
 
@@ -891,7 +876,17 @@ QDF_STATUS wlan_mlme_cfg_get_enable_ul_ofdm(struct wlan_objmgr_psoc *psoc,
 	return QDF_STATUS_SUCCESS;
 }
 
-uint16_t wlan_mlme_get_min_he_mcs_map(uint16_t val1, uint16_t val2)
+/* mlme_get_min_rate_cap() - get minimum capability for HE-MCS between
+ *                           ini value and fw capability.
+ *
+ * Rx HE-MCS Map and Tx HE-MCS Map subfields format where 2-bit indicates
+ * 0 indicates support for HE-MCS 0-7 for n spatial streams
+ * 1 indicates support for HE-MCS 0-9 for n spatial streams
+ * 2 indicates support for HE-MCS 0-11 for n spatial streams
+ * 3 indicates that n spatial streams is not supported for HE PPDUs
+ *
+ */
+static uint16_t mlme_get_min_rate_cap(uint16_t val1, uint16_t val2)
 {
 	uint16_t ret = 0, i;
 
@@ -1117,15 +1112,7 @@ QDF_STATUS mlme_update_tgt_he_caps_in_cfg(struct wlan_objmgr_psoc *psoc,
 		mlme_obj->cfg.he_caps.dot11_he_cap.bfee_sts_lt_80 = 0;
 		mlme_obj->cfg.he_caps.dot11_he_cap.bfee_sts_gt_80 = 0;
 	}
-
-	if (!mlme_obj->cfg.he_caps.enable_ul_mimo) {
-		mlme_debug("UL MIMO feature is disabled via ini, fw caps :%d",
-			   he_cap->ul_mu);
-		mlme_obj->cfg.he_caps.dot11_he_cap.ul_mu = 0;
-	} else {
-		mlme_obj->cfg.he_caps.dot11_he_cap.ul_mu = he_cap->ul_mu;
-	}
-
+	mlme_obj->cfg.he_caps.dot11_he_cap.ul_mu = he_cap->ul_mu;
 	mlme_obj->cfg.he_caps.dot11_he_cap.su_feedback_tone16 =
 					he_cap->su_feedback_tone16;
 	mlme_obj->cfg.he_caps.dot11_he_cap.mu_feedback_tone16 =
@@ -1174,10 +1161,10 @@ QDF_STATUS mlme_update_tgt_he_caps_in_cfg(struct wlan_objmgr_psoc *psoc,
 	mlme_obj->cfg.he_caps.dot11_he_cap.rx_full_bw_su_he_mu_non_cmpr_sigb =
 				he_cap->rx_full_bw_su_he_mu_non_cmpr_sigb;
 
-	tx_mcs_map = wlan_mlme_get_min_he_mcs_map(
+	tx_mcs_map = mlme_get_min_rate_cap(
 		mlme_obj->cfg.he_caps.dot11_he_cap.tx_he_mcs_map_lt_80,
 		he_cap->tx_he_mcs_map_lt_80);
-	rx_mcs_map = wlan_mlme_get_min_he_mcs_map(
+	rx_mcs_map = mlme_get_min_rate_cap(
 		mlme_obj->cfg.he_caps.dot11_he_cap.rx_he_mcs_map_lt_80,
 		he_cap->rx_he_mcs_map_lt_80);
 	if (!mlme_obj->cfg.vht_caps.vht_cap_info.enable2x2) {
@@ -1192,11 +1179,10 @@ QDF_STATUS mlme_update_tgt_he_caps_in_cfg(struct wlan_objmgr_psoc *psoc,
 	if (cfg_in_range(CFG_HE_TX_MCS_MAP_LT_80, tx_mcs_map))
 		mlme_obj->cfg.he_caps.dot11_he_cap.tx_he_mcs_map_lt_80 =
 			tx_mcs_map;
-
-	tx_mcs_map = wlan_mlme_get_min_he_mcs_map(
+	tx_mcs_map = mlme_get_min_rate_cap(
 	   *((uint16_t *)mlme_obj->cfg.he_caps.dot11_he_cap.tx_he_mcs_map_160),
 	   *((uint16_t *)he_cap->tx_he_mcs_map_160));
-	rx_mcs_map = wlan_mlme_get_min_he_mcs_map(
+	rx_mcs_map = mlme_get_min_rate_cap(
 	   *((uint16_t *)mlme_obj->cfg.he_caps.dot11_he_cap.rx_he_mcs_map_160),
 	   *((uint16_t *)he_cap->rx_he_mcs_map_160));
 
@@ -1402,23 +1388,13 @@ bool wlan_mlme_get_epcs_capability(struct wlan_objmgr_psoc *psoc)
 void wlan_mlme_set_epcs_capability(struct wlan_objmgr_psoc *psoc, bool flag)
 {
 	struct wlan_mlme_psoc_ext_obj *mlme_obj = mlme_get_psoc_ext_obj(psoc);
-	struct mac_context *mac_ctx = cds_get_context(QDF_MODULE_ID_PE);
 
-	if (!mlme_obj || !mac_ctx)
+	if (!mlme_obj)
 		return;
 
 	mlme_debug("set mlme epcs capability from %d to %d",
 		   mlme_obj->cfg.sta.epcs_capability, flag);
 	mlme_obj->cfg.sta.epcs_capability = flag;
-	if (flag) {
-		mlme_obj->cfg.eht_caps.dot11_eht_cap.epcs_pri_access = 1;
-		mac_ctx->eht_cap_2g.epcs_pri_access = 1;
-		mac_ctx->eht_cap_5g.epcs_pri_access = 1;
-	} else {
-		mlme_obj->cfg.eht_caps.dot11_eht_cap.epcs_pri_access = 0;
-		mac_ctx->eht_cap_2g.epcs_pri_access = 0;
-		mac_ctx->eht_cap_5g.epcs_pri_access = 0;
-	}
 }
 
 bool wlan_mlme_get_eht_disable_punct_in_us_lpi(struct wlan_objmgr_psoc *psoc)
@@ -1497,8 +1473,7 @@ enum phy_ch_width wlan_mlme_get_max_bw(void)
 #endif
 
 QDF_STATUS wlan_mlme_get_sta_ch_width(struct wlan_objmgr_vdev *vdev,
-				      enum phy_ch_width *ch_width,
-				      enum wlan_phymode *phy_mode)
+				      enum phy_ch_width *ch_width)
 {
 	QDF_STATUS status = QDF_STATUS_E_INVAL;
 	struct wlan_objmgr_peer *peer;
@@ -1515,8 +1490,6 @@ QDF_STATUS wlan_mlme_get_sta_ch_width(struct wlan_objmgr_vdev *vdev,
 		phymode = wlan_peer_get_phymode(peer);
 		wlan_peer_obj_unlock(peer);
 		*ch_width = wlan_mlme_get_ch_width_from_phymode(phymode);
-		if (phy_mode)
-			*phy_mode = phymode;
 		status = QDF_STATUS_SUCCESS;
 	}
 
@@ -1591,26 +1564,18 @@ QDF_STATUS wlan_mlme_set_sta_mlo_conn_max_num(struct wlan_objmgr_psoc *psoc,
 					      uint8_t value)
 {
 	struct wlan_mlme_psoc_ext_obj *mlme_obj;
-	struct target_psoc_info *tgt_hdl;
 
 	mlme_obj = mlme_get_psoc_ext_obj(psoc);
 	if (!mlme_obj)
 		return QDF_STATUS_E_FAILURE;
 
-	tgt_hdl = wlan_psoc_get_tgt_if_handle(psoc);
-	if (!tgt_hdl) {
-		mlme_err("target psoc info is NULL");
-		return QDF_STATUS_E_FAILURE;
-	}
-
 	if (!value)
 		mlme_obj->cfg.sta.mlo_support_link_num =
-				target_if_res_cfg_get_num_max_mlo_link(tgt_hdl);
+					  cfg_default(CFG_MLO_SUPPORT_LINK_NUM);
 	else
 		mlme_obj->cfg.sta.mlo_support_link_num = value;
 
-	mlme_legacy_debug("mlo_support_link_num user input %d intersected value :%d",
-			  value, mlme_obj->cfg.sta.mlo_support_link_num);
+	mlme_legacy_debug("mlo_support_link_num %d", value);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -3512,16 +3477,6 @@ QDF_STATUS wlan_mlme_set_enable_bcast_probe_rsp(struct wlan_objmgr_psoc *psoc,
 	return QDF_STATUS_SUCCESS;
 }
 
-bool wlan_mlme_get_enable_bcast_probe_rsp(struct wlan_objmgr_psoc *psoc)
-{
-	struct wlan_mlme_psoc_ext_obj *mlme_obj = mlme_get_psoc_ext_obj(psoc);
-
-	if (!mlme_obj)
-		return false;
-
-	return mlme_obj->cfg.oce.enable_bcast_probe_rsp;
-}
-
 QDF_STATUS
 wlan_mlme_get_sta_miracast_mcc_rest_time(struct wlan_objmgr_psoc *psoc,
 					 uint32_t *value)
@@ -3788,7 +3743,7 @@ QDF_STATUS mlme_get_wep_key(struct wlan_objmgr_vdev *vdev,
 		mlme_legacy_err("Incorrect wep key index %d", wep_keyid);
 		return QDF_STATUS_E_INVAL;
 	}
-	crypto_key = wlan_crypto_get_key(vdev, NULL, wep_keyid);
+	crypto_key = wlan_crypto_get_key(vdev, wep_keyid);
 	if (!crypto_key) {
 		mlme_legacy_err("Crypto KEY not present");
 		return QDF_STATUS_E_INVAL;
@@ -5279,8 +5234,7 @@ void wlan_mlme_update_sae_single_pmk(struct wlan_objmgr_vdev *vdev,
 		return;
 	}
 
-	if (QDF_HAS_PARAM(keymgmt, WLAN_CRYPTO_KEY_MGMT_SAE) ||
-	    QDF_HAS_PARAM(keymgmt, WLAN_CRYPTO_KEY_MGMT_SAE_EXT_KEY))
+	if (keymgmt & (1 << WLAN_CRYPTO_KEY_MGMT_SAE))
 		is_sae_connection = true;
 
 	mlme_legacy_debug("SAE_SPMK: single_pmk_ap:%d, is_sae_connection:%d, pmk_len:%d",
@@ -5438,16 +5392,6 @@ char *mlme_get_roam_fail_reason_str(enum wlan_roam_failure_reason_code result)
 		return "No Candidate AP found on final BMISS";
 	case ROAM_FAIL_REASON_CURR_AP_STILL_OK:
 		return "CURRENT AP STILL OK";
-	case ROAM_FAIL_REASON_SCAN_CANCEL:
-		return "SCAN CANCEL";
-	case ROAM_FAIL_REASON_SCREEN_ACTIVITY:
-		return "SCREEN ACTIVITY";
-	case ROAM_FAIL_REASON_OTHER_PRIORITY_ROAM_SCAN:
-		return "OTHER PRIORITY ROAM SCAN";
-	case ROAM_FAIL_REASON_REASSOC_TO_SAME_AP:
-		return "REASSOC TO SAME AP";
-	case ROAM_FAIL_REASON_MLD_EXTRA_SCAN_REQUIRED:
-		return "MLD EXTRA SCAN REQUIRED";
 	default:
 		return "UNKNOWN";
 	}
@@ -6207,22 +6151,6 @@ wlan_mlme_get_bss_load_threshold(struct wlan_objmgr_psoc *psoc, uint32_t *val)
 	}
 
 	*val = mlme_obj->cfg.lfr.bss_load_trig.threshold;
-
-	return QDF_STATUS_SUCCESS;
-}
-
-QDF_STATUS
-wlan_mlme_get_bss_load_alpha(struct wlan_objmgr_psoc *psoc, uint32_t *val)
-{
-	struct wlan_mlme_psoc_ext_obj *mlme_obj;
-
-	mlme_obj = mlme_get_psoc_ext_obj(psoc);
-	if (!mlme_obj) {
-		*val = cfg_default(CFG_BSS_LOAD_ALPHA);
-		return QDF_STATUS_E_INVAL;
-	}
-
-	*val = mlme_obj->cfg.lfr.bss_load_trig.bss_load_alpha;
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -7916,7 +7844,7 @@ wlan_mlme_send_ch_width_update_with_notify(struct wlan_objmgr_psoc *psoc,
 {
 	QDF_STATUS status;
 	wmi_host_channel_width wmi_chan_width;
-	enum phy_ch_width associated_ch_width, omn_ie_ch_width;
+	enum phy_ch_width associated_ch_width;
 	struct wlan_channel *des_chan;
 	struct mlme_legacy_priv *mlme_priv;
 	qdf_freq_t sec_2g_freq = 0;
@@ -7928,14 +7856,6 @@ wlan_mlme_send_ch_width_update_with_notify(struct wlan_objmgr_psoc *psoc,
 	des_chan = wlan_vdev_mlme_get_des_chan(vdev);
 	if (!des_chan)
 		return QDF_STATUS_E_INVAL;
-
-	omn_ie_ch_width =
-		mlme_priv->connect_info.assoc_chan_info.omn_ie_ch_width;
-	if (omn_ie_ch_width != CH_WIDTH_INVALID && ch_width > omn_ie_ch_width) {
-		mlme_debug("vdev %d: Invalid new chwidth:%d, omn_ie_cw:%d",
-			   vdev_id, ch_width, omn_ie_ch_width);
-		return QDF_STATUS_E_INVAL;
-	}
 
 	associated_ch_width =
 		mlme_priv->connect_info.assoc_chan_info.assoc_ch_width;
@@ -8418,99 +8338,3 @@ rel_pdev:
 	return status;
 }
 #endif
-
-QDF_STATUS
-wlan_mlme_is_hs_20_btm_offload_disabled(struct wlan_objmgr_psoc *psoc,
-					bool *val)
-{
-	struct wlan_mlme_psoc_ext_obj *mlme_obj;
-
-	mlme_obj = mlme_get_psoc_ext_obj(psoc);
-	if (!mlme_obj) {
-		*val = cfg_default(CFG_HS_20_BTM_OFFLOAD_DISABLE);
-		return QDF_STATUS_E_INVAL;
-	}
-
-	*val = mlme_obj->cfg.lfr.hs20_btm_offload_disable;
-
-	return QDF_STATUS_SUCCESS;
-}
-
-void wlan_mlme_set_keepalive_period(struct wlan_objmgr_vdev *vdev,
-				    uint16_t keep_alive_period)
-{
-	struct mlme_legacy_priv *mlme_priv;
-
-	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
-	if (!mlme_priv) {
-		mlme_err("vdev legacy private object is NULL");
-		return;
-	}
-
-	mlme_priv->keep_alive_period = keep_alive_period;
-}
-
-uint16_t wlan_mlme_get_keepalive_period(struct wlan_objmgr_vdev *vdev)
-{
-	struct mlme_legacy_priv *mlme_priv;
-
-	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
-	if (!mlme_priv) {
-		mlme_err("vdev legacy private object is NULL");
-		return 0;
-	}
-
-	return mlme_priv->keep_alive_period;
-}
-
-void wlan_mlme_reset_sta_keepalive_period(struct wlan_objmgr_psoc *psoc,
-					  struct wlan_objmgr_vdev *vdev)
-{
-       struct mlme_legacy_priv *mlme_priv;
-       struct wlan_mlme_psoc_ext_obj *mlme_obj;
-
-       mlme_obj = mlme_get_psoc_ext_obj(psoc);
-       if (!mlme_obj) {
-	       mlme_err("invalid mlem object");
-	       return;
-       }
-       mlme_obj->cfg.sta.sta_keep_alive_period =
-		cfg_get(psoc, CFG_INFRA_STA_KEEP_ALIVE_PERIOD);
-       mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
-       if (!mlme_priv) {
-               mlme_err("vdev legacy private object is NULL");
-               return;
-       }
-
-       mlme_priv->keep_alive_period =
-			cfg_get(psoc, CFG_INFRA_STA_KEEP_ALIVE_PERIOD);
-}
-
-QDF_STATUS
-wlan_mlme_get_sta_keep_alive_period(struct wlan_objmgr_psoc *psoc,
-                                    uint32_t *keep_alive_period)
-{
-	struct wlan_mlme_psoc_ext_obj *mlme_obj;
-
-	mlme_obj = mlme_get_psoc_ext_obj(psoc);
-	if (!mlme_obj) {
-		*keep_alive_period =
-				cfg_default(CFG_INFRA_STA_KEEP_ALIVE_PERIOD);
-		return QDF_STATUS_E_INVAL;
-	}
-
-	*keep_alive_period = mlme_obj->cfg.sta.sta_keep_alive_period;
-
-        return QDF_STATUS_SUCCESS;
-}
-
-uint16_t wlan_mlme_get_sap_he_rx_mcs_map_160(struct wlan_objmgr_psoc *psoc)
-{
-	struct wlan_mlme_psoc_ext_obj *mlme_obj;
-
-	mlme_obj = mlme_get_psoc_ext_obj(psoc);
-	if (!mlme_obj)
-		return cfg_get(psoc, CFG_SAP_HE_RX_MCS_MAP_160);
-
-	return mlme_obj->cfg.sap_cfg.sap_he_rx_mcs_map_160;
-}

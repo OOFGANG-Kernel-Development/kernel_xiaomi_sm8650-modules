@@ -1,21 +1,3 @@
-ifeq ($(CONFIG_ARCH_PINEAPPLE), y)
-include \
-	$(WLAN_PLATFORM_ROOT)/cnss2/pineapple_gki_defconfig \
-	$(WLAN_PLATFORM_ROOT)/cnss_genl/pineapple_gki_defconfig \
-	$(WLAN_PLATFORM_ROOT)/cnss_prealloc/pineapple_gki_defconfig \
-	$(WLAN_PLATFORM_ROOT)/cnss_utils/pineapple_gki_defconfig \
-	$(WLAN_PLATFORM_ROOT)/icnss2/pineapple_gki_defconfig
-endif
-
-ifeq ($(CONFIG_ARCH_SUN), y)
-include \
-	$(WLAN_PLATFORM_ROOT)/cnss2/sun_gki_defconfig \
-	$(WLAN_PLATFORM_ROOT)/cnss_genl/sun_gki_defconfig \
-	$(WLAN_PLATFORM_ROOT)/cnss_prealloc/sun_gki_defconfig \
-	$(WLAN_PLATFORM_ROOT)/cnss_utils/sun_gki_defconfig \
-	$(WLAN_PLATFORM_ROOT)/icnss2/sun_gki_defconfig
-endif
-
 ifeq ($(CONFIG_CNSS_OUT_OF_TREE),y)
 KBUILD_CPPFLAGS += -DCONFIG_CNSS_OUT_OF_TREE
 endif
@@ -74,7 +56,6 @@ endif
 
 ifeq ($(CONFIG_AUTO_PROJECT),y)
 KBUILD_CPPFLAGS += -DCONFIG_PULLDOWN_WLANEN
-KBUILD_CPPFLAGS += -DCONFIG_MEM_ALLOC_FALLBACK
 endif
 
 ifeq ($(CONFIG_CNSS2_SSR_DRIVER_DUMP),y)
@@ -98,31 +79,7 @@ KBUILD_CPPFLAGS += -DCONFIG_CNSS2_ENUM_WITH_LOW_SPEED
 endif
 
 ifeq ($(CONFIG_SLATE_MODULE_ENABLED), y)
-KBUILD_CPPFLAGS += -DCONFIG_SLATE_MODULE_ENABLED
-endif
-
-ifeq ($(CONFIG_FEATURE_SMEM_MAILBOX), y)
-KBUILD_CPPFLAGS += -DCONFIG_FEATURE_SMEM_MAILBOX
-endif
-
-ifeq ($(CONFIG_CNSS2_DISABLE_SSR_RAMDUMP), y)
-KBUILD_CPPFLAGS += -DCONFIG_CNSS2_DISABLE_SSR_RAMDUMP
-endif
-
-ifdef CONFIG_MHI_BUF_LEN
-KBUILD_CPPFLAGS += -DCONFIG_MHI_BUF_LEN=$(CONFIG_MHI_BUF_LEN)
-else
-KBUILD_CPPFLAGS += -DCONFIG_MHI_BUF_LEN=0x8000
-endif
-
-found = $(shell if grep -qF "int msm_pcie_dsp_link_control" $(srctree)/include/linux/msm_pcie.h; then echo "yes" ;else echo "no" ;fi;)
-ifeq ($(findstring yes, $(found)), yes)
-KBUILD_CPPFLAGS += -DCONFIG_PCIE_SWITCH_SUPPORT
-endif
-
-found = $(shell if grep -qF "int msm_pcie_retrain_port_link" $(srctree)/include/linux/msm_pcie.h; then echo "yes" ;else echo "no" ;fi;)
-ifeq ($(findstring yes, $(found)), yes)
-KBUILD_CPPFLAGS += -DCONFIG_PCIE_SWITCH_RETRAIN_LINK_SUPPORT
+KBUILD_CPPFLAGS += -DSLATE_MODULE_ENABLED
 endif
 
 obj-$(CONFIG_CNSS2) += cnss2/

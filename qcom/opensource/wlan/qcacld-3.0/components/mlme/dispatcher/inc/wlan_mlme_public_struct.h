@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -747,7 +747,6 @@ struct wlan_mlme_wps_params {
  * @is_6g_sap_fd_enabled: enable fils discovery on sap
  * @disable_bcn_prot: disable beacon protection for sap
  * @sap_ps_with_twt_enable: SAP power save with TWT
- * @sap_he_rx_mcs_map_160: SAP HE rx mcs map 160 config
  */
 struct wlan_mlme_cfg_sap {
 	uint16_t beacon_interval;
@@ -785,7 +784,6 @@ struct wlan_mlme_cfg_sap {
 	bool is_6g_sap_fd_enabled;
 	bool disable_bcn_prot;
 	bool sap_ps_with_twt_enable;
-	uint16_t sap_he_rx_mcs_map_160;
 };
 
 /**
@@ -799,7 +797,6 @@ struct wlan_mlme_cfg_sap {
  * @dfs_disable_japan_w53: Disable W53 channels
  * @sap_tx_leakage_threshold: sap tx leakage threshold
  * @dfs_pri_multiplier: dfs_pri_multiplier for handle missing pulses
- * @dfs_discard_mode: Modes for which DFS channels need to discard
  */
 struct wlan_mlme_dfs_cfg {
 	bool dfs_master_capable;
@@ -811,7 +808,6 @@ struct wlan_mlme_dfs_cfg {
 	bool dfs_disable_japan_w53;
 	uint32_t sap_tx_leakage_threshold;
 	uint32_t dfs_pri_multiplier;
-	uint8_t dfs_discard_mode;
 };
 
 /**
@@ -1069,6 +1065,8 @@ struct wlan_mlme_qos {
  * @he_sta_obsspd:
  * @he_mcs_12_13_supp_2g:
  * @he_mcs_12_13_supp_5g:
+ * @disable_sap_24g_40m_mcs_12_13: Disable he mcs 12 13 for SAP operating in
+ *                                 2.4 GHz 40 MHz
  * @disable_sap_mcs_12_13: Bitmap to disable he mcs 12 13 for SAP
  */
 struct wlan_mlme_he_caps {
@@ -1083,6 +1081,7 @@ struct wlan_mlme_he_caps {
 	uint32_t he_sta_obsspd;
 	uint16_t he_mcs_12_13_supp_2g;
 	uint16_t he_mcs_12_13_supp_5g;
+	bool disable_sap_24g_40m_mcs_12_13;
 	uint32_t disable_sap_mcs_12_13;
 };
 #endif
@@ -1822,7 +1821,7 @@ enum station_prefer_bw {
  * @single_tid:                     Set replay counter for all TID
  * @allow_tpc_from_ap:              Support for AP power constraint
  * @sta_keepalive_method:           STA keepalive method
- * @usr_disabled_roaming:           User disable roaming for current connection
+ * @usr_disabled_roaming:           User config for roaming disable
  * @usr_scan_probe_unicast_ra:      User config unicast probe req in scan
  * @event_payload:                  Diagnostic event payload
  * @max_li_modulated_dtim_time_ms:  Max modulated DTIM time in ms.
@@ -1913,8 +1912,6 @@ enum roaming_dfs_channel_type {
  * @threshold: Bss load threshold value above which roaming should start
  * @sample_time: Time duration in milliseconds for which the bss load value
  * should be monitored
- * @bss_load_alpha: Factor for computing average bss load from current channel
- * utilization
  * @rssi_threshold_6ghz: RSSI threshold of the current connected AP below which
  * roam should be triggered if bss load threshold exceeds the configured value.
  * This value is applicable only when we are connected in 6GHz band.
@@ -1929,7 +1926,6 @@ struct bss_load_trigger {
 	bool enabled;
 	uint32_t threshold;
 	uint32_t sample_time;
-	uint32_t bss_load_alpha;
 	uint32_t rssi_threshold_6ghz;
 	int32_t rssi_threshold_5ghz;
 	int32_t rssi_threshold_24ghz;
@@ -2096,8 +2092,6 @@ struct fw_scan_channels {
  * only on prior discovery of any 6 GHz support in the environment.
  * @disconnect_on_nud_roam_invoke_fail: indicate whether disconnect ap when
  * roam invoke fail on nud.
- * @hs20_btm_offload_disable: indicate whether btm offload is enable/disable
- * for Hotspot 2.0
  */
 struct wlan_mlme_lfr_cfg {
 	bool mawc_roam_enabled;
@@ -2226,7 +2220,6 @@ struct wlan_mlme_lfr_cfg {
 	uint8_t exclude_rm_partial_scan_freq;
 	uint8_t roam_full_scan_6ghz_on_disc;
 	bool disconnect_on_nud_roam_invoke_fail;
-	bool hs20_btm_offload_disable;
 };
 
 /**
@@ -2775,7 +2768,7 @@ struct wlan_mlme_reg {
 	bool is_afc_reg_noaction;
 #endif
 #ifdef FEATURE_WLAN_CH_AVOID_EXT
-	uint32_t coex_unsafe_chan_nb_user_prefer;
+	bool coex_unsafe_chan_nb_user_prefer;
 	bool coex_unsafe_chan_reg_disable;
 #endif
 };

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -850,11 +850,6 @@
  *	information will be set to target. Target will decide the final TX power
  *	based on this and chip specific power conformance test limits (CTL), and
  *	SAR limits.
- *
- * @QCA_NL80211_VENDOR_SUBCMD_FW_PAGE_FAULT_REPORT: Event indication from the
- *      driver to user space which is carrying firmware page fault related
- *      summary report. The attributes for this command are defined in
- *      enum qca_wlan_vendor_attr_fw_page_fault_report.
  */
 
 enum qca_nl80211_vendor_subcmds {
@@ -1120,7 +1115,6 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_TX_LATENCY = 233,
 	QCA_NL80211_VENDOR_SUBCMD_RECONFIG_REMOVE_COMPLETE_EVENT = 234,
 	QCA_NL80211_VENDOR_SUBCMD_REGULATORY_TPC_INFO = 237,
-	QCA_NL80211_VENDOR_SUBCMD_FW_PAGE_FAULT_REPORT = 238,
 };
 
 enum qca_wlan_vendor_tos {
@@ -1239,25 +1233,6 @@ enum qca_wlan_vendor_hang_reason {
 	QCA_WLAN_HANG_FLUSH_LOGS = 35,
 	/* Host wakeup because of page fault */
 	QCA_WLAN_HANG_HOST_WAKEUP_REASON_PAGE_FAULT = 36,
-};
-
-/**
- * enum qca_wlan_vendor_attr_fw_page_fault_report - Used by the vendor
- * command %QCA_NL80211_VENDOR_SUBCMD_FW_PAGE_FAULT_REPORT.
- *
- * @QCA_WLAN_VENDOR_ATTR_FW_PAGE_FAULT_REPORT_DATA: The binary blob data
- * associated with the firmware page fault that is expected to contain the
- * required dump to analyze frequent page faults.
- * NLA_BINARY attribute, the maximum size is QDF_HANG_EVENT_DATA_SIZE
- */
-enum qca_wlan_vendor_attr_fw_page_fault_report {
-	QCA_WLAN_VENDOR_ATTR_FW_PAGE_FAULT_REPORT_INVALID = 0,
-	QCA_WLAN_VENDOR_ATTR_FW_PAGE_FAULT_REPORT_DATA = 1,
-
-	/* keep last */
-	QCA_WLAN_VENDOR_ATTR_FW_PAGE_FAULT_REPORT_LAST,
-	QCA_WLAN_VENDOR_ATTR_FW_PAGE_FAULT_REPORT_MAX =
-	QCA_WLAN_VENDOR_ATTR_FW_PAGE_FAULT_REPORT_LAST - 1,
 };
 
 /**
@@ -1517,10 +1492,6 @@ enum qca_wlan_auth_type {
  * type for remote channel width greater than 160 MHz.
  * @QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_EHT_OPERATION: Attribute type for
  * sending EHT operation info.
- * @QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_ASSOCIATED_BW: Attribute type of u32
- *  for sending the associated bandwidth.
- *  Example: The driver will send an enum value of type nl80211_chan_width,
- *  such as NL80211_CHAN_WIDTH_20_NOHT.
  * @QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_AFTER_LAST: After last
  *
  */
@@ -1567,7 +1538,6 @@ enum qca_wlan_vendor_attr_get_station_info {
 	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_HE_OPERATION,
 	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_REMOTE_CH_WIDTH_V2,
 	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_EHT_OPERATION,
-	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_ASSOCIATED_BW,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_AFTER_LAST,
@@ -5908,48 +5878,12 @@ enum qca_wlan_vendor_attr_config {
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_COEX_TRAFFIC_SHAPING_MODE = 105,
 
-	/* 8-bit unsigned value to configure BTM support.
-	 *
-	 * The attribute is applicable only for STA interface. Uses enum
-	 * qca_wlan_btm_support values. This configuration is not allowed in
-	 * connected state.
+	// MIUI ADD: WIFI_PowerSave
+	/* 8-bit unsigned value to set nss and ant mode.
+	 * 1-1x1, 2-2x2
 	 */
-	QCA_WLAN_VENDOR_ATTR_CONFIG_BTM_SUPPORT = 107,
-
-	/* 16-bit unsigned value to configure client's keep-alive interval in
-	 * seconds. The driver will reduce the keep-alive interval to this
-	 * configured value if the AP advertises BSS maximum idle period and if
-	 * that BSS max idle period is larger than this configured value. If the
-	 * AP does not advertise a maximum value, the configured value will be
-	 * used as a keep-alive period for unprotected frames.
-	 *
-	 * This configuration is applicable only during the STA's current
-	 * association.
-	 */
-	QCA_WLAN_VENDOR_ATTR_CONFIG_KEEP_ALIVE_INTERVAL = 108,
-
-	/* 8-bit unsigned value to configure reduced power scan mode.
-	 *
-	 * This attribute is used to configure the driver to optimize power
-	 * during scan. For e.g., the driver can switch to 1x1 from 2x2 mode
-	 * for additional power save.
-	 *
-	 * 1 - Enable reduced power scan mode.
-	 * 0 - Disable reduced power scan mode.
-	 */
-	QCA_WLAN_VENDOR_ATTR_CONFIG_REDUCED_POWER_SCAN_MODE = 109,
-
-	/* 8-bit unsigned integer to configure the driver to follow AP's
-	 * preference values to select a roam candidate from BTM request.
-	 *
-	 * This attribute is used to configure the driver to select the roam
-	 * candidate based on AP advertised preference values. If not set,
-	 * the driver uses its internal scoring algorithm to do the same.
-	 *
-	 * 1 - STA follows AP's preference values to select a roam candidate
-	 * 0 - STA uses internal scoring algorithm to select a roam candidate
-	 */
-	QCA_WLAN_VENDOR_ATTR_CONFIG_FOLLOW_AP_PREFERENCE_FOR_CNDS_SELECT = 121,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_SET_NSS_ANT = 200,
+	// END WIFI_PowerSave
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,
@@ -9064,6 +8998,9 @@ enum qca_wlan_vendor_attr_spectral_scan_status {
  * @QCA_WLAN_VENDOR_ATTR_CONFIG_LATENCY_LEVEL_ULTRALOW:
  *      Use ultra low latency level to benefit for gaming/voice
  *      application via constraint scan/roaming/adaptive PS.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_LATENCY_LEVEL_ULTRALOW_MLO_LINK_SWITCH:
+ *      Use ultra low latency level to control mlo link switch but
+ *      do not constraint scan/roaming/adaptive PS.
  */
 enum qca_wlan_vendor_attr_config_latency_level {
 	QCA_WLAN_VENDOR_ATTR_CONFIG_LATENCY_LEVEL_INVALID = 0,
@@ -9074,6 +9011,7 @@ enum qca_wlan_vendor_attr_config_latency_level {
 	QCA_WLAN_VENDOR_ATTR_CONFIG_LATENCY_LEVEL_XR,
 	QCA_WLAN_VENDOR_ATTR_CONFIG_LATENCY_LEVEL_LOW = 3,
 	QCA_WLAN_VENDOR_ATTR_CONFIG_LATENCY_LEVEL_ULTRALOW = 4,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_LATENCY_LEVEL_ULTRALOW_MLO_LINK_SWITCH = 5,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_LATENCY_LEVEL_AFTER_LAST,
@@ -15788,25 +15726,12 @@ enum qca_wlan_vendor_attr_scs_rule_config {
  * CTL group but user can choose up to 3 SAR set index only, as the top half
  * of the SAR index (0 to 2) is used for non DBS purpose and the bottom half of
  * the SAR index (3 to 5) is used for DBS mode.
- *
- * @QCA_WLAN_VENDOR_SAR_VERSION_4: The firmware supports SAR version 4,
- * known as SAR Smart Transmit (STX) mode. STX is time averaging algorithmic
- * for power limit computation in collaboration with WWAN.
- * In STX mode, firmware has 41 indexes and there is no ctl grouping uses.
- *
- * @QCA_WLAN_VENDOR_SAR_VERSION_5: The firmware supports SAR version 5,
- * known as TAS (Time Averaging SAR) mode. In TAS mode, as name implies
- * instead of fixed static SAR power limit firmware uses time averaging
- * to adjust the SAR limit dynamically. It is wlan soc standalone mechanism.
- * In this mode firmware has up to 43 indexes.
  */
 enum qca_wlan_vendor_sar_version {
 	QCA_WLAN_VENDOR_SAR_VERSION_INVALID = 0,
 	QCA_WLAN_VENDOR_SAR_VERSION_1 = 1,
 	QCA_WLAN_VENDOR_SAR_VERSION_2 = 2,
 	QCA_WLAN_VENDOR_SAR_VERSION_3 = 3,
-	QCA_WLAN_VENDOR_SAR_VERSION_4 = 4,
-	QCA_WLAN_VENDOR_SAR_VERSION_5 = 5,
 };
 
 /**
@@ -16823,6 +16748,23 @@ enum qca_wlan_vendor_attr_mlo_link_state {
 };
 
 /**
+ * enum qca_wlan_vendor_fail_attr_roam - Defines the attributes used by the vendor
+ * command QCA_NL80211_VENDOR_SUBCMD_ROAM_EVENTS_INDEX.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ROAM_TNTERACE: Wlan interace vdev_id
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ROAM_FAIL_REASON: No find ap failed reason
+ */
+enum qca_wlan_vendor_fail_attr_roam {
+	QCA_WLAN_VENDOR_ATTR_ROAM_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_ROAM_TNTERACE = 1,
+	QCA_WLAN_VENDOR_ATTR_ROAM_FAIL_REASON = 2,
+	/* Keep last */
+	QCA_WLAN_VENDOR_ATTR_ROAM_LAST,
+	QCA_WLAN_VENDOR_ATTR_ROAM_MAX =
+	QCA_WLAN_VENDOR_ATTR_ROAM_LAST - 1,
+};
+/**
  * enum qca_wlan_vendor_attr_tid_link_map_status - Definition of attributes used
  * inside nested attribute %QCA_WLAN_VENDOR_ATTR_TID_TO_LINK_MAP_STATUS.
  *
@@ -17559,25 +17501,5 @@ enum qca_wlan_vendor_attr_tpc_links {
 	QCA_WLAN_VENDOR_ATTR_TPC_LINKS_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_TPC_LINKS_MAX =
 	QCA_WLAN_VENDOR_ATTR_TPC_AFTER_LAST - 1,
-};
-
-/**
- * enum qca_wlan_btm_support: BTM support configuration
- *
- * @QCA_WLAN_BTM_SUPPORT_DEFAULT: Restore default BTM support policy. The driver
- * follows the BSS Transition bit in the Extended Capabilities element from the
- * connect request IEs with the default BTM support policy.
- *
- * @QCA_WLAN_BTM_SUPPORT_DISABLE: Disable BTM support for the subsequent
- * (re)association attempts. The driver shall restore the default BTM support
- * policy during the first disconnection after successful association. When this
- * configuration is enabled, the driver shall overwrite the BSS Transition bit
- * as zero in the Extended Capabilities element while sending (Re)Association
- * Request frames. Also, the driver shall drop the BTM frames from userspace and
- * the connected AP when this configuration is enabled.
- */
-enum qca_wlan_btm_support {
-	QCA_WLAN_BTM_SUPPORT_DEFAULT = 0,
-	QCA_WLAN_BTM_SUPPORT_DISABLE = 1,
 };
 #endif

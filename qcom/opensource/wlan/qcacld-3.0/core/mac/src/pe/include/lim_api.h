@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -152,7 +152,6 @@ typedef enum eMgmtFrmDropReason {
 	eMGMT_DROP_DUPLICATE_AUTH_FRAME,
 	eMGMT_DROP_EXCESSIVE_MGMT_FRAME,
 	eMGMT_DROP_DEAUTH_DURING_ROAM_STARTED,
-	eMGMT_DROP_CONNECT_DURING_ROAMING,
 } tMgmtFrmDropReason;
 
 /**
@@ -522,7 +521,7 @@ QDF_STATUS lim_handle_frame_genby_mbssid(uint8_t *frame, uint32_t frame_len,
 void lim_process_sme_addts_rsp_timeout(struct mac_context *mac, uint32_t param);
 QDF_STATUS lim_update_ext_cap_ie(struct mac_context *mac_ctx, uint8_t *ie_data,
 				 uint8_t *local_ie_buf, uint16_t *local_ie_len,
-				 uint8_t vdev_id);
+				 struct pe_session *session);
 
 /**
  * lim_handle_sap_beacon(): Handle the beacon received from scan module for SAP
@@ -638,7 +637,6 @@ bool lim_enable_cts_to_self_for_exempted_iot_ap(
  * @mac_ctx: Pointer to mac context
  * @session: pe session
  * @bss_desc: Pointer to bss description
- * @req_fail_status_code: Connect req fail status code pointer
  *
  * This api will fill lim pe session with info
  * from bss description
@@ -648,19 +646,7 @@ bool lim_enable_cts_to_self_for_exempted_iot_ap(
 QDF_STATUS
 lim_fill_pe_session(struct mac_context *mac_ctx,
 		    struct pe_session *session,
-		    struct bss_description *bss_desc,
-		    enum wlan_status_code *req_fail_status_code);
-
-/**
- * lim_update_omn_ie_ch_width() - update omn_ie_ch_width in struct
- * assoc_channel_info while processing bcn/probe resp/assoc resp/re-assoc resp
- * @vdev: VDEV object manager
- * @ch_width: ch_width present in OMN IE
- *
- * Return: none
- */
-void lim_update_omn_ie_ch_width(struct wlan_objmgr_vdev *vdev,
-				enum phy_ch_width ch_width);
+		    struct bss_description *bss_desc);
 
 #ifdef WLAN_FEATURE_11BE_MLO
 /*
@@ -907,11 +893,12 @@ lim_cm_fill_link_session(struct mac_context *mac_ctx,
  *
  * This api will create mlo peer called during mlo roaming scenario
  *
- * Return: QDF_STATUS
+ * Return: none
  */
-QDF_STATUS lim_roam_mlo_create_peer(struct mac_context *mac,
-				    struct roam_offload_synch_ind *sync_ind,
-				    uint8_t vdev_id, uint8_t *peer_mac);
+void lim_roam_mlo_create_peer(struct mac_context *mac,
+			      struct roam_offload_synch_ind *sync_ind,
+			      uint8_t vdev_id,
+			      uint8_t *peer_mac);
 
 /**
  * lim_mlo_roam_delete_link_peer() - Delete mlo link peer
@@ -953,12 +940,12 @@ lim_cm_fill_link_session(struct mac_context *mac_ctx,
 	return QDF_STATUS_E_NOSUPPORT;
 }
 
-static inline QDF_STATUS
+static inline void
 lim_roam_mlo_create_peer(struct mac_context *mac,
 			 struct roam_offload_synch_ind *sync_ind,
-			 uint8_t vdev_id, uint8_t *peer_mac)
+			 uint8_t vdev_id,
+			 uint8_t *peer_mac)
 {
-	return QDF_STATUS_SUCCESS;
 }
 
 static inline void

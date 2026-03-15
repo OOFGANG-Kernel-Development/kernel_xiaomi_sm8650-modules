@@ -25,7 +25,7 @@
 #ifndef __CFG_MLME_QOS_H
 #define __CFG_MLME_QOS_H
 
-#define ADDBA_TXAGGR_SIZE 256
+#define ADDBA_TXAGGR_SIZE 1024
 
 /*
  * <ini>

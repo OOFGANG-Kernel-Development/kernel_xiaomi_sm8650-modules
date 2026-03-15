@@ -2,6 +2,7 @@
 /* Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
  * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
+#define DEBUG
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/slab.h>
@@ -128,6 +129,9 @@ static int wcd_measure_adc_once(struct wcd_mbhc *mbhc, int mux_ctl)
 	int ret = 0;
 	int output_mv = 0;
 	u8 adc_en = 0;
+#ifdef AUDIO_MBHC_ABNORMAL
+	char reason[256] = "";
+#endif
 
 	pr_debug("%s: enter\n", __func__);
 
@@ -172,6 +176,11 @@ static int wcd_measure_adc_once(struct wcd_mbhc *mbhc, int mux_ctl)
 	if (retry <= 0) {
 		pr_err("%s: adc complete: %d, adc timeout: %d\n",
 			__func__, adc_complete, adc_timeout);
+#ifdef AUDIO_MBHC_ABNORMAL
+		snprintf(reason, sizeof(reason) - 1, "%s: adc complete: %d, adc timeout: %d",
+			__func__, adc_complete, adc_timeout);
+		send_audio_mbhc_abnormal_to_onetrack(MBHC_DETECT_PLUG, reason);
+#endif
 		ret = -EINVAL;
 	} else {
 		pr_debug("%s: adc complete: %d, adc timeout: %d output_mV: %d\n",
@@ -292,6 +301,9 @@ static int wcd_check_cross_conn(struct wcd_mbhc *mbhc)
 	u8 adc_mode = 0;
 	u8 elect_ctl = 0;
 	u8 adc_en = 0;
+#ifdef AUDIO_MBHC_ABNORMAL
+	char reason[256] = "";
+#endif
 
 	pr_debug("%s: enter\n", __func__);
 	/* Check for button press and plug detection */
@@ -324,6 +336,11 @@ static int wcd_check_cross_conn(struct wcd_mbhc *mbhc)
 	hphl_adc_res = wcd_measure_adc_once(mbhc, MUX_CTL_HPH_L);
 	if (hphl_adc_res < 0) {
 		pr_err("%s: hphl_adc_res adc measurement failed\n", __func__);
+#ifdef AUDIO_MBHC_ABNORMAL
+		snprintf(reason, sizeof(reason)-1, "%s: hphl_adc_res adc measurement failed",
+			__func__);
+		send_audio_mbhc_abnormal_to_onetrack(MBHC_DETECT_PLUG, reason);
+#endif
 		ret = hphl_adc_res;
 		goto done;
 	}
@@ -332,6 +349,11 @@ static int wcd_check_cross_conn(struct wcd_mbhc *mbhc)
 	hphr_adc_res = wcd_measure_adc_once(mbhc, MUX_CTL_HPH_R);
 	if (hphr_adc_res < 0) {
 		pr_err("%s: hphr_adc_res adc measurement failed\n", __func__);
+#ifdef AUDIO_MBHC_ABNORMAL
+		snprintf(reason, sizeof(reason)-1, "%s: hphr_adc_res adc measurement failed",
+			__func__);
+		send_audio_mbhc_abnormal_to_onetrack(MBHC_DETECT_PLUG, reason);
+#endif
 		ret = hphr_adc_res;
 		goto done;
 	}
@@ -497,7 +519,9 @@ static bool wcd_is_special_headset(struct wcd_mbhc *mbhc)
 	bool is_spl_hs = false;
 	int output_mv = 0;
 	int adc_threshold = 0;
-
+#ifdef AUDIO_MBHC_ABNORMAL
+	char reason[256] = "";
+#endif
 	/*
 	 * Increase micbias to 2.7V to detect headsets with
 	 * threshold on microphone
@@ -513,6 +537,10 @@ static bool wcd_is_special_headset(struct wcd_mbhc *mbhc)
 		if (ret) {
 			pr_err("%s: mbhc_micb_ctrl_thr_mic failed, ret: %d\n",
 				__func__, ret);
+#ifdef AUDIO_MBHC_ABNORMAL
+			snprintf(reason, sizeof(reason)-1, "%s: mbhc_micb_ctrl_thr_mic failed, ret: %d", __func__, ret);
+			send_audio_mbhc_abnormal_to_onetrack(MBHC_DETECT_PLUG, reason);
+#endif
 			return false;
 		}
 	}
@@ -609,6 +637,9 @@ static void wcd_cancel_hs_detect_plug(struct wcd_mbhc *mbhc,
 static void wcd_mbhc_adc_detect_plug_type(struct wcd_mbhc *mbhc)
 {
 	struct snd_soc_component *component = mbhc->component;
+#ifdef AUDIO_MBHC_ABNORMAL
+	char reason[256] = "";
+#endif
 	pr_debug("%s: enter\n", __func__);
 	WCD_MBHC_RSC_ASSERT_LOCKED(mbhc);
 
@@ -622,6 +653,10 @@ static void wcd_mbhc_adc_detect_plug_type(struct wcd_mbhc *mbhc)
 						    MICB_ENABLE);
 	} else {
 		pr_err("%s: Mic Bias is not enabled\n", __func__);
+#ifdef AUDIO_MBHC_ABNORMAL
+		snprintf(reason, sizeof(reason)-1, "%s: Mic Bias is not enabled", __func__);
+		send_audio_mbhc_abnormal_to_onetrack(MBHC_DETECT_PLUG, reason);
+#endif
 		return;
 	}
 

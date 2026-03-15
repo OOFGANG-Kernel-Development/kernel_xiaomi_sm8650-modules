@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -627,13 +627,11 @@ uint8_t *wlan_mlo_add_t2lm_action_frame(
  * probe response frame
  * @t2lm_ctx: T2LM context
  * @ie: Pointer to T2LM IE
- * @frame_len: Frame length
  *
  * Return: QDF_STATUS
  */
 QDF_STATUS wlan_mlo_parse_bcn_prbresp_t2lm_ie(
-		struct wlan_t2lm_context *t2lm_ctx, uint8_t *ie,
-		uint32_t frame_len);
+		struct wlan_t2lm_context *t2lm_ctx, uint8_t *ie);
 
 /**
  * wlan_mlo_parse_t2lm_info() - Parse T2LM IE fields
@@ -712,7 +710,6 @@ wlan_mlo_t2lm_timer_expiry_handler(void *vdev);
 QDF_STATUS
 wlan_handle_t2lm_timer(struct wlan_objmgr_vdev *vdev);
 
-#ifndef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
 /**
  * wlan_mlo_t2lm_register_link_update_notify_handler() - API to register a T2LM
  * callback that needs to be invoked on mapping switch time expiry and expected
@@ -723,13 +720,6 @@ wlan_handle_t2lm_timer(struct wlan_objmgr_vdev *vdev);
  */
 QDF_STATUS wlan_mlo_t2lm_register_link_update_notify_handler(
 		struct wlan_mlo_dev_context *ml_dev);
-#else
-static inline QDF_STATUS
-wlan_mlo_t2lm_register_link_update_notify_handler(struct wlan_mlo_dev_context *ml_dev)
-{
-	return QDF_STATUS_SUCCESS;
-}
-#endif
 
 /**
  * wlan_process_bcn_prbrsp_t2lm_ie() - API to process the received T2LM IE from
@@ -814,8 +804,7 @@ uint8_t *wlan_mlo_add_t2lm_action_frame(
 
 static inline
 QDF_STATUS wlan_mlo_parse_bcn_prbresp_t2lm_ie(
-		struct wlan_t2lm_context *t2lm_ctx, uint8_t *ie,
-		uint32_t frame_len)
+		struct wlan_t2lm_context *t2lm_ctx, uint8_t *ie)
 {
 	return QDF_STATUS_E_FAILURE;
 }

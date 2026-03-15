@@ -74,23 +74,6 @@ static int lpass_cdc_tx_macro_get_channel_map(struct snd_soc_dai *dai,
 #define LPASS_CDC_TX_MACRO_SWR_STRING_LEN 80
 #define LPASS_CDC_TX_MACRO_CHILD_DEVICES_MAX 3
 
-#if defined(CONFIG_TARGET_PRODUCT_MUYU) || defined(CONFIG_TARGET_PRODUCT_UKE)
-#define TX_UNMUTE_DELAY 1000
-#else
-#define TX_UNMUTE_DELAY 1200
-#endif
-#define LPASS_CDC_TX_TX_VOL_CTL_CNT 8
-int LPASS_CDC_TX_TX_VOL_CTL[LPASS_CDC_TX_TX_VOL_CTL_CNT] = {
-	LPASS_CDC_TX0_TX_VOL_CTL,
-	LPASS_CDC_TX1_TX_VOL_CTL,
-	LPASS_CDC_TX2_TX_VOL_CTL,
-	LPASS_CDC_TX3_TX_VOL_CTL,
-	LPASS_CDC_TX4_TX_VOL_CTL,
-	LPASS_CDC_TX5_TX_VOL_CTL,
-	LPASS_CDC_TX6_TX_VOL_CTL,
-	LPASS_CDC_TX7_TX_VOL_CTL
-};
-
 enum {
 	LPASS_CDC_TX_MACRO_AIF_INVALID = 0,
 	LPASS_CDC_TX_MACRO_AIF1_CAP,
@@ -162,7 +145,7 @@ struct lpass_cdc_tx_macro_priv {
 	struct tx_mute_work tx_mute_dwork[NUM_DECIMATORS];
 	struct delayed_work tx_hs_unmute_dwork;
 	u16 dmic_clk_div;
-	u16 reg_before_mute[LPASS_CDC_TX_TX_VOL_CTL_CNT];
+	u16 reg_before_mute;
 	u32 version;
 	unsigned long active_ch_mask[LPASS_CDC_TX_MACRO_MAX_DAIS];
 	unsigned long active_ch_cnt[LPASS_CDC_TX_MACRO_MAX_DAIS];
@@ -706,57 +689,44 @@ static void tx_macro_hs_unmute_dwork(struct work_struct *work)
 	struct lpass_cdc_tx_macro_priv *lpass_cdc_tx_priv = NULL;
 	struct delayed_work *delayed_work = NULL;
 	u16 reg_val = 0;
-	int i = 0;
 
 	delayed_work = to_delayed_work(work);
 	lpass_cdc_tx_priv = container_of(delayed_work, struct lpass_cdc_tx_macro_priv,
         		tx_hs_unmute_dwork);
 	component = lpass_cdc_tx_priv->component;
-	for (i = 0; i < LPASS_CDC_TX_TX_VOL_CTL_CNT; i++) {
-		snd_soc_component_update_bits(component, LPASS_CDC_TX_TX_VOL_CTL[i],
-				0xff, lpass_cdc_tx_priv->reg_before_mute[i]);
-		reg_val = snd_soc_component_read(component, LPASS_CDC_TX_TX_VOL_CTL[i]);
-		dev_info(lpass_cdc_tx_priv->dev, "%s: the reg value of TX%d after unmute is: %#x \n",
-				__func__, i, reg_val);
-	}
+	snd_soc_component_update_bits(component, LPASS_CDC_TX0_TX_VOL_CTL,
+			0xff, lpass_cdc_tx_priv->reg_before_mute);
+	reg_val = snd_soc_component_read(component, LPASS_CDC_TX0_TX_VOL_CTL);
 	g_lpass_cdc_tx_priv->save_reg = true;
+	dev_info(lpass_cdc_tx_priv->dev, "%s: the reg value after unmute is: %#x \n",
+			__func__, reg_val);
 }
 
 void lpass_cdc_tx_macro_mute_hs(void)
 {
 	struct snd_soc_component *component = NULL;
 	u16 reg_val = 0;
-	int i = 0;
+	int tx_unmute_delay = 1200;
 	if (!g_lpass_cdc_tx_priv)
 		return;
 
 	component = g_lpass_cdc_tx_priv->component;
 	if (g_lpass_cdc_tx_priv->save_reg) {
-		for (i = 0; i < LPASS_CDC_TX_TX_VOL_CTL_CNT; i++) {
-		    g_lpass_cdc_tx_priv->reg_before_mute[i] = snd_soc_component_read(component,
-				LPASS_CDC_TX_TX_VOL_CTL[i]);
-		    dev_info(component->dev, "%s: the reg value of TX%d before mute is: %#x \n",
-				__func__, i, g_lpass_cdc_tx_priv->reg_before_mute[i]);
-		    snd_soc_component_update_bits(component, LPASS_CDC_TX_TX_VOL_CTL[i], 0xff, 0xac);
-		    reg_val = snd_soc_component_read(component, LPASS_CDC_TX_TX_VOL_CTL[i]);
-		    dev_info(component->dev, "%s: the reg value of TX%d after mute is: %#x \n",
-				__func__, i, reg_val);
-		}
+		g_lpass_cdc_tx_priv->reg_before_mute = snd_soc_component_read(component,
+				LPASS_CDC_TX0_TX_VOL_CTL);
 		g_lpass_cdc_tx_priv->save_reg = false;
 		dev_info(component->dev, "%s: the reg value before mute is: %#x \n",
 				__func__, g_lpass_cdc_tx_priv->reg_before_mute);
 	} else {
 		dev_info(component->dev, "%s: Quick plug and unplug headset has been detected, the reg value before mute is: %#x \n",
 				__func__, g_lpass_cdc_tx_priv->reg_before_mute);
-		for (i = 0; i < LPASS_CDC_TX_TX_VOL_CTL_CNT; i++) {
-		    snd_soc_component_update_bits(component, LPASS_CDC_TX_TX_VOL_CTL[i], 0xff, 0xac);
-		    reg_val = snd_soc_component_read(component, LPASS_CDC_TX_TX_VOL_CTL[i]);
-		    dev_info(component->dev, "%s: the reg value of TX%d after mute is: %#x \n",
-				__func__, i, reg_val);
-		}
 	}
+	snd_soc_component_update_bits(component, LPASS_CDC_TX0_TX_VOL_CTL, 0xff, 0xac);
+	reg_val = snd_soc_component_read(component, LPASS_CDC_TX0_TX_VOL_CTL);
+	dev_info(component->dev, "%s: the reg value after mute is: %#x \n",
+			__func__, reg_val);
 	schedule_delayed_work(&g_lpass_cdc_tx_priv->tx_hs_unmute_dwork,
-			msecs_to_jiffies(TX_UNMUTE_DELAY));
+			msecs_to_jiffies(tx_unmute_delay));
 	return;
 }
 EXPORT_SYMBOL(lpass_cdc_tx_macro_mute_hs);

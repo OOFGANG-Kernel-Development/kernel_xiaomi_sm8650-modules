@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -40,6 +40,7 @@
 #include "reg_build_chan_list.h"
 #include <wlan_objmgr_pdev_obj.h>
 #include <target_if.h>
+#include "wlan_policy_mgr_api.h"
 #ifdef WLAN_FEATURE_GET_USABLE_CHAN_LIST
 #include "wlan_mlme_ucfg_api.h"
 #include "wlan_nan_api.h"
@@ -50,10 +51,6 @@
 
 const struct chan_map *channel_map;
 uint8_t g_reg_max_5g_chan_num;
-
-#define DISCARD_DFS_FOR_P2P_GO_AND_SAP 3
-#define DISCARD_DFS_FOR_P2P_GO 2
-#define DISCARD_DFS_FOR_SAP 1
 
 #ifdef WLAN_FEATURE_11BE
 static bool reg_is_chan_bit_punctured(uint16_t input_punc_bitmap,
@@ -1218,10 +1215,17 @@ const struct chan_map channel_map_china[NUM_CHANNELS] = {
 	[CHAN_ENUM_5060] = {5060, INVALID_CHANNEL_NUM, 2, 20},
 	[CHAN_ENUM_5080] = {5080, INVALID_CHANNEL_NUM, 2, 20},
 #endif /* CONFIG_49GHZ_CHAN */
-	[CHAN_ENUM_5180] = {5180, 36, 2, 160},
-	[CHAN_ENUM_5200] = {5200, 40, 2, 160},
-	[CHAN_ENUM_5220] = {5220, 44, 2, 160},
-	[CHAN_ENUM_5240] = {5240, 48, 2, 160},
+#ifdef QC_WIFI_VENDOR_AUTO
+	[CHAN_ENUM_5180] = {5180, INVALID_CHANNEL_NUM, 2, 160},
+	[CHAN_ENUM_5200] = {5200, INVALID_CHANNEL_NUM, 2, 160},
+	[CHAN_ENUM_5220] = {5220, INVALID_CHANNEL_NUM, 2, 160},
+	[CHAN_ENUM_5240] = {5240, INVALID_CHANNEL_NUM, 2, 160},
+#else
+        [CHAN_ENUM_5180] = {5180, 36, 2, 160},
+        [CHAN_ENUM_5200] = {5200, 40, 2, 160},
+        [CHAN_ENUM_5220] = {5220, 44, 2, 160},
+        [CHAN_ENUM_5240] = {5240, 48, 2, 160},
+#endif
 	[CHAN_ENUM_5260] = {5260, 52, 2, 160},
 	[CHAN_ENUM_5280] = {5280, 56, 2, 160},
 	[CHAN_ENUM_5300] = {5300, 60, 2, 160},
@@ -3868,54 +3872,6 @@ reg_remove_freq(struct get_usable_chan_res_params *res_msg,
 		     sizeof(struct get_usable_chan_res_params));
 }
 
-static void
-reg_update_list_for_dfs_channel(struct wlan_objmgr_pdev *pdev,
-				struct get_usable_chan_res_params *res_msg,
-				uint32_t chan_enum, uint32_t iface_mode)
-{
-	struct wlan_objmgr_psoc *psoc;
-	QDF_STATUS status = QDF_STATUS_SUCCESS;
-	bool dfs_master_capable;
-	uint8_t dfs_discard_for_mode;
-
-	psoc = wlan_pdev_get_psoc(pdev);
-	if (!psoc) {
-		reg_err("invalid psoc");
-		return;
-	}
-
-	status = ucfg_mlme_get_dfs_master_capability(psoc, &dfs_master_capable);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		reg_err("failed to get dfs master capable");
-		return;
-	}
-	status = ucfg_mlme_get_dfs_discard_mode(psoc, &dfs_discard_for_mode);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		reg_err("failed to get dfs discard mode");
-		return;
-	}
-
-	if (!wlan_reg_is_dfs_for_freq(pdev, res_msg[chan_enum].freq))
-		return;
-
-	if (!dfs_master_capable ||
-	    dfs_discard_for_mode == DISCARD_DFS_FOR_P2P_GO_AND_SAP) {
-		res_msg[chan_enum].iface_mode_mask &= ~(iface_mode);
-		if (!res_msg[chan_enum].iface_mode_mask)
-			reg_remove_freq(res_msg, chan_enum);
-	} else if (dfs_discard_for_mode == DISCARD_DFS_FOR_P2P_GO &&
-		   (iface_mode & (1 << IFTYPE_P2P_GO))) {
-		res_msg[chan_enum].iface_mode_mask &= ~(iface_mode);
-		if (!res_msg[chan_enum].iface_mode_mask)
-			reg_remove_freq(res_msg, chan_enum);
-	} else if (dfs_discard_for_mode == DISCARD_DFS_FOR_SAP &&
-		   (iface_mode & (1 << IFTYPE_AP))) {
-		res_msg[chan_enum].iface_mode_mask &= ~(iface_mode);
-		if (!res_msg[chan_enum].iface_mode_mask)
-			reg_remove_freq(res_msg, chan_enum);
-	}
-}
-
 /**
  * reg_skip_invalid_chan_freq() - Remove invalid freq for SAP, P2P GO
  *				  and NAN
@@ -3933,14 +3889,13 @@ reg_skip_invalid_chan_freq(struct wlan_objmgr_pdev *pdev,
 			   uint32_t iface_mode_mask)
 {
 	uint32_t chan_enum, iface_mode = 0;
+	uint32_t max_num_of_conc_connections = 0;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	bool include_indoor_channel, dfs_master_capable;
 	uint8_t enable_srd_chan, srd_mask = 0;
 	struct wlan_objmgr_psoc *psoc;
-	enum reg_6g_ap_type ap_pwr_type;
-	enum supported_6g_pwr_types ap_pwr_mode;
-	enum channel_state chan_state;
-
+	struct policy_mgr_conc_connection_info *pm_conc_connection_list = NULL;
+	uint32_t freq = 0;
 	psoc = wlan_pdev_get_psoc(pdev);
 	if (!psoc) {
 		reg_err("invalid psoc");
@@ -3967,16 +3922,11 @@ reg_skip_invalid_chan_freq(struct wlan_objmgr_pdev *pdev,
 		return status;
 	}
 
-	wlan_reg_get_cur_6g_ap_pwr_type(pdev, &ap_pwr_type);
-
-	if (ap_pwr_type == REG_INDOOR_AP)
-		ap_pwr_mode = REG_AP_LPI;
-	else if (ap_pwr_type == REG_STANDARD_POWER_AP)
-		ap_pwr_mode = REG_AP_SP;
-	else if (ap_pwr_type == REG_VERY_LOW_POWER_AP)
-		ap_pwr_mode = REG_AP_VLP;
-	else
-		ap_pwr_mode = REG_INVALID_PWR_MODE;
+	pm_conc_connection_list = policy_mgr_get_conn_info(&max_num_of_conc_connections);
+	if (policy_mgr_get_connection_count(psoc) == 1) {
+		freq = pm_conc_connection_list[0].freq;
+		reg_debug("allow sap/go to use freq %u", freq);
+	}
 
 	while (iface_mode_mask) {
 		if (iface_mode_mask & (1 << IFTYPE_AP)) {
@@ -3990,7 +3940,6 @@ reg_skip_invalid_chan_freq(struct wlan_objmgr_pdev *pdev,
 		} else {
 			break;
 		}
-
 		for (chan_enum = 0; chan_enum < *no_usable_channels;
 		     chan_enum++) {
 			if (iface_mode_mask & (1 << IFTYPE_NAN)) {
@@ -4001,12 +3950,9 @@ reg_skip_invalid_chan_freq(struct wlan_objmgr_pdev *pdev,
 				if (!res_msg[chan_enum].iface_mode_mask)
 					reg_remove_freq(res_msg, chan_enum);
 			} else {
-				chan_state = reg_get_channel_state_for_pwrmode(
-						pdev, res_msg[chan_enum].freq,
-						ap_pwr_mode);
-				if (!reg_is_state_allowed(chan_state) ||
-				    (wlan_reg_is_freq_indoor(
+				if (wlan_reg_is_freq_indoor(
 					pdev, res_msg[chan_enum].freq) &&
+					(freq != res_msg[chan_enum].freq ||
 					!include_indoor_channel)) {
 					res_msg[chan_enum].iface_mode_mask &=
 							~(iface_mode);
@@ -4024,9 +3970,17 @@ reg_skip_invalid_chan_freq(struct wlan_objmgr_pdev *pdev,
 						reg_remove_freq(res_msg,
 								chan_enum);
 				}
-				reg_update_list_for_dfs_channel(pdev, res_msg,
-								chan_enum,
-								iface_mode);
+
+				if (wlan_reg_is_dfs_for_freq(pdev,
+				    res_msg[chan_enum].freq) &&
+					(freq != res_msg[chan_enum].freq ||
+					!dfs_master_capable)) {
+					res_msg[chan_enum].iface_mode_mask &=
+						~(iface_mode);
+					if (!res_msg[chan_enum].iface_mode_mask)
+						reg_remove_freq(res_msg,
+								chan_enum);
+				}
 			}
 		}
 

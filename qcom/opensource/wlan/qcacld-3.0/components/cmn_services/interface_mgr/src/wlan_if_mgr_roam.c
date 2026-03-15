@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -801,7 +801,7 @@ static void if_mgr_update_candidate(struct wlan_objmgr_psoc *psoc,
 				    struct validate_bss_data *candidate_info)
 {
 	struct scan_cache_entry *scan_entry = candidate_info->scan_entry;
-	struct action_oui_search_attr attr = {0};
+	struct action_oui_search_attr attr;
 	int8_t i, allowed_partner_links = 0;
 	uint8_t mlo_support_link_num;
 
@@ -814,8 +814,7 @@ static void if_mgr_update_candidate(struct wlan_objmgr_psoc *psoc,
 
 	if (!mlme_get_bss_11be_allowed(psoc, &candidate_info->peer_addr,
 				       attr.ie_data, attr.ie_length) ||
-	    wlan_vdev_mlme_get_user_dis_eht_flag(vdev) ||
-	    !wlan_reg_phybitmap_support_11be(wlan_vdev_get_pdev(vdev))) {
+	    wlan_vdev_mlme_get_user_dis_eht_flag(vdev)) {
 		scan_entry->ie_list.multi_link_bv = NULL;
 		scan_entry->ie_list.ehtcap = NULL;
 		scan_entry->ie_list.ehtop = NULL;

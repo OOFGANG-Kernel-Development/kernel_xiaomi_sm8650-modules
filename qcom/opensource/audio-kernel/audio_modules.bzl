@@ -163,9 +163,6 @@ audio_modules.register(
         "CONFIG_SND_SOC_PITTI": [
             "pineapple.c"
         ],
-	"CONFIG_SND_SOC_VOLCANO": [
-	    "pineapple.c"
-	],
         "CONFIG_SND_SOC_NIOBE": [
             "pineapple.c"
         ],
@@ -276,12 +273,6 @@ audio_modules.register(
     config_option = "CONFIG_SND_SOC_MSM_HDMI_CODEC_RX",
     srcs = ["msm_hdmi_codec_rx.c"],
     deps = ["//vendor/qcom/opensource/mm-drivers/msm_ext_display:%b_msm_ext_display"]
-)
-audio_modules.register(
-    name = "lpass_bt_swr_dlkm",
-    path = ASOC_CODECS_PATH,
-    config_option = "CONFIG_LPASS_BT_SWR",
-    srcs = ["lpass-bt-swr.c"]
 )
 # >>>> ASOC/CODECS/LPASS-CDC MODULES <<<<
 audio_modules.register(
@@ -444,8 +435,7 @@ audio_modules.register(
         "wcd939x-regmap.c",
         "wcd939x-tables.c",
         "wcd939x-mbhc.c",
-    ],
-    deps = ["//msm-kernel:hwid_headers"],
+    ]
 )
 audio_modules.register(
     name = "wcd939x_slave_dlkm",
@@ -470,17 +460,4 @@ audio_modules.register(
     path = ASOC_CODECS_PATH + "/wcd9378",
     config_option = "CONFIG_SND_SOC_WCD9378_SLAVE",
     srcs = ["wcd9378-slave.c"]
-)
-# >>>> CS35L43 MODULE <<<<
-audio_modules.register(
-    name = "cs35l43_dlkm",
-    path = ASOC_CODECS_PATH + "/cs35l43",
-    config_option = "CONFIG_SND_SOC_CS35L43",
-    srcs = [
-        "cs35l43.c",
-        "cs35l43-i2c.c",
-        "cs35l43-tables.c",
-        "wm_adsp.c",
-    ],
-    deps = ["//msm-kernel:hwid_headers"],
 )

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -2250,18 +2250,6 @@ void htt_t2h_stats_handler(void *context)
 	dp_process_htt_stat_msg(&htt_stats, soc);
 }
 
-#ifdef WLAN_FEATURE_CE_RX_BUFFER_REUSE
-static inline qdf_nbuf_t dp_htt_nbuf_copy(qdf_nbuf_t nbuf)
-{
-	return qdf_nbuf_copy(nbuf);
-}
-#else
-static inline qdf_nbuf_t dp_htt_nbuf_copy(qdf_nbuf_t nbuf)
-{
-	return qdf_nbuf_clone(nbuf);
-}
-#endif
-
 /**
  * dp_txrx_fw_stats_handler() - Function to process HTT EXT stats
  * @soc: DP SOC handle
@@ -2292,7 +2280,7 @@ static inline void dp_txrx_fw_stats_handler(struct dp_soc *soc,
 	 * The original T2H message buffers gets freed in the T2H HTT event
 	 * handler
 	 */
-	msg_copy = dp_htt_nbuf_copy(htt_t2h_msg);
+	msg_copy = qdf_nbuf_clone(htt_t2h_msg);
 
 	if (!msg_copy) {
 		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_INFO,
@@ -3775,30 +3763,6 @@ static inline void dp_htt_rx_nbuf_free(qdf_nbuf_t nbuf)
 }
 #endif
 
-/**
- * dp_check_is_wds_valid() - check if wds is not supported and is_wds is set.
- * @soc: DP soc handler
- * @peer_id: ID of peer
- * @hw_peer_id: ast hash index
- * @vdev_id: vdev id
- * @peer_mac_addr: peer mac address
- * @is_wds: wds flag
- *
- * Return: None
- */
-static inline void dp_check_is_wds_valid(struct dp_soc *soc, uint16_t peer_id,
-					 uint16_t hw_peer_id, uint8_t vdev_id,
-					 uint8_t *peer_mac_addr,
-					 uint8_t is_wds)
-{
-	if (soc->wds_not_supported && is_wds) {
-		dp_err("invalid peer_map_event (soc:%pK): peer_id %d, hw_peer_id %d, peer_mac " QDF_MAC_ADDR_FMT ", vdev_id %d",
-		       soc, peer_id, hw_peer_id,
-		       QDF_MAC_ADDR_REF(peer_mac_addr), vdev_id);
-		qdf_assert_always(0);
-	}
-}
-
 #ifdef WLAN_FEATURE_TX_LATENCY_STATS
 #define TX_LATENCY_STATS_PERIOD_MAX_MS \
 	(HTT_H2T_TX_LATENCY_STATS_CFG_PERIODIC_INTERVAL_M >> \
@@ -4075,8 +4039,6 @@ void dp_htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 			 * peer ast_list.
 			 */
 			is_wds = !!(dpsoc->peer_id_to_obj_map[peer_id]);
-			dp_check_is_wds_valid(soc->dp_soc, peer_id, hw_peer_id,
-					      vdev_id, peer_mac_addr, is_wds);
 			dp_rx_peer_map_handler(soc->dp_soc, peer_id, hw_peer_id,
 					       vdev_id, peer_mac_addr, 0,
 					       is_wds);

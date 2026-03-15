@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -41,7 +41,6 @@
 #include "cpastop_v980_100.h"
 #include "cpastop_v860_100.h"
 #include "cpastop_v770_100.h"
-#include "cpastop_v665_100.h"
 #include "cam_req_mgr_workq.h"
 #include "cam_common_util.h"
 
@@ -239,16 +238,6 @@ static const uint32_t cam_cpas_hw_version_map
 		0,
 		0,
 	},
-	/* for camera_665 */
-	{
-		CAM_CPAS_TITAN_665_V100,
-		0,
-		0,
-		0,
-		0,
-		0,
-		0,
-	},
 };
 
 static char *cam_cpastop_get_camnoc_name(enum cam_camnoc_hw_type type)
@@ -335,9 +324,6 @@ static int cam_cpas_translate_camera_cpas_version_id(
 		break;
 	case CAM_CPAS_CAMERA_VERSION_770:
 		*cam_version_id = CAM_CPAS_CAMERA_VERSION_ID_770;
-		break;
-	case CAM_CPAS_CAMERA_VERSION_665:
-		*cam_version_id = CAM_CPAS_CAMERA_VERSION_ID_665;
 		break;
 	default:
 		CAM_ERR(CAM_CPAS, "Invalid cam version %u",
@@ -1040,72 +1026,59 @@ static int cam_cpastop_print_poweron_settings(struct cam_hw_info *cpas_hw)
 
 static int cam_cpastop_poweron(struct cam_hw_info *cpas_hw)
 {
-	int i, j, rc = 0;
+	int i, j;
 	struct cam_cpas_hw_errata_wa_list *errata_wa_list;
 	struct cam_cpas_hw_errata_wa *errata_wa;
 	struct cam_cpas *cpas_core = cpas_hw->core_info;
-	struct cam_cpas_private_soc *soc_private =
-		(struct cam_cpas_private_soc *) cpas_hw->soc_info.soc_private;
 	bool errata_enabled = false;
 
 	for (i = 0; i < cpas_core->num_valid_camnoc; i++)
 		cam_cpastop_reset_irq(0x0, cpas_hw, i);
 
-	if (!soc_private->enable_secure_qos_update) {
-		for (i = 0; i < cpas_core->num_valid_camnoc; i++) {
-			CAM_DBG(CAM_CPAS, "QOS settings for %s :",
-				camnoc_info[i]->camnoc_name);
-			for (j = 0; j < camnoc_info[i]->specific_size; j++) {
-				if (camnoc_info[i]->specific[j].enable) {
-					CAM_DBG(CAM_CPAS,
-						"Updating QoS settings port: %d prot name: %s",
-						camnoc_info[i]->specific[j].port_type,
-						camnoc_info[i]->specific[j].port_name);
-
-					cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
-						&camnoc_info[i]->specific[j].priority_lut_low);
-					cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
-						&camnoc_info[i]->specific[j].priority_lut_high);
-					cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
-						&camnoc_info[i]->specific[j].urgency);
-					cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
-						&camnoc_info[i]->specific[j].danger_lut);
-					cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
-						&camnoc_info[i]->specific[j].safe_lut);
-					cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
-						&camnoc_info[i]->specific[j].ubwc_ctl);
-					cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
-						&camnoc_info[i]->specific[j].flag_out_set0_low);
-					cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
-						&camnoc_info[i]->specific[j].dynattr_mainctl);
-					cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
-						&camnoc_info[i]->specific[j].qosgen_mainctl);
-					cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
-						&camnoc_info[i]->specific[j].qosgen_shaping_low);
-					cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
-						&camnoc_info[i]->specific[j].qosgen_shaping_high);
-				}
+	for (i = 0; i < cpas_core->num_valid_camnoc; i++) {
+		CAM_DBG(CAM_CPAS, "QOS settings for %s :",
+			camnoc_info[i]->camnoc_name);
+		for (j = 0; j < camnoc_info[i]->specific_size; j++) {
+			if (camnoc_info[i]->specific[j].enable) {
+				CAM_DBG(CAM_CPAS,
+					"Updating QoS settings port: %d prot name: %s",
+					camnoc_info[i]->specific[j].port_type,
+					camnoc_info[i]->specific[j].port_name);
+				cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
+					&camnoc_info[i]->specific[j].priority_lut_low);
+				cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
+					&camnoc_info[i]->specific[j].priority_lut_high);
+				cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
+					&camnoc_info[i]->specific[j].urgency);
+				cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
+					&camnoc_info[i]->specific[j].danger_lut);
+				cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
+					&camnoc_info[i]->specific[j].safe_lut);
+				cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
+					&camnoc_info[i]->specific[j].ubwc_ctl);
+				cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
+					&camnoc_info[i]->specific[j].flag_out_set0_low);
+				cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
+					&camnoc_info[i]->specific[j].dynattr_mainctl);
+				cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
+					&camnoc_info[i]->specific[j].qosgen_mainctl);
+				cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
+					&camnoc_info[i]->specific[j].qosgen_shaping_low);
+				cam_cpas_util_reg_update(cpas_hw, camnoc_info[i]->reg_base,
+					&camnoc_info[i]->specific[j].qosgen_shaping_high);
 			}
+		}
 
-			if (!errata_enabled) {
-				errata_wa_list = camnoc_info[i]->errata_wa_list;
-				if (errata_wa_list) {
-					errata_wa = &errata_wa_list->tcsr_camera_hf_sf_ares_glitch;
-					if (errata_wa->enable) {
-						cam_cpastop_scm_write(errata_wa);
-						errata_enabled = true;
-					}
+		if (!errata_enabled) {
+			errata_wa_list = camnoc_info[i]->errata_wa_list;
+			if (errata_wa_list) {
+				errata_wa = &errata_wa_list->tcsr_camera_hf_sf_ares_glitch;
+				if (errata_wa->enable) {
+					cam_cpastop_scm_write(errata_wa);
+					errata_enabled = true;
 				}
 			}
 		}
-	} else {
-		CAM_DBG(CAM_CPAS, "Updating secure camera static QoS settings");
-		rc = cam_update_camnoc_qos_settings(CAM_QOS_UPDATE_TYPE_STATIC, 0, NULL);
-		if (rc) {
-			CAM_ERR(CAM_CPAS, "Secure camera static OoS update failed: %d", rc);
-			return rc;
-		}
-		CAM_DBG(CAM_CPAS, "Updated secure camera static QoS settings");
 	}
 
 	return 0;
@@ -1510,11 +1483,6 @@ static int cam_cpastop_init_hw_version(struct cam_hw_info *cpas_hw,
 		alloc_camnoc_info[CAM_CAMNOC_HW_COMBINED] = &cam770_cpas100_camnoc_info;
 		cpas_info = &cam770_cpas100_cpas_info;
 		cpas_top_info = &cam770_cpas100_cpas_top_info;
-		break;
-	case CAM_CPAS_TITAN_665_V100:
-		alloc_camnoc_info[CAM_CAMNOC_HW_COMBINED] = &cam665_cpas100_camnoc_info;
-		cpas_info = &cam665_cpas100_cpas_info;
-		cpas_top_info = &cam665_cpas100_cpas_top_info;
 		break;
 	default:
 		CAM_ERR(CAM_CPAS, "Camera Version not supported %d.%d.%d",

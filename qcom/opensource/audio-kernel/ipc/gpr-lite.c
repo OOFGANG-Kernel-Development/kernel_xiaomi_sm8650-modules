@@ -1,6 +1,6 @@
 /* Copyright (c) 2011-2017, 2019-2021 The Linux Foundation. All rights reserved.
  * Copyright (c) 2018, Linaro Limited
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -311,7 +311,7 @@ static int gpr_callback(struct rpmsg_device *rpdev, void *buf,
 	__func__ , hdr->dst_port, hdr_size, pkt_size);
 
 	if (hdr->opcode == APM_EVENT_MODULE_TO_CLIENT) {
-		dev_dbg(gpr->dev, "%s: Acquire wakelock in case of module event with timeout %d",
+		dev_err(gpr->dev, "%s: Acquire wakelock in case of module event with timeout %d",
 			__func__, WAKELOCK_TIMEOUT);
 		pm_wakeup_ws_event(gpr_priv->wsource, WAKELOCK_TIMEOUT, true);
 	}
@@ -381,15 +381,14 @@ static void gpr_device_remove(struct device *dev)
 	struct gpr_device *adev = to_gpr_device(dev);
 	struct gpr_driver *adrv;
 	struct gpr *gpr = dev_get_drvdata(adev->dev.parent);
-	unsigned long flags;
 
 	if (dev->driver) {
 		adrv = to_gpr_driver(dev->driver);
 		if (adrv->remove)
 			adrv->remove(adev);
-		spin_lock_irqsave(&gpr->svcs_lock, flags);
+		spin_lock(&gpr->svcs_lock);
 		idr_remove(&gpr->svcs_idr, adev->svc_id);
-		spin_unlock_irqrestore(&gpr->svcs_lock, flags);
+		spin_unlock(&gpr->svcs_lock);
 	}
 
 	return;
@@ -422,7 +421,6 @@ static int gpr_add_device(struct device *dev, struct device_node *np,
 	struct gpr *gpr = dev_get_drvdata(dev);
 	struct gpr_device *adev = NULL;
 	int ret;
-	unsigned long flags;
 
 	adev = kzalloc(sizeof(*adev), GFP_KERNEL);
 	if (!adev)
@@ -447,10 +445,10 @@ static int gpr_add_device(struct device *dev, struct device_node *np,
 	adev->dev.release = gpr_dev_release;
 	adev->dev.driver = NULL;
 
-	spin_lock_irqsave(&gpr->svcs_lock, flags);
+	spin_lock(&gpr->svcs_lock);
 	idr_alloc(&gpr->svcs_idr, adev, id->svc_id,
 		  id->svc_id + 1, GFP_ATOMIC);
-	spin_unlock_irqrestore(&gpr->svcs_lock, flags);
+	spin_unlock(&gpr->svcs_lock);
 
 	dev_info_ratelimited(dev, "Adding GPR dev: %s\n", dev_name(&adev->dev));
 

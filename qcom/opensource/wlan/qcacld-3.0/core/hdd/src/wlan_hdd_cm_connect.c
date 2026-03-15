@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -23,7 +23,6 @@
  */
 
 #include "wlan_hdd_main.h"
-#include <wlan_hdd_mlo.h>
 #include "wlan_hdd_cm_api.h"
 #include "wlan_hdd_trace.h"
 #include "wlan_hdd_object_manager.h"
@@ -155,6 +154,30 @@ bool hdd_cm_is_disconnected(struct wlan_hdd_link_info *link_info)
 
 	return is_vdev_disconnected;
 }
+
+// MIUI ADD: WIFI_PowerSave
+bool hdd_cm_is_connected(struct wlan_hdd_link_info *link_info)
+{
+	struct wlan_objmgr_vdev *vdev;
+	bool is_vdev_connected;
+	enum QDF_OPMODE opmode;
+
+	vdev = hdd_objmgr_get_vdev_by_user(link_info, WLAN_OSIF_CM_ID);
+	if (!vdev)
+		return false;
+
+	opmode = wlan_vdev_mlme_get_opmode(vdev);
+	if (opmode != QDF_STA_MODE && opmode != QDF_P2P_CLIENT_MODE) {
+		hdd_objmgr_put_vdev_by_user(vdev, WLAN_OSIF_CM_ID);
+		return false;
+	}
+	is_vdev_connected = ucfg_cm_is_vdev_connected(vdev);
+
+	hdd_objmgr_put_vdev_by_user(vdev, WLAN_OSIF_CM_ID);
+
+	return is_vdev_connected;
+}
+// END WIFI_PowerSave
 
 bool hdd_cm_is_vdev_roaming(struct wlan_hdd_link_info *link_info)
 {
@@ -898,14 +921,6 @@ int wlan_hdd_cm_connect(struct wiphy *wiphy,
 	hdd_update_scan_ie_for_connect(adapter, &params);
 	hdd_update_action_oui_for_connect(hdd_ctx, req);
 
-	if (!hdd_cm_is_vdev_associated(adapter->deflink)) {
-		/*
-		 * Clear user/wpa_supplicant disabled_roaming flag for new
-		 * connection
-		 */
-		ucfg_clear_user_disabled_roaming(hdd_ctx->psoc,
-						 adapter->deflink->vdev_id);
-	}
 	status = osif_cm_connect(ndev, vdev, req, &params);
 
 	if (status || ucfg_cm_is_vdev_roaming(vdev)) {
@@ -1551,7 +1566,7 @@ hdd_cm_mlme_send_standby_link_chn_width(struct hdd_adapter *adapter,
 	sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(link_info);
 	ch_width = sta_ctx->user_cfg_chn_width;
 
-	wlan_mlme_get_sta_ch_width(vdev, &connection_ch_width, NULL);
+	wlan_mlme_get_sta_ch_width(vdev, &connection_ch_width);
 
 	if (ch_width == CH_WIDTH_INVALID) {
 		hdd_debug("no cached bandwidth for the link %u", link_id);
@@ -1799,10 +1814,6 @@ hdd_cm_connect_success_pre_user_update(struct wlan_objmgr_vdev *vdev,
 	if (is_roam)
 		ucfg_dp_nud_indicate_roam(vdev);
 	 /* hdd_objmgr_set_peer_mlme_auth_state */
-
-	if (adapter->keep_alive_interval)
-		hdd_vdev_send_sta_keep_alive_interval(link_info, hdd_ctx,
-						adapter->keep_alive_interval);
 }
 
 static void
@@ -1868,28 +1879,6 @@ static void hdd_cm_connect_success(struct wlan_objmgr_vdev *vdev,
 		hdd_cm_connect_success_post_user_update(vdev, rsp);
 	}
 }
-
-#if defined(WLAN_FEATURE_11BE_MLO) && defined(CFG80211_11BE_BASIC)
-void hdd_cm_connect_active_notify(uint8_t vdev_id)
-{
-	struct hdd_context *hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
-	struct wlan_hdd_link_info *link_info;
-
-	if (!hdd_ctx) {
-		hdd_err("HDD context is NULL");
-		return;
-	}
-
-	link_info = hdd_get_link_info_by_vdev(hdd_ctx, vdev_id);
-	if (!link_info) {
-		hdd_err("Link info not found for vdev %d", vdev_id);
-		return;
-	}
-
-	if (hdd_adapter_restore_link_vdev_map(link_info->adapter, true))
-		hdd_adapter_update_mlo_mgr_mac_addr(link_info->adapter);
-}
-#endif
 
 QDF_STATUS hdd_cm_connect_complete(struct wlan_objmgr_vdev *vdev,
 				   struct wlan_cm_connect_resp *rsp,

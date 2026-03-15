@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -98,18 +98,6 @@ enum wmm_user_mode {
 	WMM_USER_MODE_QBSS_ONLY = 1,
 	WMM_USER_MODE_NO_QOS = 2,
 
-};
-
-/**
- * struct peer_mac_addresses -Peer MAC address info
- * @mac: Provided peer MAC address
- * @peer_mac: Peer MAC address
- * @peer_mld: Peer MLD address
- */
-struct peer_mac_addresses {
-	struct qdf_mac_addr mac;
-	struct qdf_mac_addr peer_mac;
-	struct qdf_mac_addr peer_mld;
 };
 
 struct pwr_channel_info {
@@ -264,9 +252,7 @@ struct wlan_mlme_roam_state_info {
  * @roam_trigger_bitmap: Master bitmap of roaming triggers. If the bitmap is
  *  zero, roaming module will be deinitialized at firmware for this vdev.
  * @supplicant_disabled_roaming: Enable/disable roam scan in firmware; will be
- *  used by supplicant to do roam invoke after disabling roam scan in firmware,
- *  it is only effective for current connection, it will be cleared during new
- *  connection.
+ *  used by supplicant to do roam invoke after disabling roam scan in firmware
  */
 struct wlan_mlme_roaming_config {
 	uint32_t roam_trigger_bitmap;
@@ -413,13 +399,11 @@ struct ft_context {
 /**
  * struct assoc_channel_info - store channel info at the time of association
  * @assoc_ch_width: channel width at the time of initial connection
- * @omn_ie_ch_width: ch width present in operating mode notification IE of bcn
  * @sec_2g_freq: secondary 2 GHz freq
  * @cen320_freq: 320 MHz center freq
  */
 struct assoc_channel_info {
 	enum phy_ch_width assoc_ch_width;
-	enum phy_ch_width omn_ie_ch_width;
 	qdf_freq_t sec_2g_freq;
 	qdf_freq_t cen320_freq;
 };
@@ -492,7 +476,6 @@ struct wait_for_key_timer {
  * concurrent STA
  * @ap_policy: Concurrent ap policy config
  * @oper_ch_width: SAP current operating ch_width
- * @psd_20mhz: PSD power(dBm/MHz) of SAP operating in 20 MHz
  */
 struct mlme_ap_config {
 	qdf_freq_t user_config_sap_ch_freq;
@@ -501,7 +484,6 @@ struct mlme_ap_config {
 #endif
 	enum host_concurrent_ap_policy ap_policy;
 	enum phy_ch_width oper_ch_width;
-	uint8_t psd_20mhz;
 };
 
 /**
@@ -839,7 +821,7 @@ struct enhance_roam_info {
  *				operation on bss color collision detection
  * @bss_color_change_runtime_lock: runtime lock to complete bss color change
  * @disconnect_runtime_lock: runtime lock to complete disconnection
- * @keep_alive_period: KEEPALIVE period in seconds
+ * @best_6g_power_type: best 6g power type
  */
 struct mlme_legacy_priv {
 	bool chan_switch_in_progress;
@@ -912,7 +894,6 @@ struct mlme_legacy_priv {
 	qdf_runtime_lock_t bss_color_change_runtime_lock;
 	qdf_runtime_lock_t disconnect_runtime_lock;
 	enum reg_6g_ap_type best_6g_power_type;
-	uint16_t keep_alive_period;
 };
 
 /**
@@ -1999,38 +1980,5 @@ wlan_mlme_register_common_events(struct wlan_objmgr_psoc *psoc)
 QDF_STATUS
 wlan_mlme_send_csa_event_status_ind_cmd(struct wlan_objmgr_vdev *vdev,
 					uint8_t csa_status);
-
-/**
- * wlan_mlme_get_sap_psd_for_20mhz() - Get the PSD power for 20 MHz
- * frequency
- * @vdev: pointer to vdev object
- *
- * Return: psd power
- */
-uint8_t wlan_mlme_get_sap_psd_for_20mhz(struct wlan_objmgr_vdev *vdev);
-
-/**
- * wlan_mlme_set_sap_psd_for_20mhz() - Set the PSD power for 20 MHz
- * frequency
- * @vdev: pointer to vdev object
- * @psd_power : psd power
- *
- * Return: None
- */
-QDF_STATUS wlan_mlme_set_sap_psd_for_20mhz(struct wlan_objmgr_vdev *vdev,
-					   uint8_t psd_power);
-
-/**
- * wlan_find_peer_and_get_mac_and_mld_addr() - This API find peer from the peer
- * list and cache peer MAC and MLD address in the peer_mac_info.
- * @psoc: PSOC object
- * @peer_mac_info: Peer MAC address info
- *
- * Return: None
- */
-QDF_STATUS
-wlan_find_peer_and_get_mac_and_mld_addr(
-				struct wlan_objmgr_psoc *psoc,
-				struct peer_mac_addresses *peer_mac_info);
 
 #endif

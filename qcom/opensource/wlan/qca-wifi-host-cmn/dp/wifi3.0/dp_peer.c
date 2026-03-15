@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -737,17 +737,9 @@ void dp_peer_find_id_to_obj_add(struct dp_soc *soc,
 		/* Peer map event came for peer_id which
 		 * is already mapped, this is not expected
 		 */
-		dp_err("peer %pK(" QDF_MAC_ADDR_FMT ")map failed, id %d mapped "
-		       "to peer %pK, Stats: peer(map %u unmap %u "
-		       "invalid unmap %u) mld per(map %u unmap %u)",
+		dp_err("peer %pK(" QDF_MAC_ADDR_FMT ")map failed, id %d mapped to peer %pK",
 		       peer, QDF_MAC_ADDR_REF(peer->mac_addr.raw), peer_id,
-		       soc->peer_id_to_obj_map[peer_id],
-		       soc->stats.t2h_msg_stats.peer_map,
-		       (soc->stats.t2h_msg_stats.peer_unmap -
-			soc->stats.t2h_msg_stats.ml_peer_unmap),
-		       soc->stats.t2h_msg_stats.invalid_peer_unmap,
-		       soc->stats.t2h_msg_stats.ml_peer_map,
-		       soc->stats.t2h_msg_stats.ml_peer_unmap);
+		       soc->peer_id_to_obj_map[peer_id]);
 		dp_peer_unref_delete(peer, DP_MOD_ID_CONFIG);
 		qdf_assert_always(0);
 	}
@@ -2746,7 +2738,6 @@ dp_rx_mlo_peer_map_handler(struct dp_soc *soc, uint16_t peer_id,
 		soc, peer_id, ml_peer_id,
 		QDF_MAC_ADDR_REF(peer_mac_addr));
 
-	DP_STATS_INC(soc, t2h_msg_stats.ml_peer_map, 1);
 	/* Get corresponding vdev ID for the peer based
 	 * on chip ID obtained from mlo peer_map event
 	 */
@@ -2888,7 +2879,6 @@ dp_rx_peer_map_handler(struct dp_soc *soc, uint16_t peer_id,
 	dp_info("peer_map_event (soc:%pK): peer_id %d, hw_peer_id %d, peer_mac "QDF_MAC_ADDR_FMT", vdev_id %d",
 		soc, peer_id, hw_peer_id,
 		QDF_MAC_ADDR_REF(peer_mac_addr), vdev_id);
-	DP_STATS_INC(soc, t2h_msg_stats.peer_map, 1);
 
 	/* Peer map event for WDS ast entry get the peer from
 	 * obj map
@@ -3017,8 +3007,6 @@ dp_rx_peer_unmap_handler(struct dp_soc *soc, uint16_t peer_id,
 	struct dp_peer *peer;
 	struct dp_vdev *vdev = NULL;
 
-	DP_STATS_INC(soc, t2h_msg_stats.peer_unmap, 1);
-
 	/*
 	 * If FW AST offload is enabled and host AST DB is enabled,
 	 * the AST entries are created during peer map from FW.
@@ -3038,11 +3026,6 @@ dp_rx_peer_unmap_handler(struct dp_soc *soc, uint16_t peer_id,
 	if (!peer) {
 		dp_err("Received unmap event for invalid peer_id %u",
 		       peer_id);
-		dp_cfg_event_record_peer_map_unmap_evt(
-			soc, DP_CFG_EVENT_PEER_UNMAP,
-			NULL, mac_addr, 0, peer_id,
-			0, 0, vdev_id);
-		DP_STATS_INC(soc, t2h_msg_stats.invalid_peer_unmap, 1);
 		return;
 	}
 
@@ -3217,7 +3200,6 @@ void dp_rx_mlo_peer_unmap_handler(struct dp_soc *soc, uint16_t peer_id)
 					       0, 0, vdev_id);
 	dp_info("MLO peer_unmap_event (soc:%pK) peer_id %d",
 		soc, peer_id);
-	DP_STATS_INC(soc, t2h_msg_stats.ml_peer_unmap, 1);
 
 	dp_rx_peer_unmap_handler(soc, ml_peer_id, vdev_id,
 				 mac_addr, is_wds,
@@ -3280,24 +3262,26 @@ static void dp_peer_rx_init_reorder_queue(struct dp_pdev *pdev,
 	rx_tid = &mld_peer->rx_tid[tid];
 	ba_window_size = rx_tid->ba_status == DP_RX_BA_ACTIVE ?
 					rx_tid->ba_win_size : 1;
-	status = dp_peer_rx_reorder_queue_setup(soc, peer, BIT(tid), ba_window_size);
-	/* Do not return on failure, continue for other tids. */
-	dp_info("peer %pK " QDF_MAC_ADDR_FMT " type %d setup tid %d ba_win_size %d%s",
-		peer, QDF_MAC_ADDR_REF(peer->mac_addr.raw),
-		peer->peer_type, tid, ba_window_size,
-		QDF_IS_STATUS_SUCCESS(status) ? " SUCCESS" : " FAILED");
+	status = dp_peer_rx_reorder_queue_setup(soc, peer, tid, ba_window_size);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		dp_info("peer %pK " QDF_MAC_ADDR_FMT " type %d failed to setup tid %d ba_win_size %d",
+			peer, QDF_MAC_ADDR_REF(peer->mac_addr.raw),
+			peer->peer_type, tid, ba_window_size);
+		/* Do not return, continue for other tids. */
+	}
 
 	for (tid = 0; tid < DP_MAX_TIDS - 1; tid++) {
 		rx_tid = &mld_peer->rx_tid[tid];
 		ba_window_size = rx_tid->ba_status == DP_RX_BA_ACTIVE ?
 						rx_tid->ba_win_size : 1;
-		status = dp_peer_rx_reorder_queue_setup(soc, peer, BIT(tid),
-							ba_window_size);
-		/* Do not return on failure, continue for other tids. */
-		dp_info("peer %pK " QDF_MAC_ADDR_FMT " type %d setup tid %d ba_win_size %d%s",
-			peer, QDF_MAC_ADDR_REF(peer->mac_addr.raw),
-			peer->peer_type, tid, ba_window_size,
-			QDF_IS_STATUS_SUCCESS(status) ? " SUCCESS" : " FAILED");
+		status = dp_peer_rx_reorder_queue_setup(soc, peer,
+							tid, ba_window_size);
+		if (QDF_IS_STATUS_ERROR(status)) {
+			dp_info("peer %pK " QDF_MAC_ADDR_FMT " type %d failed to setup tid %d ba_win_size %d",
+				peer, QDF_MAC_ADDR_REF(peer->mac_addr.raw),
+				peer->peer_type, tid, ba_window_size);
+			/* Do not return, continue for other tids. */
+		}
 	}
 }
 

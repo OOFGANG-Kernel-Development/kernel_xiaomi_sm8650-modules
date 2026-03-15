@@ -2,6 +2,7 @@
 /* Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
+#define DEBUG
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/slab.h>
@@ -18,7 +19,7 @@
 #include <linux/input.h>
 #include <linux/firmware.h>
 #include <linux/completion.h>
-#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_DISABLE_WCD_USB_I2C) || defined(CONFIG_TARGET_PRODUCT_AMETHYST)
+#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_DISABLE_WCD_USB_I2C)
 #elif IS_ENABLED(CONFIG_QCOM_WCD_USBSS_I2C)
 #include <linux/soc/qcom/wcd939x-i2c.h>
 #endif
@@ -35,12 +36,12 @@
 #include "lpass-cdc/lpass-cdc.h"
 #include <asoc/wcd-mbhc-v2-api.h>
 #include <linux/debugfs.h>
-
-#ifdef AUDIO_MBHC_ABNORMAL
-#define HEADSET_Z_DIFF_MAX 15
+#if defined(CONFIG_TARGET_PRODUCT_SHENNONG) || defined(CONFIG_TARGET_PRODUCT_MANET) || \
+    defined(CONFIG_TARGET_PRODUCT_HOUJI) || defined(CONFIG_TARGET_PRODUCT_CHENFENG) \
+    || defined(CONFIG_TARGET_PRODUCT_PERIDOT)
+#define CONFIG_AUDIO_UART_DEBUG
 #endif
 
-#define CONFIG_AUDIO_UART_DEBUG
 #define HEADSET_STATUS_RECORD_INDEX_PLUGIN_HEADSET (3)
 #define HEADSET_STATUS_RECORD_INDEX_PLUGIN_HEADPHONE (1)
 #define HEADSET_STATUS_RECORD_INDEX_PLUGOUT (0)
@@ -912,8 +913,6 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 				pr_debug("%s: Marking jack type as SND_JACK_LINEOUT\n",
 				__func__);
 			}
-			pr_debug("%s: The impedance is: zl %d, zr %d\n",
-				__func__, mbhc->zl, mbhc->zr);
 		}
 
 		/* Do not calculate impedance again for lineout
@@ -1128,7 +1127,7 @@ static bool wcd_mbhc_moisture_detect(struct wcd_mbhc *mbhc, bool detection_type)
 static void wcd_mbhc_set_hsj_connect(struct wcd_mbhc *mbhc, bool connect)
 {
 
-#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_DISABLE_WCD_USB_I2C) || defined(CONFIG_TARGET_PRODUCT_AMETHYST)
+#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_DISABLE_WCD_USB_I2C)
 #elif IS_ENABLED(CONFIG_QCOM_WCD_USBSS_I2C)
 	struct snd_soc_component *component = mbhc->component;
 	if (mbhc->wcd_usbss_aatc_dev_np) {
@@ -1352,7 +1351,7 @@ static irqreturn_t wcd_mbhc_mech_plug_detect_irq(int irq, void *data)
 	/* WCD939x USB AATC did not required mech plug detection, will receive
 	 * insertion/removal events from UCSI layer
 	 */
-#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_DISABLE_WCD_USB_I2C) || defined(CONFIG_TARGET_PRODUCT_AMETHYST)
+#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_DISABLE_WCD_USB_I2C)
 #elif IS_ENABLED(CONFIG_QCOM_WCD_USBSS_I2C)
 	if (mbhc->mbhc_cfg->enable_usbc_analog && mbhc->wcd_usbss_aatc_dev_np) {
 		pr_debug("%s: leave, (irq_none)\n", __func__);
@@ -1917,14 +1916,14 @@ static int wcd_mbhc_init_gpio(struct wcd_mbhc *mbhc,
 static int wcd_mbhc_usbc_ana_event_handler(struct notifier_block *nb,
 					   unsigned long mode, void *ptr)
 {
-#if defined (CONFIG_TARGET_PRODUCT_CHENFENG) || defined (CONFIG_TARGET_PRODUCT_AMETHYST)
+#if defined (CONFIG_TARGET_PRODUCT_CHENFENG)
 	u8 det_status = 0;
 #endif
 	struct wcd_mbhc *mbhc = container_of(nb, struct wcd_mbhc, aatc_dev_nb);
 #ifdef CONFIG_AUDIO_UART_DEBUG
         struct wcd_mbhc_config *config = mbhc->mbhc_cfg;
 #endif
-#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_DISABLE_WCD_USB_I2C) || defined(CONFIG_TARGET_PRODUCT_AMETHYST)
+#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_DISABLE_WCD_USB_I2C)
 #elif IS_ENABLED(CONFIG_QCOM_WCD_USBSS_I2C)
 	int l_det_en = 0, detection_type = 0;
 	bool *cable_status = (bool*) ptr;
@@ -1941,7 +1940,7 @@ static int wcd_mbhc_usbc_ana_event_handler(struct notifier_block *nb,
 		dev_dbg(mbhc->component->dev, "disable uart\n");
 #endif
 		dev_dbg(mbhc->component->dev, "enter, %s: mode = %lu\n", __func__, mode);
-#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_DISABLE_WCD_USB_I2C) || defined(CONFIG_TARGET_PRODUCT_AMETHYST)
+#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_DISABLE_WCD_USB_I2C)
 #elif IS_ENABLED(CONFIG_QCOM_WCD_USBSS_I2C)
 		if (mbhc->wcd_usbss_aatc_dev_np) {
 			if (cable_status == NULL)
@@ -1964,12 +1963,12 @@ static int wcd_mbhc_usbc_ana_event_handler(struct notifier_block *nb,
 		/* insertion detected, enable L_DET_EN */
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_L_DET_EN, 0);
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_L_DET_EN, 1);
-#if defined (CONFIG_TARGET_PRODUCT_CHENFENG) || defined (CONFIG_TARGET_PRODUCT_AMETHYST)
+#if defined (CONFIG_TARGET_PRODUCT_CHENFENG)
 		WCD_MBHC_REG_READ(WCD_MBHC_L_DET_EN,det_status);
 		pr_debug("%s: det_status = %x\n",__func__,det_status);
 #endif
 
-#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_DISABLE_WCD_USB_I2C) || defined(CONFIG_TARGET_PRODUCT_AMETHYST)
+#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_DISABLE_WCD_USB_I2C)
 #elif IS_ENABLED(CONFIG_QCOM_WCD_USBSS_I2C)
 		if (mbhc->wcd_usbss_aatc_dev_np) {
 			if (unlikely((mbhc->mbhc_cb->lock_sleep(mbhc, true)) == false))
@@ -1986,7 +1985,7 @@ static int wcd_mbhc_usbc_ana_event_handler(struct notifier_block *nb,
 		msm_cdc_pinctrl_select_sleep_state(config->uart_audio_switch_gpio_p);
 		dev_dbg(mbhc->component->dev, "enable uart\n");
 #endif
-#if defined (CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_TARGET_PRODUCT_AMETHYST)
+#if defined (CONFIG_TARGET_PRODUCT_CHENFENG)
 		if (mode == TYPEC_ACCESSORY_NONE && mbhc->current_plug == MBHC_PLUG_TYPE_NONE) {
 			mbhc->hs_detect_work_stop = true;
 			/* Disable HW FSM */
@@ -2001,7 +2000,7 @@ static int wcd_mbhc_usbc_ana_event_handler(struct notifier_block *nb,
 			pr_debug("%s: det_status = %x\n",__func__,det_status);
 		}
 #endif
-#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_DISABLE_WCD_USB_I2C) || defined(CONFIG_TARGET_PRODUCT_AMETHYST)
+#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_DISABLE_WCD_USB_I2C)
 #elif IS_ENABLED(CONFIG_QCOM_WCD_USBSS_I2C)
 		if (mbhc->wcd_usbss_aatc_dev_np) {
 			WCD_MBHC_REG_READ(WCD_MBHC_L_DET_EN, l_det_en);
@@ -2124,7 +2123,7 @@ int wcd_mbhc_start(struct wcd_mbhc *mbhc, struct wcd_mbhc_config *mbhc_cfg)
 	if (mbhc_cfg->enable_usbc_analog) {
 		mbhc->aatc_dev_nb.notifier_call = wcd_mbhc_usbc_ana_event_handler;
 		mbhc->aatc_dev_nb.priority = 0;
-#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_DISABLE_WCD_USB_I2C) || defined(CONFIG_TARGET_PRODUCT_AMETHYST)
+#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_DISABLE_WCD_USB_I2C)
 #elif IS_ENABLED(CONFIG_QCOM_WCD_USBSS_I2C)
 		if (mbhc->wcd_usbss_aatc_dev_np)
 			rc = wcd_usbss_reg_notifier(&mbhc->aatc_dev_nb,
@@ -2169,7 +2168,7 @@ void wcd_mbhc_stop(struct wcd_mbhc *mbhc)
 		mbhc->mbhc_cal = NULL;
 	}
 
-#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_DISABLE_WCD_USB_I2C) || defined(CONFIG_TARGET_PRODUCT_AMETHYST)
+#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_DISABLE_WCD_USB_I2C)
 #elif IS_ENABLED(CONFIG_QCOM_WCD_USBSS_I2C)
 	if (mbhc->mbhc_cfg->enable_usbc_analog && mbhc->wcd_usbss_aatc_dev_np)
 		wcd_usbss_unreg_notifier(&mbhc->aatc_dev_nb, mbhc->wcd_usbss_aatc_dev_np);
@@ -2204,6 +2203,9 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_component *component,
 	const char *gnd_switch = "qcom,msm-mbhc-gnd-swh";
 	const char *hs_thre = "qcom,msm-mbhc-hs-mic-max-threshold-mv";
 	const char *hph_thre = "qcom,msm-mbhc-hs-mic-min-threshold-mv";
+#ifdef AUDIO_MBHC_ABNORMAL
+	char reason [256] = "";
+#endif
 
 	pr_debug("%s: enter\n", __func__);
 
@@ -2480,6 +2482,10 @@ err_mbhc_sw_irq:
 		mbhc->mbhc_cb->register_notifier(mbhc, &mbhc->nblock, false);
 	mutex_destroy(&mbhc->codec_resource_lock);
 err:
+#ifdef AUDIO_MBHC_ABNORMAL
+	snprintf(reason, sizeof(reason)-1, "%s: Failed to request irq, ret = %d", __func__, ret);
+	send_audio_mbhc_abnormal_to_onetrack(MBHC_INIT_IRQ, reason);
+#endif
 	pr_debug("%s: leave ret %d\n", __func__, ret);
 	return ret;
 }

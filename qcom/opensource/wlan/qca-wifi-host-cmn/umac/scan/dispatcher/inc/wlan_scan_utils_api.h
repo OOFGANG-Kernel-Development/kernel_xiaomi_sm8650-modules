@@ -141,31 +141,11 @@ util_scan_entry_mldaddr(struct scan_cache_entry *scan_entry)
 
 	return mld_addr;
 }
-
-/**
- * util_scan_entry_self_linkid() - Function to get self IEEE link id
- * @scan_entry: scan entry
- *
- * API will return self IEEE link ID
- *
- * Return: Value of self IEEE link ID
- */
-static inline uint8_t
-util_scan_entry_self_linkid(struct scan_cache_entry *scan_entry)
-{
-	return scan_entry->ml_info.self_link_id;
-}
 #else
 static inline struct qdf_mac_addr *
 util_scan_entry_mldaddr(struct scan_cache_entry *scan_entry)
 {
 	return NULL;
-}
-
-static inline uint8_t
-util_scan_entry_self_linkid(struct scan_cache_entry *scan_entry)
-{
-	return WLAN_INVALID_LINK_ID;
 }
 #endif
 
@@ -1663,41 +1643,15 @@ util_scan_entry_bw_ind(struct scan_cache_entry *scan_entry)
 
 #ifdef WLAN_FEATURE_11BE_MLO
 static inline uint8_t*
-util_scan_entry_bv_ml_ie(struct scan_cache_entry *scan_entry)
-{
-	return scan_entry->ie_list.multi_link_bv;
-}
-
-static inline uint8_t*
 util_scan_entry_t2lm(struct scan_cache_entry *scan_entry)
 {
 	return scan_entry->ie_list.t2lm[0];
 }
-
-/**
- * util_scan_entry_t2lm_len() - API to get t2lm IE length
- * @scan_entry: scan entry
- *
- * Return, Length or 0 if ie is not present
- */
-uint32_t util_scan_entry_t2lm_len(struct scan_cache_entry *scan_entry);
 #else
-static inline uint8_t*
-util_scan_entry_bv_ml_ie(struct scan_cache_entry *scan_entry)
-{
-	return NULL;
-}
-
 static inline uint8_t*
 util_scan_entry_t2lm(struct scan_cache_entry *scan_entry)
 {
 	return NULL;
-}
-
-static inline uint32_t
-util_scan_entry_t2lm_len(struct scan_cache_entry *scan_entry)
-{
-	return 0;
 }
 #endif
 
@@ -1971,27 +1925,4 @@ util_scan_get_6g_oper_channel(uint8_t *he_op_ie)
 	return 0;
 }
 #endif
-
-/*
- * util_is_bssid_non_tx() - Is the given BSSID a non-tx neighbor
- * entry in the RNR db
- * @psoc: psoc
- * @bssid: bssid
- * @freq: frequency corresponding to the bssid
- *
- * Return: Is bssid non tx
- */
-bool util_is_bssid_non_tx(struct wlan_objmgr_psoc *psoc,
-			  struct qdf_mac_addr *bssid, qdf_freq_t freq);
-
-/**
- * util_scan_get_phymode() - function to get phy mode
- * @pdev : pdev object
- * @scan_params: scan entry
- *
- * Return: phy mode.
- */
-enum wlan_phymode
-util_scan_get_phymode(struct wlan_objmgr_pdev *pdev,
-		      struct scan_cache_entry *scan_params);
 #endif

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -44,13 +44,6 @@
 #ifdef WLAN_FEATURE_SON
 #include "son_api.h"
 #endif
-
-/*
- * MSB of rx_mc_bc_cnt indicates whether FW supports rx_mc_bc_cnt
- * feature or not, if first bit is 1 it indicates that FW supports this
- * feature, if it is 0 it indicates FW doesn't support this feature
- */
-#define STATION_INFO_RX_MC_BC_COUNT (1 << 31)
 
 #if defined(WLAN_SUPPORT_TWT) && defined(WLAN_TWT_CONV_SUPPORTED)
 static QDF_STATUS
@@ -570,13 +563,6 @@ static void target_if_cp_stats_extract_peer_extd_stats(
 		ev->peer_extended_stats[i].rx_mc_bc_cnt =
 						peer_extd_stats.rx_mc_bc_cnt;
 
-		if (!(ev->peer_extended_stats[i].rx_mc_bc_cnt &
-		      STATION_INFO_RX_MC_BC_COUNT))
-			ev->peer_extended_stats[i].rx_mc_bc_cnt = 0;
-		else
-			ev->peer_extended_stats[i].rx_mc_bc_cnt &=
-						~STATION_INFO_RX_MC_BC_COUNT;
-
 		peer_stats = qdf_mem_malloc(sizeof(*peer_stats));
 		if (!peer_stats)
 			continue;
@@ -857,9 +843,7 @@ static QDF_STATUS target_if_cp_stats_extract_vdev_chain_rssi_stats(
 		for (j = 0; j < MAX_NUM_CHAINS; j++) {
 			dat_snr = rssi_stats.rssi_avg_data[j];
 			bcn_snr = rssi_stats.rssi_avg_beacon[j];
-			cp_stats_nofl_debug("vdev %d Chain %d %s bcn: %d data: %d",
-					    rssi_stats.vdev_id, j,
-					    db2dbm_enabled ? "RSSI" : "SNR",
+			cp_stats_nofl_debug("Chain %d SNR bcn: %d data: %d", j,
 					    bcn_snr, dat_snr);
 			/*
 			 * Get the absolute rssi value from the current rssi
@@ -1706,11 +1690,6 @@ target_if_set_pdev_stats_update_period(struct wlan_objmgr_psoc *psoc,
 	struct pdev_params pdev_param = {0};
 
 	wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
-
-	if (!wmi_handle) {
-		cp_stats_err("wmi_handle is null");
-		return QDF_STATUS_E_INVAL;
-	}
 
 	pdev_param.param_id = wmi_pdev_param_pdev_stats_update_period;
 	pdev_param.param_value = val;

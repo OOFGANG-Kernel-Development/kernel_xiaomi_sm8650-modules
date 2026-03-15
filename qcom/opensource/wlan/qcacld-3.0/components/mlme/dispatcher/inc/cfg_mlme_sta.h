@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -648,7 +648,7 @@
  *
  * </cfg>
  */
-#define CFG_MLO_SUPPORT_LINK_BAND CFG_INI_UINT( \
+#define CFG_MLO_SUPPORT_LINK_BAND CFG_UINT( \
 			"mlo_support_link_band", \
 			0x1, \
 			0x77, \
@@ -761,39 +761,14 @@
  * </cfg>
  */
 
-#define CFG_MLO_MLO_5GL_5GH_MLSR CFG_INI_BOOL( \
+#define CFG_MLO_MLO_5GL_5GH_MLSR CFG_BOOL( \
 		"mlo_5gl_5gh_mlsr",\
-		1, \
+		0, \
 		"enable 5GL+5GH MLSR")
 
 #define CFG_MLO_MLO_5GL_5GH_MLSR_CFG CFG(CFG_MLO_MLO_5GL_5GH_MLSR)
-
-/*
- * <ini>
- * epcs_support_enable - enable/disable epcs
- * @Min: false
- * @Max: true
- * @Default: false
- *
- * Related: None
- *
- * Supported Feature: emergency preparedness communications service (EPCS)
- * priority access
- *
- * Usage: External
- *
- * </ini>
- */
-
-#define CFG_MLO_EPCS_SUPPORT_ENABLE CFG_INI_BOOL( \
-		"epcs_support_enable",\
-		0, \
-		"enable epcs support")
-
-#define CFG_MLO_EPCS_SUPPORT_ENABLE_CFG CFG(CFG_MLO_EPCS_SUPPORT_ENABLE)
 #else
 #define CFG_MLO_MLO_5GL_5GH_MLSR_CFG
-#define CFG_MLO_EPCS_SUPPORT_ENABLE_CFG
 #endif
 
 #define CFG_STA_ALL \
@@ -822,7 +797,5 @@
 	CFG_MLO_SUPPORT_LINK_BAND_CFG \
 	CFG_MLO_PREFER_PERCENTAGE_CFG \
 	CFG_MLO_SAME_LINK_MLD_ADDR_CFG \
-	CFG_EHT_DISABLE_PUNCT_IN_US_LPI_CFG \
-	CFG_MLO_MLO_5GL_5GH_MLSR_CFG \
-	CFG_MLO_EPCS_SUPPORT_ENABLE_CFG
+	CFG_EHT_DISABLE_PUNCT_IN_US_LPI_CFG
 #endif /* CFG_MLME_STA_H__ */

@@ -48,6 +48,8 @@ struct hdd_context;
 #define FW_MODULE_LOG_LEVEL_STRING_LENGTH  (512)
 #define TX_SCHED_WRR_PARAMS_NUM            (5)
 
+#define CFG_SUPPORT_SCAN_EXT_FLAG 1
+
 /* Defines for all of the things we read from the configuration (registry). */
 
 #ifdef CONFIG_DP_TRACE
@@ -386,16 +388,6 @@ void hdd_override_all_ps(struct hdd_context *hdd_ctx);
  */
 int hdd_vendor_mode_to_phymode(enum qca_wlan_vendor_phy_mode vendor_phy_mode,
 			       eCsrPhyMode *csr_phy_mode);
-
-/**
- * hdd_phymode_to_vendor_mode() - Get vendor phy mode according to CSR phy mode.
- * @csr_phy_mode: phy mode of eCsrPhyMode
- * @vendor_phy_mode: vendor phy mode
- *
- * Return: 0 on success, negative error value on failure
- */
-int hdd_phymode_to_vendor_mode(eCsrPhyMode csr_phy_mode,
-			       enum qca_wlan_vendor_phy_mode *vendor_phy_mode);
 
 /**
  * hdd_vendor_mode_to_band() - Get band_info according to vendor phy mode

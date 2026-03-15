@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1172,34 +1172,26 @@ send_vdev_nss_chain_params_cmd_tlv(wmi_unified_t wmi_handle,
 /**
  * send_vdev_stop_cmd_tlv() - send vdev stop command to fw
  * @wmi: wmi handle
- * @params: VDEV stop params
+ * @vdev_id: vdev id
  *
  * Return: QDF_STATUS_SUCCESS for success or error code
  */
 static QDF_STATUS send_vdev_stop_cmd_tlv(wmi_unified_t wmi,
-					 struct vdev_stop_params *params)
+					uint8_t vdev_id)
 {
 	wmi_vdev_stop_cmd_fixed_param *cmd;
 	wmi_buf_t buf;
 	int32_t len = sizeof(*cmd);
-	uint8_t *buf_ptr;
-	uint32_t vdev_id = params->vdev_id;
-
-	len += vdev_stop_mlo_params_size(params);
 
 	buf = wmi_buf_alloc(wmi, len);
 	if (!buf)
 		return QDF_STATUS_E_NOMEM;
 
-	buf_ptr = wmi_buf_data(buf);
-	cmd = (wmi_vdev_stop_cmd_fixed_param *)buf_ptr;
+	cmd = (wmi_vdev_stop_cmd_fixed_param *) wmi_buf_data(buf);
 	WMITLV_SET_HDR(&cmd->tlv_header,
 		       WMITLV_TAG_STRUC_wmi_vdev_stop_cmd_fixed_param,
 		       WMITLV_GET_STRUCT_TLVLEN(wmi_vdev_stop_cmd_fixed_param));
-	cmd->vdev_id = params->vdev_id;
-	buf_ptr += sizeof(wmi_vdev_stop_cmd_fixed_param);
-	buf_ptr = vdev_stop_add_mlo_params(buf_ptr, params);
-
+	cmd->vdev_id = vdev_id;
 	wmi_mtrace(WMI_VDEV_STOP_CMDID, cmd->vdev_id, 0);
 	if (wmi_unified_cmd_send(wmi, buf, len, WMI_VDEV_STOP_CMDID)) {
 		wmi_err("Failed to send vdev stop command");
@@ -5939,8 +5931,6 @@ static QDF_STATUS send_probe_rsp_tmpl_send_cmd_tlv(wmi_unified_t wmi_handle,
 		       WMITLV_TAG_STRUC_wmi_prb_tmpl_cmd_fixed_param,
 		       WMITLV_GET_STRUCT_TLVLEN(wmi_prb_tmpl_cmd_fixed_param));
 	cmd->vdev_id = vdev_id;
-	cmd->flags = probe_rsp_info->go_ignore_non_p2p_probe_req;
-
 	cmd->buf_len = tmpl_len;
 	buf_ptr += sizeof(wmi_prb_tmpl_cmd_fixed_param);
 
@@ -19035,12 +19025,6 @@ extract_pasn_peer_create_req_event_tlv(wmi_unified_t wmi_handle, void *evt_buf,
 		dst->peer_info[i].force_self_mac_usage =
 			WMI_RTT_PASN_PEER_CREATE_FORCE_SELF_MAC_USE_GET(
 							buf->control_flag);
-		wmi_debug("Peer[%d]: self_mac:" QDF_MAC_ADDR_FMT " peer_mac:" QDF_MAC_ADDR_FMT "security_mode:0x%x force_self_mac:%d",
-			  i, QDF_MAC_ADDR_REF(dst->peer_info[i].self_mac.bytes),
-			  QDF_MAC_ADDR_REF(dst->peer_info[i].peer_mac.bytes),
-			  security_mode,
-			  dst->peer_info[i].force_self_mac_usage);
-
 		dst->num_peers++;
 		buf++;
 	}
@@ -19631,8 +19615,6 @@ wlan_roam_fail_reason_code(uint16_t wmi_roam_fail_reason)
 		return ROAM_FAIL_REASON_NO_CAND_AP_FOUND_AND_FINAL_BMISS_SENT;
 	case WMI_ROAM_FAIL_REASON_CURR_AP_STILL_OK:
 		return ROAM_FAIL_REASON_CURR_AP_STILL_OK;
-	case WMI_ROAM_FAIL_REASON_SCAN_CANCEL:
-		return ROAM_FAIL_REASON_SCAN_CANCEL;
 	default:
 		return ROAM_FAIL_REASON_UNKNOWN;
 	}
@@ -19808,16 +19790,11 @@ extract_roam_trigger_stats_tlv(wmi_unified_t wmi_handle, void *evt_buf,
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	if (!param_buf->roam_result || idx >= param_buf->num_roam_result) {
+	if (!param_buf->roam_result || idx >= param_buf->num_roam_result)
 		wmi_err("roam_result or idx error.%u", idx);
-		return QDF_STATUS_E_FAILURE;
-	}
 
-	if (!param_buf->roam_scan_info ||
-	    idx >= param_buf->num_roam_scan_info) {
+	if (!param_buf->roam_scan_info || idx >= param_buf->num_roam_scan_info)
 		wmi_err("roam_scan_info or idx error.%u", idx);
-		return QDF_STATUS_E_FAILURE;
-	}
 
 	trig->present = true;
 
@@ -20146,14 +20123,9 @@ extract_roam_scan_ap_stats_tlv(wmi_unified_t wmi_handle, void *evt_buf,
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	/*
-	 * Check to validate that the requested number of APs do not exceed the
-	 * remaining APs in param_buf after ap_idx to prevent out of bounds
-	 * access.
-	 */
-	if ((ap_idx + num_cand) > param_buf->num_roam_ap_info) {
-		wmi_err("Invalid roam scan AP tlv ap_idx:%d, num_cand:%d, total_ap:%d",
-			ap_idx, num_cand, param_buf->num_roam_ap_info);
+	if (ap_idx >= param_buf->num_roam_ap_info) {
+		wmi_err("Invalid roam scan AP tlv ap_idx:%d total_ap:%d",
+			ap_idx, param_buf->num_roam_ap_info);
 		return QDF_STATUS_E_FAILURE;
 	}
 
@@ -20293,7 +20265,6 @@ extract_roam_result_stats_tlv(wmi_unified_t wmi_handle, void *evt_buf,
 	dst->present = true;
 	dst->status = src_data->roam_status;
 	dst->timestamp = src_data->timestamp;
-	dst->roam_abort_reason = src_data->roam_abort_reason;
 	if (src_data->roam_fail_reason != ROAM_SUCCESS)
 		dst->fail_reason =
 			wlan_roam_fail_reason_code(src_data->roam_fail_reason);
@@ -23159,10 +23130,6 @@ static void populate_tlv_service(uint32_t *wmi_service)
 			WMI_SERVICE_MULTIPLE_REORDER_QUEUE_SETUP_SUPPORT;
 	wmi_service[wmi_service_p2p_device_update_mac_addr_support] =
 			WMI_SERVICE_P2P_DEVICE_UPDATE_MAC_ADDR_SUPPORT;
-#ifdef WLAN_CHIPSET_STATS
-	wmi_service[wmi_service_chipset_logging_support] =
-				WMI_SERVICE_CHIPSET_LOGGING_SUPPORT;
-#endif
 }
 
 /**

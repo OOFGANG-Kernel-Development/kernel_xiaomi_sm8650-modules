@@ -1,18 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
-ifeq ($(CONFIG_ARCH_PINEAPPLE), y)
-include $(WLAN_PLATFORM_ROOT)/icnss2/pineapple_gki_defconfig
-endif
-
-ifeq ($(CONFIG_ARCH_SUN), y)
-include $(WLAN_PLATFORM_ROOT)/icnss2/sun_gki_defconfig
-endif
-
-ccflags-y += -Wmissing-prototypes
-
 ifeq ($(CONFIG_CNSS_OUT_OF_TREE),y)
 ccflags-y += -I$(WLAN_PLATFORM_ROOT)/cnss_utils
 ccflags-y += -I$(WLAN_PLATFORM_ROOT)/inc
+ccflags-y += -I$(srctree)/drivers/misc/hwid
 else
 ccflags-y += -I$(srctree)/drivers/net/wireless/cnss_utils/
 endif

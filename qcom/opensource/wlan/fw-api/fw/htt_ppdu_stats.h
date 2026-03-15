@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -27,42 +27,6 @@
 #include <htt.h>
 #include <htt_stats.h>
 #include <htt_common.h> /* HTT_STATS_MAX_CHAINS */
-
-
-/* HTT_PPDU_STATS_VAR_LEN_ARRAY1:
- * This macro is for converting the definition of existing variable-length
- * arrays within HTT PPDU stats structs of the form "type name[1];" to use
- * the form "type name[];" while ensuring that the length of the TLV struct
- * is unmodified by the conversion.
- * In general, any new variable-length structs should simply use
- * "type name[];" directly, rather than using HTT_PPDU_STATS_VAR_LEN_ARRAY1.
- * However, if there's a legitimate reason to make the new variable-length
- * struct appear to not have a variable length, HTT_PPDU_STATS_VAR_LEN_ARRAY1
- * can be used for this purpose.
- */
-#if defined(ATH_TARGET) || defined(__WINDOWS__)
-    #define HTT_PPDU_STATS_VAR_LEN_ARRAY1(type, name) type name[1]
-#else
-    /*
-     * Certain build settings of the Linux kernel don't allow zero-element
-     * arrays, and C++ doesn't allow zero-length empty structs.
-     * Confirm that there's no build that combines kernel with C++.
-     */
-    #ifdef __cplusplus
-        #error unsupported combination of kernel and C plus plus
-    #endif
-    #define HTT_PPDU_STATS_DUMMY_ZERO_LEN_FIELD struct {} dummy_zero_len_field
-
-    #define HTT_PPDU_STATS_VAR_LEN_ARRAY1(type, name) \
-        union { \
-            type name ## __first_elem; \
-            struct { \
-                HTT_PPDU_STATS_DUMMY_ZERO_LEN_FIELD; \
-                type name[]; \
-            };  \
-        }
-#endif
-
 
 #define HTT_STATS_NUM_SUPPORTED_BW_SMART_ANTENNA 4 /* 20, 40, 80, 160 MHz */
 
@@ -334,7 +298,7 @@ typedef struct {
          * The hw portion of this struct contains a scheduler_command_status
          * struct, whose definition is different for different target HW types.
          */
-        HTT_PPDU_STATS_VAR_LEN_ARRAY1(A_UINT32, hw);
+        A_UINT32 hw[1];
     };
 } htt_ppdu_stats_sch_cmd_tlv_v;
 
@@ -707,58 +671,6 @@ typedef enum HTT_PPDU_STATS_SPATIAL_REUSE HTT_PPDU_STATS_SPATIAL_REUSE;
         (((_val) & HTT_PPDU_STATS_COMMON_TRIG_COOKIE_M) >> \
          HTT_PPDU_STATS_COMMON_TRIG_COOKIE_S)
 
-#define HTT_PPDU_STATS_COMMON_TLV_HTT_SEQ_TYPE_M    0x00000001
-#define HTT_PPDU_STATS_COMMON_TLV_HTT_SEQ_TYPE_S             0
-
-#define HTT_PPDU_STATS_COMMON_TLV_HTT_SEQ_TYPE_GET(_var) \
-    (((_var) & HTT_PPDU_STATS_COMMON_TLV_HTT_SEQ_TYPE_M) >> \
-    HTT_PPDU_STATS_COMMON_TLV_HTT_SEQ_TYPE_S)
-
-#define HTT_PPDU_STATS_COMMON_TLV_HTT_SEQ_TYPE_SET(_var, _val) \
-    do { \
-        HTT_CHECK_SET_VAL(HTT_PPDU_STATS_COMMON_TLV_HTT_SEQ_TYPE, _val); \
-        ((_var) |= ((_val) << HTT_PPDU_STATS_COMMON_TLV_HTT_SEQ_TYPE_S)); \
-    } while (0)
-
-#define HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BASIC_TRIGGER_M    0x00000002
-#define HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BASIC_TRIGGER_S             1
-
-#define HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BASIC_TRIGGER_GET(_var) \
-    (((_var) & HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BASIC_TRIGGER_M) >> \
-    HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BASIC_TRIGGER_S)
-
-#define HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BASIC_TRIGGER_SET(_var, _val) \
-    do { \
-        HTT_CHECK_SET_VAL(HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BASIC_TRIGGER, _val); \
-        ((_var) |= ((_val) << HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BASIC_TRIGGER_S)); \
-    } while (0)
-
-#define HTT_PPDU_STATS_COMMON_TLV_IS_MANUAL_ULOFDMA_TRIGGER_M    0x00000004
-#define HTT_PPDU_STATS_COMMON_TLV_IS_MANUAL_ULOFDMA_TRIGGER_S             2
-
-#define HTT_PPDU_STATS_COMMON_TLV_IS_MANUAL_ULOFDMA_TRIGGER_GET(_var) \
-    (((_var) & HTT_PPDU_STATS_COMMON_TLV_IS_MANUAL_ULOFDMA_TRIGGER_M) >> \
-    HTT_PPDU_STATS_COMMON_TLV_IS_MANUAL_ULOFDMA_TRIGGER_S)
-
-#define HTT_PPDU_STATS_COMMON_TLV_IS_MANUAL_ULOFDMA_TRIGGER_SET(_var, _val) \
-    do { \
-        HTT_CHECK_SET_VAL(HTT_PPDU_STATS_COMMON_TLV_IS_MANUAL_ULOFDMA_TRIGGER, _val); \
-        ((_var) |= ((_val) << HTT_PPDU_STATS_COMMON_TLV_IS_MANUAL_ULOFDMA_TRIGGER_S)); \
-    } while (0)
-
-#define HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BSRP_TRIGGER_M    0x00000008
-#define HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BSRP_TRIGGER_S             3
-
-#define HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BSRP_TRIGGER_GET(_var) \
-    (((_var) & HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BSRP_TRIGGER_M) >> \
-    HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BSRP_TRIGGER_S)
-
-#define HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BSRP_TRIGGER_SET(_var, _val) \
-    do { \
-        HTT_CHECK_SET_VAL(HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BSRP_TRIGGER, _val); \
-        ((_var) |= ((_val) << HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BSRP_TRIGGER_S)); \
-    } while (0)
-
 enum HTT_SEQ_TYPE {
     WAL_PPDU_SEQ_TYPE = 0,
     HTT_PPDU_SEQ_TYPE = 1,
@@ -954,28 +866,26 @@ typedef struct {
      *               HTT_PPDU_SEQ_TYPE then decoder should interpret the
      *               seq type as HTT_PPDU_STATS_SEQ_TYPE.
      *               htt_seq_type field will be set to HTT_PPDU_SEQ_TYPE in
-     * BIT [1 : 1] - is_combined_ul_basic_trigger - Flag to indicate if a
-     *               given UL OFDMA/MU-MIMO Basic trigger is sent combined
-     *               as part of existing DL data sequence.
-     * BIT [2 : 2] - is_manual_ulofdma_trigger - Flag to indicate if a
-     *               given UL OFDMA trigger is manually triggered from the Host.
-     * BIT [3 : 3] - is_combined_ul_bsrp_trigger - Flag to indicate if a
-     *               given UL BSRP trigger is sent combined as part of
-     *               an existing DL/UL data sequence
-     * BIT [31: 4] - reserved
+     *               firmware versions where this field is defined.
+     * BIT [31: 1] - reserved
      */
     union {
         A_UINT32 reserved__htt_seq_type;
         struct {
             A_UINT32 htt_seq_type:  1,
-                     is_combined_ul_basic_trigger: 1,
-                     is_manual_ulofdma_trigger: 1,
-                     is_combined_ul_bsrp_trigger: 1,
-                     reserved3:     28;
+                     reserved3:     31;
         };
     };
-    /* Flag to indicate if the channel chosen is 320_1 / 320_2 */
-    A_UINT32 chan_type_320mhz;
+    /* is_manual_ulofdma_trigger:
+     * Flag to indicate if a given UL OFDMA trigger is manually triggered
+     * from the Host
+     */
+    A_UINT32 is_manual_ulofdma_trigger;
+    /* is_combined_ul_bsrp_trigger:
+     * Flag to indicate if a given UL BSRP trigger is sent combined as
+     * part of existing DL/UL data sequence
+     */
+    A_UINT32 is_combined_ul_bsrp_trigger;
 } htt_ppdu_stats_common_tlv;
 
 #define HTT_PPDU_STATS_USER_COMMON_TLV_TID_NUM_M     0x000000ff
@@ -1940,32 +1850,6 @@ typedef enum HTT_PPDU_STATS_RESP_PPDU_TYPE HTT_PPDU_STATS_RESP_PPDU_TYPE;
         ((_var) |= ((_val) << HTT_PPDU_STATS_USER_RATE_TLV_IS_MIN_RATE_S)); \
     } while (0)
 
-#define HTT_PPDU_STATS_USER_RATE_TLV_2xLDPC_M  0x00040000
-#define HTT_PPDU_STATS_USER_RATE_TLV_2xLDPC_S          18
-
-#define HTT_PPDU_STATS_USER_RATE_TLV_2xLDPC_GET(_var) \
-    (((_var) & HTT_PPDU_STATS_USER_RATE_TLV_2xLDPC_M) >> \
-    HTT_PPDU_STATS_USER_RATE_TLV_2xLDPC_S)
-
-#define HTT_PPDU_STATS_USER_RATE_TLV_2xLDPC_SET (_var , _val) \
-    do { \
-        HTT_CHECK_SET_VAL(HTT_PPDU_STATS_USER_RATE_TLV_2XLDPC, _val); \
-        ((_var) |= ((_val) << HTT_PPDU_STATS_USER_RATE_TLV_2xLDPC_S)); \
-    } while (0)
-
-#define HTT_PPDU_STATS_USER_RATE_TLV_IS_NPCA_ENABLED_M  0x00080000
-#define HTT_PPDU_STATS_USER_RATE_TLV_IS_NPCA_ENABLED_S          19
-
-#define HTT_PPDU_STATS_USER_RATE_TLV_IS_NPCA_ENABLED_GET(_var) \
-    (((_var) & HTT_PPDU_STATS_USER_RATE_TLV_IS_NPCA_ENABLED_M) >> \
-    HTT_PPDU_STATS_USER_RATE_TLV_IS_NPCA_ENABLED_S)
-
-#define HTT_PPDU_STATS_USER_RATE_TLV_IS_NPCA_ENABLED_SET (_var , _val) \
-    do { \
-        HTT_CHECK_SET_VAL(HTT_PPDU_STATS_USER_RATE_TLV_IS_NPCA_ENABLED, _val); \
-        ((_var) |= ((_val) << HTT_PPDU_STATS_USER_RATE_TLV_IS_NPCA_ENABLED_S)); \
-    } while (0)
-
 typedef enum HTT_PPDU_STATS_RU_SIZE {
     HTT_PPDU_STATS_RU_26,
     HTT_PPDU_STATS_RU_52,
@@ -2153,16 +2037,11 @@ typedef struct {
      *                punctured.
      * BIT 16      :- flag showing whether EHT extra LTF is applied
      *                for current PPDU
-     * BIT 17      :- flag to show is_min_rate
-     * BIT 18      :- flag showing whether PPDU is transmitted with 2xLDPC
-     * BIT 19      :- flag showing whether PPDU is transmitted with NPCA enabled
      */
     A_UINT32 punc_pattern_bitmap: 16,
-             extra_eht_ltf:        1,
-             is_min_rate:          1,
-             is_2xldpc:            1,
-             is_npca_enabled:      1,
-             reserved4:           12;
+             extra_eht_ltf:       1,
+             is_min_rate:         1,
+             reserved4:           14;
 } htt_ppdu_stats_user_rate_tlv;
 
 #define HTT_PPDU_STATS_USR_RATE_VALID_M     0x80000000
@@ -3009,7 +2888,7 @@ typedef struct {
      * (in bytes) can be derived from the length in tlv parameters,
      * minus the 12 bytes of the above fields.
      */
-    HTT_PPDU_STATS_VAR_LEN_ARRAY1(A_UINT32, payload);
+    A_UINT32 payload[1];
 } htt_ppdu_stats_tx_mgmtctrl_payload_tlv;
 
 #define HTT_PPDU_STATS_RX_MGMTCTRL_TLV_FRAME_LENGTH_M     0x0000ffff
@@ -3051,7 +2930,7 @@ typedef struct {
      * (in bytes) can be derived from the length in tlv parameters,
      * minus the 12 bytes of the above fields.
      */
-    HTT_PPDU_STATS_VAR_LEN_ARRAY1(A_UINT32, payload);
+    A_UINT32 payload[1];
 } htt_ppdu_stats_rx_mgmtctrl_payload_tlv;
 
 #define HTT_PPDU_STATS_USERS_INFO_TLV_MAX_USERS_M   0x000000ff
@@ -3118,7 +2997,7 @@ typedef struct {
              win_size   : 8,
              reserved2  : 3;
     /* The number of elements in the ba_bitmap array depends on win_size. */
-    HTT_PPDU_STATS_VAR_LEN_ARRAY1(A_UINT32, ba_bitmap);
+    A_UINT32 ba_bitmap[1];
 } htt_ppdu_stats_for_smu_tlv;
 
 typedef struct {

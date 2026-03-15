@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -4568,7 +4568,8 @@ void policy_mgr_check_scc_channel(struct wlan_objmgr_psoc *psoc,
 	}
 
 	/* Always do force SCC on non-DBS platforms */
-	if (!policy_mgr_is_hw_dbs_capable(psoc))
+	if (!policy_mgr_is_hw_dbs_capable(psoc) &&
+	    cc_mode !=  QDF_MCC_TO_SCC_WITH_PREFERRED_BAND)
 		return;
 
 	sta_count = policy_mgr_mode_specific_connection_count(psoc, PM_STA_MODE,
@@ -4633,12 +4634,30 @@ void policy_mgr_check_scc_channel(struct wlan_objmgr_psoc *psoc,
 	qdf_mutex_release(&pm_ctx->qdf_conc_list_lock);
 }
 
-void policy_mgr_nss_update_cb(struct wlan_objmgr_psoc *psoc,
-			      uint8_t tx_status,
-			      uint8_t vdev_id,
-			      uint8_t next_action,
-			      enum policy_mgr_conn_update_reason reason,
-			      uint32_t original_vdev_id, uint32_t request_id)
+/**
+ * policy_mgr_nss_update_cb() - callback from SME confirming nss
+ * update
+ * @psoc: psoc handle
+ * @tx_status: tx completion status for updated beacon with new
+ *		nss value
+ * @vdev_id: vdev id for the specific connection
+ * @next_action: next action to happen at policy mgr after
+ *		beacon update
+ * @reason: Reason for nss update
+ * @original_vdev_id: original request hwmode change vdev id
+ * @request_id: request ID
+ *
+ * This function is the callback registered with SME at nss
+ * update request time
+ *
+ * Return: None
+ */
+static void policy_mgr_nss_update_cb(struct wlan_objmgr_psoc *psoc,
+		uint8_t tx_status,
+		uint8_t vdev_id,
+		uint8_t next_action,
+		enum policy_mgr_conn_update_reason reason,
+		uint32_t original_vdev_id, uint32_t request_id)
 {
 	uint32_t conn_index = 0;
 	QDF_STATUS ret;
@@ -4699,9 +4718,9 @@ policy_mgr_sap_ch_width_update(struct wlan_objmgr_psoc *psoc,
 {
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	struct policy_mgr_psoc_priv_obj *pm_ctx;
-	uint8_t sap_vdev_id[MAX_NUMBER_OF_CONC_CONNECTIONS];
+	uint32_t freq;
+	uint8_t sap_vdev_id;
 	enum phy_ch_width target_bw;
-	uint32_t sap_cnt;
 
 	pm_ctx = policy_mgr_get_context(psoc);
 	if (!pm_ctx) {
@@ -4711,27 +4730,22 @@ policy_mgr_sap_ch_width_update(struct wlan_objmgr_psoc *psoc,
 
 	policy_mgr_debug("action: %d reason: %d", next_action, reason);
 
-	sap_cnt = policy_mgr_get_mode_specific_conn_info(psoc, NULL,
-							 sap_vdev_id,
-							 PM_SAP_MODE);
-	if (!sap_cnt) {
-		policy_mgr_err("sap count is 0!");
-		return status;
-	}
-
+	policy_mgr_get_mode_specific_conn_info(psoc, &freq,
+					       &sap_vdev_id,
+					       PM_SAP_MODE);
 	if (next_action == PM_DOWNGRADE_BW)
 		target_bw = CH_WIDTH_160MHZ;
 	else
 		target_bw = CH_WIDTH_320MHZ;
 
 	status = pm_ctx->sme_cbacks.sme_sap_update_ch_width(psoc,
-							    sap_vdev_id[0],
+							    sap_vdev_id,
 							    target_bw, reason,
 							    conc_vdev_id,
 							    request_id);
 	if (QDF_IS_STATUS_ERROR(status))
 		policy_mgr_err("vdev %d failed to set BW to %d",
-			       sap_vdev_id[0], target_bw);
+			       sap_vdev_id, target_bw);
 
 	return status;
 }

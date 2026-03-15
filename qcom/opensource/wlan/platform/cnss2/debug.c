@@ -73,15 +73,6 @@ static const struct file_operations cnss_pin_connect_fops = {
 	.llseek		= seq_lseek,
 };
 
-static u64 cnss_get_serial_id(struct cnss_plat_data *plat_priv)
-{
-	u32 msb = plat_priv->serial_id.serial_id_msb;
-	u32 lsb = plat_priv->serial_id.serial_id_lsb;
-
-	msb &= 0xFFFF;
-	return (((u64)msb << 32) | lsb);
-}
-
 static int cnss_stats_show_state(struct seq_file *s,
 				 struct cnss_plat_data *plat_priv)
 {
@@ -89,8 +80,6 @@ static int cnss_stats_show_state(struct seq_file *s,
 	int skip = 0;
 	unsigned long state;
 
-	seq_printf(s, "\nSerial Number: 0x%llx",
-		   cnss_get_serial_id(plat_priv));
 	seq_printf(s, "\nState: 0x%lx(", plat_priv->driver_state);
 	for (i = 0, state = plat_priv->driver_state; state != 0;
 	     state >>= 1, i++) {
@@ -337,10 +326,6 @@ static int cnss_dev_boot_debug_show(struct seq_file *s, void *data)
 	seq_puts(s, "\npdc_update usage:");
 	seq_puts(s, "1. echo pdc_update {class: wlan_pdc ss: <pdc_ss>, res: <vreg>.<mode>, <seq>: <val>} > <debugfs_path>/cnss/dev_boot\n");
 	seq_puts(s, "2. echo pdc_update {class: wlan_pdc ss: <pdc_ss>, res: pdc, enable: <val>} > <debugfs_path>/cnss/dev_boot\n");
-	seq_puts(s, "assert_host_sol: Assert host sol\n");
-	seq_puts(s, "deassert_host_sol: Deassert host sol\n");
-	seq_puts(s, "dev_check: Check whether HW is disabled or not\n");
-	seq_puts(s, "dev_enable: Enable HW\n");
 
 	return 0;
 }
@@ -1001,7 +986,7 @@ static const struct file_operations cnss_smmu_fault_timestamp_fops = {
 	.llseek = seq_lseek,
 };
 
-#if defined(CONFIG_DEBUG_FS) && !defined(CONFIG_DEBUG_FS_ALLOW_NONE)
+#ifdef CONFIG_DEBUG_FS
 #ifdef CONFIG_CNSS2_DEBUG
 static int cnss_create_debug_only_node(struct cnss_plat_data *plat_priv)
 {

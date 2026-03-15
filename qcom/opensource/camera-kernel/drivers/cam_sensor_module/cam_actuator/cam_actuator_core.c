@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -517,7 +517,6 @@ int32_t cam_actuator_i2c_pkt_parse(struct cam_actuator_ctrl_t *a_ctrl,
 	struct common_header      *cmm_hdr = NULL;
 	struct cam_control        *ioctl_ctrl = NULL;
 	struct cam_packet         *csl_packet = NULL;
-	struct cam_packet         *csl_packet_u = NULL;
 	struct cam_config_dev_cmd config;
 	struct i2c_data_settings  *i2c_data = NULL;
 	struct i2c_settings_array *i2c_reg_settings = NULL;
@@ -558,15 +557,17 @@ int32_t cam_actuator_i2c_pkt_parse(struct cam_actuator_ctrl_t *a_ctrl,
 			"Inval cam_packet strut size: %zu, len_of_buff: %zu",
 			 sizeof(struct cam_packet), len_of_buff);
 		rc = -EINVAL;
-		goto put_buf;
+		goto end;
 	}
 
 	remain_len -= (size_t)config.offset;
-	csl_packet_u = (struct cam_packet *)
-		(generic_pkt_ptr + (uint32_t)config.offset);
-	rc = cam_packet_util_copy_pkt_to_kmd(csl_packet_u, &csl_packet, remain_len);
-	if (rc) {
-		CAM_ERR(CAM_ACTUATOR, "Copying packet to KMD failed");
+	csl_packet = (struct cam_packet *)
+			(generic_pkt_ptr + (uint32_t)config.offset);
+
+	if (cam_packet_util_validate_packet(csl_packet,
+		remain_len)) {
+		CAM_ERR(CAM_ACTUATOR, "Invalid packet params");
+		rc = -EINVAL;
 		goto end;
 	}
 
@@ -971,8 +972,6 @@ int32_t cam_actuator_i2c_pkt_parse(struct cam_actuator_ctrl_t *a_ctrl,
 	}
 
 end:
-	cam_common_mem_free(csl_packet);
-put_buf:
 	cam_mem_put_cpu_buf(config.packet_handle);
 	return rc;
 }
@@ -1122,6 +1121,8 @@ int32_t cam_actuator_driver_cmd(struct cam_actuator_ctrl_t *a_ctrl,
 			goto release_mutex;
 		}
 
+		cam_cci_clear_init_fail(&a_ctrl->cci_err_info);
+		cam_cci_reset_io_fail_count(&a_ctrl->cci_err_info);
 		a_ctrl->cam_act_state = CAM_ACTUATOR_ACQUIRE;
 	}
 		break;
@@ -1266,14 +1267,18 @@ int32_t cam_actuator_driver_cmd(struct cam_actuator_ctrl_t *a_ctrl,
 				CAM_WARN(CAM_ACTUATOR,
 					"CCI HW is in resetting mode:: Reapplying Init settings");
 				usleep_range(1000, 1010);
+				cam_cci_reset_io_fail_count(&a_ctrl->cci_err_info);
 				rc = cam_actuator_apply_settings(a_ctrl,
 					&a_ctrl->i2c_data.init_settings);
 			}
 
-			if (rc < 0)
+			if (rc < 0) {
+				cam_cci_set_init_fail(&a_ctrl->cci_err_info);
 				CAM_ERR(CAM_ACTUATOR,
 					"Failed to apply Init settings: rc = %d",
 					rc);
+			}
+
 			/* Delete the request even if the apply is failed */
 			rc = delete_request(&a_ctrl->i2c_data.init_settings);
 			if (rc < 0) {
@@ -1281,6 +1286,14 @@ int32_t cam_actuator_driver_cmd(struct cam_actuator_ctrl_t *a_ctrl,
 					"Failed in Deleting the Init Pkt: %d",
 					rc);
 				goto release_mutex;
+			}
+
+			if (true == cam_check_cci_is_error(&a_ctrl->cci_err_info)) {
+				cam_cci_set_init_fail(&a_ctrl->cci_err_info);
+				rc = - ENODEV;
+				CAM_ERR(CAM_ACTUATOR,
+					"Device is damaged! rc: %d",
+					rc);
 			}
 		}
 	}

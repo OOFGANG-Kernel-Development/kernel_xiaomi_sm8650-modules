@@ -108,6 +108,26 @@ QDF_STATUS dp_tx_hw_enqueue_be(struct dp_soc *soc, struct dp_vdev *vdev,
 				struct cdp_tx_exception_metadata *metadata,
 				struct dp_tx_msdu_info_s *msdu_info);
 
+
+#ifdef WLAN_FEATURE_OSRTP
+/**
+ * dp_tx_hw_enqueue_osrtp_be() - Enqueue to TCL HW for transmit osrtp for BE target
+ * @soc: DP Soc Handle
+ * @vdev: DP vdev handle
+ * @tx_desc: Tx Descriptor Handle
+ * @fw_metadata: Metadata to send to Target Firmware along with frame
+ * @msdu_info: msdu_info containing information about TX buffer
+ *
+ *  Gets the next free TCL HW DMA descriptor and sets up required parameters
+ *  from software Tx descriptor
+ *
+ * Return: QDF_STATUS_SUCCESS: success
+ *         QDF_STATUS_E_RESOURCES: Error return
+ */
+QDF_STATUS dp_tx_hw_enqueue_osrtp_be(struct dp_soc *soc, struct dp_vdev *vdev,
+		    struct dp_tx_desc_s *tx_desc, uint16_t fw_metadata, struct dp_tx_msdu_info_s *msdu_info);
+#endif
+
 #ifdef QCA_DP_TX_NBUF_LIST_FREE
 /**
  * dp_tx_fast_send_be() - Transmit a frame on a given VAP

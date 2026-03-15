@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -22,7 +22,7 @@
 #include "cam_cpas_api.h"
 
 static struct cam_req_mgr_core_device *g_crm_core_dev;
-static struct cam_req_mgr_core_link g_links[MAXIMUM_LINKS_CAPACITY];
+static struct cam_req_mgr_core_link g_links[MAXIMUM_LINKS_PER_SESSION];
 
 static void __cam_req_mgr_reset_apply_data(struct cam_req_mgr_core_link *link)
 {
@@ -2437,8 +2437,7 @@ static int __cam_req_mgr_process_req(struct cam_req_mgr_core_link *link,
 			tbl_slot = &dev->pd_tbl->slot[idx];
 
 			if ((apply_data[pd].req_id != -1) &&
-				!(tbl_slot->req_apply_map & BIT(dev->dev_bit)) &&
-				(dev->is_active)) {
+				(tbl_slot->req_apply_map != dev->pd_tbl->dev_mask)) {
 				is_applied = false;
 				break;
 			}
@@ -2805,6 +2804,7 @@ static int __cam_req_mgr_disconnect_link(struct cam_req_mgr_core_link *link)
 	for (i = 0; i < link->num_devs; i++) {
 		dev = &link->l_dev[i];
 		link_data.dev_hdl = dev->dev_hdl;
+		CAM_INFO(CAM_CRM, "link %p ops %p, link_setup %p link_hdl 0x%x name %s", link, dev->ops, dev->ops->link_setup, link->link_hdl, dev->dev_info.name);
 		if (dev->ops && dev->ops->link_setup) {
 			rc = dev->ops->link_setup(&link_data);
 			if (rc)
@@ -2866,7 +2866,7 @@ static struct cam_req_mgr_core_link *__cam_req_mgr_reserve_link(
 			session->num_links, MAXIMUM_LINKS_PER_SESSION);
 		return NULL;
 	}
-	for (i = 0; i < MAXIMUM_LINKS_CAPACITY; i++) {
+	for (i = 0; i < MAXIMUM_LINKS_PER_SESSION; i++) {
 		if (!atomic_cmpxchg(&g_links[i].is_used, 0, 1)) {
 			link = &g_links[i];
 			CAM_DBG(CAM_CRM, "alloc link index %d", i);
@@ -2874,7 +2874,7 @@ static struct cam_req_mgr_core_link *__cam_req_mgr_reserve_link(
 			break;
 		}
 	}
-	if (i == MAXIMUM_LINKS_CAPACITY)
+	if (i == MAXIMUM_LINKS_PER_SESSION)
 		return NULL;
 
 	in_q = kzalloc(sizeof(struct cam_req_mgr_req_queue),
@@ -3701,9 +3701,7 @@ int cam_req_mgr_process_error(void *priv, void *data)
 			/* Bring processing pointer to bubbled req id */
 			__cam_req_mgr_tbl_set_all_skip_cnt(&link->req.l_tbl);
 			in_q->rd_idx = idx;
-			/* Increment bubble counter only for bubble errors */
-			if (err_info->error == CRM_KMD_ERR_BUBBLE)
-				in_q->slot[idx].bubble_times++;
+			in_q->slot[idx].bubble_times++;
 			in_q->slot[idx].status = CRM_SLOT_STATUS_REQ_ADDED;
 
 			/* Reset request apply map for all pd tables */
@@ -3970,6 +3968,7 @@ static int cam_req_mgr_process_trigger(void *priv, void *data)
 		 */
 		CAM_DBG(CAM_CRM, "link[%x] Req[%lld] invalidating slot",
 			link->link_hdl, in_q->slot[in_q->rd_idx].req_id);
+
 		rc = __cam_req_mgr_move_to_next_req_slot(link);
 		if (rc) {
 			CAM_DBG(CAM_REQ,
@@ -4631,7 +4630,7 @@ static int __cam_req_mgr_setup_link_info(struct cam_req_mgr_core_link *link,
 			link_data.trigger_id = num_trigger_devices;
 			num_trigger_devices++;
 		}
-
+		CAM_INFO(CAM_CRM, "link %p ops %p, link_setup %p link_hdl 0x%x name %s",link, dev->ops, dev->ops->link_setup, link->link_hdl, dev->dev_info.name);
 		/* Communicate with dev to establish the link */
 		dev->ops->link_setup(&link_data);
 
@@ -5228,7 +5227,7 @@ int cam_req_mgr_schedule_request_v2(
 	}
 
 	if (sched_req->sync_mode == CAM_REQ_MGR_SYNC_MODE_SYNC) {
-		if ((sched_req->num_links <= 0) ||
+		if ((sched_req->num_links <= 0) &&
 			(sched_req->num_links > MAXIMUM_LINKS_PER_SESSION)) {
 			CAM_ERR(CAM_CRM, "link:0x%x req:%lld invalid num_links:%d",
 				link->link_hdl, sched_req->req_id, sched_req->num_links);
@@ -5871,7 +5870,7 @@ static unsigned long cam_req_mgr_core_mini_dump_cb(void *dst, unsigned long len,
 	dumped_len += sizeof(*md);
 	remain_len -= dumped_len;
 
-	for (i = 0; i < MAXIMUM_LINKS_CAPACITY; i++) {
+	for (i = 0; i < MAXIMUM_LINKS_PER_SESSION; i++) {
 		if (remain_len < sizeof(*md_link)) {
 			CAM_ERR(CAM_CRM,
 			"Insufficent received length: %lu, dumped_len %lu",
@@ -5964,7 +5963,7 @@ int cam_req_mgr_core_device_init(void)
 	mutex_init(&g_crm_core_dev->crm_lock);
 	cam_req_mgr_debug_register(g_crm_core_dev);
 
-	for (i = 0; i < MAXIMUM_LINKS_CAPACITY; i++) {
+	for (i = 0; i < MAXIMUM_LINKS_PER_SESSION; i++) {
 		mutex_init(&g_links[i].lock);
 		spin_lock_init(&g_links[i].link_state_spin_lock);
 		spin_lock_init(&g_links[i].req.monitor_slock);

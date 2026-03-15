@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #ifndef _ICNSS_WLAN_H_
 #define _ICNSS_WLAN_H_
@@ -13,7 +13,6 @@
 #define IWCN_MAX_IRQ_REGISTRATIONS    32
 #define ICNSS_MAX_TIMESTAMP_LEN        32
 #define ICNSS_WLFW_MAX_BUILD_ID_LEN    128
-#define ICNSS_MAX_DEV_MEM_NUM            4
 
 #define DEVICE_NAME_MAX		10
 enum icnss_uevent {
@@ -39,11 +38,6 @@ struct icnss_uevent_fw_down_data {
 struct icnss_uevent_data {
 	enum icnss_uevent uevent;
 	void *data;
-};
-
-struct icnss_dev_mem_info {
-	u64 start;
-	u64 size;
 };
 
 /* Device information like supported device ids, etc*/
@@ -109,13 +103,6 @@ struct icnss_rri_over_ddr_cfg {
 	u32 base_addr_low;
 	u32 base_addr_high;
 };
-
-struct icnss_ce_cmn_register_config {
-	u32 offset_addr;
-	u32 reg_mask;
-	u32 reg_value;
-};
-
 /* CE configuration to target */
 struct icnss_wlan_enable_cfg {
 	u32 num_ce_tgt_cfg;
@@ -130,8 +117,6 @@ struct icnss_wlan_enable_cfg {
 	struct icnss_shadow_reg_v3_cfg *shadow_reg_v3_cfg;
 	bool rri_over_ddr_cfg_valid;
 	struct icnss_rri_over_ddr_cfg rri_over_ddr_cfg;
-	u32 num_ce_cmn_reg_config;
-	struct icnss_ce_cmn_register_config *ce_cmn_reg_cfg;
 };
 
 /* driver modes */
@@ -167,10 +152,6 @@ enum icnss_phy_qam_cap {
 	ICNSS_PHY_QAM_CAP_MAX_VAL,
 };
 
-enum icnss_fw_caps {
-	ICNSS_FW_CAP_CE_CMN_CFG_SUPPORT
-};
-
 struct icnss_soc_info {
 	void __iomem *v_addr;
 	phys_addr_t p_addr;
@@ -184,7 +165,6 @@ struct icnss_soc_info {
 	enum icnss_rd_card_chain_cap rd_card_chain_cap;
 	enum icnss_phy_he_channel_width_cap phy_he_channel_width_cap;
 	enum icnss_phy_qam_cap phy_qam_cap;
-	struct icnss_dev_mem_info dev_mem_info[ICNSS_MAX_DEV_MEM_NUM];
 };
 
 #define icnss_register_driver(ops)		\
@@ -202,7 +182,6 @@ extern int icnss_wlan_disable(struct device *dev, enum icnss_driver_mode mode);
 extern void icnss_enable_irq(struct device *dev, unsigned int ce_id);
 extern void icnss_disable_irq(struct device *dev, unsigned int ce_id);
 extern int icnss_get_soc_info(struct device *dev, struct icnss_soc_info *info);
-extern int icnss_request_bus_bandwidth(struct device *dev, int bandwidth);
 extern int icnss_ce_free_irq(struct device *dev, unsigned int ce_id, void *ctx);
 extern int icnss_ce_request_irq(struct device *dev, unsigned int ce_id,
 	irqreturn_t (*handler)(int, void *),
@@ -260,9 +239,4 @@ extern void icnss_allow_l1(struct device *dev);
 extern int icnss_get_mhi_state(struct device *dev);
 extern int icnss_is_pci_ep_awake(struct device *dev);
 extern unsigned long icnss_get_device_config(void);
-extern int icnss_register_driver_async_data_cb(struct device *dev, void *cb_ctx,
-					       int (*cb)(void *ctx,
-					       uint16_t type, void *event,
-					       int event_len));
-extern bool icnss_get_fw_cap(struct device *dev, enum icnss_fw_caps fw_cap);
 #endif /* _ICNSS_WLAN_H_ */

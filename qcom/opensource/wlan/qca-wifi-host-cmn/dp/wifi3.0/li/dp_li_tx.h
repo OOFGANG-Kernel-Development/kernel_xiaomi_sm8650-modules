@@ -41,6 +41,27 @@ dp_tx_hw_enqueue_li(struct dp_soc *soc, struct dp_vdev *vdev,
 		    struct dp_tx_desc_s *tx_desc, uint16_t fw_metadata,
 		    struct cdp_tx_exception_metadata *tx_exc_metadata,
 		    struct dp_tx_msdu_info_s *msdu_info);
+
+#ifdef WLAN_FEATURE_OSRTP
+/**
+ * dp_tx_hw_enqueue_li() - Enqueue to TCL HW for transmit osrtp frame
+ * @soc: DP Soc Handle
+ * @vdev: DP vdev handle
+ * @tx_desc: Tx Descriptor Handle
+ * @fw_metadata: Metadata to send to Target Firmware along with frame
+ * @msdu_info: MSDU information
+ *
+ *  Gets the next free TCL HW DMA descriptor and sets up required parameters
+ *  from software Tx descriptor
+ *
+ * Return: QDF_STATUS_SUCCESS: success
+ *         QDF_STATUS_E_RESOURCES: Error return
+ */
+QDF_STATUS dp_tx_hw_enqueue_osrtp_li(struct dp_soc *soc, struct dp_vdev *vdev,
+		    struct dp_tx_desc_s *tx_desc, uint16_t fw_metadata,
+		    struct dp_tx_msdu_info_s *msdu_info);
+#endif
+
 /**
  * dp_tx_comp_get_params_from_hal_desc_li() - Get TX desc from HAL comp desc
  * @soc: DP soc handle

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -89,12 +89,6 @@ struct sAvoidChannelIE {
 	uint8_t channel;
 };
 #endif /* FEATURE_AP_MCC_CH_AVOIDANCE */
-
-/*
- * Host driver uses TBTT info of length 13
- * in the RNR IE for legacy SAPs.
- */
-#define CURRENT_RNR_TBTT_INFO_LEN 13
 
 typedef struct sSirCountryInformation {
 	uint8_t countryString[COUNTRY_STRING_LENGTH];
@@ -1213,7 +1207,7 @@ populate_dot11f_vht_operation(struct mac_context *mac,
 
 QDF_STATUS
 populate_dot11f_ext_cap(struct mac_context *mac, bool isVHTEnabled,
-			tDot11fIEExtCap *pDot11f, uint8_t vdev_id);
+			tDot11fIEExtCap *pDot11f, struct pe_session *pe_session);
 
 void populate_dot11f_qcn_ie(struct mac_context *mac,
 			    struct pe_session *pe_session,
@@ -1323,7 +1317,7 @@ QDF_STATUS
 populate_dot11f_he_caps_by_band(struct mac_context *mac_ctx,
 				bool is_2g,
 				tDot11fIEhe_cap *he_cap,
-				uint8_t vdev_id);
+				struct pe_session *session);
 
 /**
  * populate_dot11f_he_operation() - populate he operation IE
@@ -1385,7 +1379,7 @@ static inline QDF_STATUS populate_dot11f_he_caps(struct mac_context *mac_ctx,
 static inline QDF_STATUS
 populate_dot11f_he_caps_by_band(struct mac_context *mac_ctx,
 				bool is_2g,
-				tDot11fIEhe_cap *he_cap, uint8_t vdev_id)
+				tDot11fIEhe_cap *he_cap)
 {
 	return QDF_STATUS_SUCCESS;
 }
@@ -1433,12 +1427,12 @@ static inline QDF_STATUS populate_dot11f_sr_info(
  * Return: QDF_STATUS Success or Failure
  */
 QDF_STATUS populate_dot11f_twt_extended_caps(struct mac_context *mac_ctx,
-					     uint8_t vdev_id,
+					     struct pe_session *pe_session,
 					     tDot11fIEExtCap *dot11f);
 #else
 static inline
 QDF_STATUS populate_dot11f_twt_extended_caps(struct mac_context *mac_ctx,
-					     uint8_t vdev_id,
+					     struct pe_session *pe_session,
 					     tDot11fIEExtCap *dot11f)
 {
 	return QDF_STATUS_SUCCESS;
@@ -1606,7 +1600,6 @@ void lim_ieee80211_pack_ehtcap(uint8_t *ie, tDot11fIEeht_cap dot11f_eht_cap,
  * @dot11f_eht_cap: output pointer to dot11f EHT capabilities IE structure
  * @dot11f_he_cap: dot11f HE capabilities IE structure
  * @freq: frequency
- * @is_eht_cap_from_sta: Is the IE received from non-AP STA device.
  *
  * This API is used to strip and decode EHT caps IE which is of variable in
  * length depending on the HE capabilities IE content.
@@ -1616,8 +1609,7 @@ void lim_ieee80211_pack_ehtcap(uint8_t *ie, tDot11fIEeht_cap dot11f_eht_cap,
 QDF_STATUS lim_strip_and_decode_eht_cap(uint8_t *ie, uint16_t ie_len,
 					tDot11fIEeht_cap *dot11f_eht_cap,
 					tDot11fIEhe_cap dot11f_he_cap,
-					uint16_t freq,
-					bool is_eht_cap_from_sta);
+					uint16_t freq);
 
 /**
  * lim_ieee80211_pack_ehtop() - Pack EHT Operations IE
@@ -1656,22 +1648,7 @@ QDF_STATUS lim_strip_and_decode_eht_op(uint8_t *ie, uint16_t ie_len,
 				       tDot11fIEVHTOperation dot11f_vht_op,
 				       tDot11fIEhe_op dot11f_he_op,
 				       tDot11fIEHTInfo dot11f_ht_info);
-/**
- * lim_strip_and_decode_tpe_ie(): API to decode TPE IE
- * @ie: pointer to IE
- * @ie_len: length of IE
- * @transmit_power_env: pointer to dot11f TPE IE structure
- * @num_transmit_power_env: number of TPE IE
- *
- * This API is used to strip and decode TPE IE which is of variable length
- * depending on the bandwidth.
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS
-lim_strip_and_decode_tpe_ie(uint8_t *ie, uint16_t ie_len,
-			    tDot11fIEtransmit_power_env *transmit_power_env,
-			    uint16_t *num_transmit_power_env);
+
 #else
 static inline QDF_STATUS
 populate_dot11f_eht_caps(struct mac_context *mac_ctx,
@@ -1716,8 +1693,7 @@ static inline
 QDF_STATUS lim_strip_and_decode_eht_cap(uint8_t *ie, uint16_t ie_len,
 					tDot11fIEeht_cap *dot11f_eht_cap,
 					tDot11fIEhe_cap dot11f_he_cap,
-					uint16_t freq,
-					bool is_eht_cap_from_sta)
+					uint16_t freq)
 {
 	return QDF_STATUS_SUCCESS;
 }
@@ -1736,14 +1712,6 @@ QDF_STATUS lim_strip_and_decode_eht_op(uint8_t *ie, uint16_t ie_len,
 				       tDot11fIEVHTOperation dot11f_vht_op,
 				       tDot11fIEhe_op dot11f_he_op,
 				       tDot11fIEHTInfo dot11f_ht_info)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline QDF_STATUS
-lim_strip_and_decode_tpe_ie(uint8_t *ie, uint16_t ie_len,
-			    tDot11fIEtransmit_power_env *transmit_power_env,
-			    uint16_t *num_transmit_power_env)
 {
 	return QDF_STATUS_SUCCESS;
 }
@@ -1913,21 +1881,18 @@ void populate_dot11f_6g_rnr(struct mac_context *mac_ctx,
 			    tDot11fIEreduced_neighbor_report *dot11f);
 
 /**
- * populate_dot11f_rnr_tbtt_info() - populate rnr for the tbtt_len specified
+ * populate_dot11f_rnr_tbtt_info_7() - populate rnr with tbtt_info length 7
  * @mac_ctx: pointer to mac_context
  * @pe_session: pe session
  * @rnr_session: session to populate in rnr ie
  * @dot11f: tDot11fIEreduced_neighbor_report to be filled
- * @tbtt_len: length of the TBTT params
  *
- * Return: QDF STATUS
+ * Return: none
  */
-QDF_STATUS
-populate_dot11f_rnr_tbtt_info(struct mac_context *mac_ctx,
-			      struct pe_session *pe_session,
-			      struct pe_session *rnr_session,
-			      tDot11fIEreduced_neighbor_report *dot11f,
-			      uint8_t tbtt_len);
+void populate_dot11f_rnr_tbtt_info_7(struct mac_context *mac_ctx,
+				     struct pe_session *pe_session,
+				     struct pe_session *rnr_session,
+				     tDot11fIEreduced_neighbor_report *dot11f);
 
 /**
  * populate_dot11f_edca_pifs_param_set() - populate edca/pifs param ie

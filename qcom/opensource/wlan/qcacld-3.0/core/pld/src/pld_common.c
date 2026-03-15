@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -881,21 +881,6 @@ bool pld_is_direct_link_supported(struct device *dev)
 	case PLD_BUS_TYPE_SNOC:
 	case PLD_BUS_TYPE_IPCI:
 	case PLD_BUS_TYPE_SDIO:
-	default:
-		break;
-	}
-
-	return ret;
-}
-
-bool pld_ce_cmn_cfg_supported(struct device *dev)
-{
-	bool ret = false;
-
-	switch (pld_get_bus_type(dev)) {
-	case PLD_BUS_TYPE_IPCI:
-		ret = pld_ipci_ce_cmn_cfg_supported(dev);
-		break;
 	default:
 		break;
 	}
@@ -2332,27 +2317,6 @@ int pld_qmi_send(struct device *dev, int type, void *cmd,
 		return -EINVAL;
 	case PLD_BUS_TYPE_IPCI:
 		return pld_ipci_qmi_send(dev, type, cmd, cmd_len, cb_ctx, cb);
-	default:
-		pr_err("Invalid device type %d\n", bus_type);
-		return -EINVAL;
-	}
-}
-
-int pld_qmi_indication(struct device *dev, void *cb_ctx,
-		       int (*cb)(void *ctx, uint16_t type,
-				 void *event, int event_len))
-{
-	enum pld_bus_type bus_type = pld_get_bus_type(dev);
-
-	switch (bus_type) {
-	case PLD_BUS_TYPE_PCIE:
-		return pld_pcie_register_qmi_ind(dev, cb_ctx, cb);
-	case PLD_BUS_TYPE_SNOC:
-	case PLD_BUS_TYPE_SDIO:
-	case PLD_BUS_TYPE_USB:
-		return -EINVAL;
-	case PLD_BUS_TYPE_IPCI:
-		return pld_ipci_register_qmi_ind(dev, cb_ctx, cb);
 	default:
 		pr_err("Invalid device type %d\n", bus_type);
 		return -EINVAL;

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -69,8 +69,6 @@
 #define WLAN_TDLS_MAX_CONCURRENT_VDEV_SUPPORTED      3
 
 #define AC_PRIORITY_NUM                 4
-
-#define WLAN_TDLS_STA_KICKOUT_THRESHOLD 3
 
 /* Default tdls serialize timeout is set to 4 (peer delete) + 1 secs */
 #ifdef FEATURE_RUNTIME_PM
@@ -601,7 +599,7 @@ struct tdls_rx_mgmt_frame {
 	uint32_t vdev_id;
 	uint32_t frm_type;
 	uint32_t rx_rssi;
-	QDF_FLEX_ARRAY(uint8_t, buf);
+	uint8_t buf[1];
 };
 
 /**
@@ -1409,7 +1407,7 @@ struct tdls_send_mgmt_request {
 	struct qdf_mac_addr peer_mac;
 	enum wifi_traffic_ac ac;
 	/* Variable length. Dont add any field after this. */
-	QDF_FLEX_ARRAY(uint8_t, add_ie);
+	uint8_t add_ie[1];
 };
 
 /**

@@ -591,6 +591,121 @@ ring_access_fail:
 	return status;
 }
 
+#ifdef WLAN_FEATURE_OSRTP
+QDF_STATUS dp_tx_hw_enqueue_osrtp_li(struct dp_soc *soc, struct dp_vdev *vdev,
+		    struct dp_tx_desc_s *tx_desc, uint16_t fw_metadata,
+		    struct dp_tx_msdu_info_s *msdu_info)
+{
+	void *hal_tx_desc;
+	uint32_t *hal_tx_desc_cached;
+	struct dp_tx_queue *tx_q = &msdu_info->tx_queue;
+	uint8_t ring_id = tx_q->ring_id & DP_TX_QUEUE_MASK;
+	uint8_t tid;
+
+	/*
+	 * Setting it initialization statically here to avoid
+	 * a memset call jump with qdf_mem_set call
+	 */
+	uint8_t cached_desc[HAL_TX_DESC_LEN_BYTES] = { 0 };
+
+	enum cdp_sec_type sec_type = vdev->sec_type;
+
+	/* Return Buffer Manager ID */
+	uint8_t bm_id = dp_tx_get_rbm_id_li(soc, ring_id);
+
+	hal_ring_handle_t hal_ring_hdl = NULL;
+
+	QDF_STATUS status = QDF_STATUS_E_RESOURCES;
+
+	if (!dp_tx_is_desc_id_valid(soc, tx_desc->id)) {
+		dp_err_rl("Invalid tx desc id:%d", tx_desc->id);
+		return QDF_STATUS_E_RESOURCES;
+	}
+
+	hal_tx_desc_cached = (void *)cached_desc;
+
+	hal_tx_desc_set_buf_addr(soc->hal_soc, hal_tx_desc_cached,
+				 tx_desc->dma_addr, bm_id, tx_desc->id,
+				 (tx_desc->flags & DP_TX_DESC_FLAG_FRAG));
+	hal_tx_desc_set_lmac_id_li(soc->hal_soc, hal_tx_desc_cached,
+				   vdev->lmac_id);
+	hal_tx_desc_set_search_type_li(soc->hal_soc, hal_tx_desc_cached,
+				       vdev->search_type);
+	hal_tx_desc_set_search_index_li(soc->hal_soc, hal_tx_desc_cached,
+					vdev->bss_ast_idx);
+	hal_tx_desc_set_dscp_tid_table_id(soc->hal_soc, hal_tx_desc_cached,
+					  vdev->dscp_tid_map_id);
+
+	hal_tx_desc_set_encrypt_type(hal_tx_desc_cached,
+				     sec_type_map[sec_type]);
+	hal_tx_desc_set_cache_set_num(soc->hal_soc, hal_tx_desc_cached,
+				      (vdev->bss_ast_hash & 0xF));
+
+	hal_tx_desc_set_fw_metadata(hal_tx_desc_cached, fw_metadata);
+	hal_tx_desc_set_buf_length(hal_tx_desc_cached, tx_desc->length);
+	hal_tx_desc_set_buf_offset(hal_tx_desc_cached, tx_desc->pkt_offset);
+	hal_tx_desc_set_encap_type(hal_tx_desc_cached, tx_desc->tx_encap_type);
+	hal_tx_desc_set_addr_search_flags(hal_tx_desc_cached,
+					  vdev->hal_desc_addr_search_flags);
+
+	tid = msdu_info->tid;
+	if (tid != HTT_TX_EXT_TID_INVALID)
+		hal_tx_desc_set_hlos_tid(hal_tx_desc_cached, tid);
+
+	if (!dp_tx_desc_set_ktimestamp(vdev, tx_desc))
+		dp_tx_desc_set_timestamp(tx_desc);
+
+	dp_verbose_debug("length:%d , type = %d, dma_addr %llx, offset %d desc id %u",
+			 tx_desc->length,
+			 (tx_desc->flags & DP_TX_DESC_FLAG_FRAG),
+			 (uint64_t)tx_desc->dma_addr, tx_desc->pkt_offset,
+			 tx_desc->id);
+
+	hal_ring_hdl = dp_tx_get_hal_ring_hdl(soc, ring_id);
+
+	if (qdf_unlikely(dp_tx_hal_ring_access_start(soc, hal_ring_hdl))) {
+		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
+			  "%s %d : HAL RING Access Failed -- %pK",
+			 __func__, __LINE__, hal_ring_hdl);
+		DP_STATS_INC(soc, tx.tcl_ring_full[ring_id], 1);
+		DP_STATS_INC(vdev, tx_i[DP_XMIT_LINK].dropped.enqueue_fail,
+			     1);
+		dp_sawf_tx_enqueue_fail_peer_stats(soc, tx_desc);
+		return status;
+	}
+
+	dp_tx_clear_consumed_hw_descs(soc, hal_ring_hdl);
+
+	/* Sync cached descriptor with HW */
+
+	hal_tx_desc = hal_srng_src_get_next(soc->hal_soc, hal_ring_hdl);
+	if (qdf_unlikely(!hal_tx_desc)) {
+		dp_verbose_debug("TCL ring full ring_id:%d", ring_id);
+		DP_STATS_INC(soc, tx.tcl_ring_full[ring_id], 1);
+		DP_STATS_INC(vdev, tx_i[DP_XMIT_LINK].dropped.enqueue_fail,
+			     1);
+		dp_sawf_tx_enqueue_fail_peer_stats(soc, tx_desc);
+		goto ring_access_fail;
+	}
+
+	tx_desc->flags |= DP_TX_DESC_FLAG_QUEUED_TX;
+	hal_tx_desc_sync(hal_tx_desc_cached, hal_tx_desc);
+	DP_STATS_INC_PKT(vdev, tx_i[DP_XMIT_LINK].processed, 1,
+			 tx_desc->length);
+	DP_STATS_INC(soc, tx.tcl_enq[ring_id], 1);
+	dp_tx_update_stats(soc, tx_desc, ring_id);
+	status = QDF_STATUS_SUCCESS;
+
+	dp_tx_hw_desc_update_evt((uint8_t *)hal_tx_desc_cached,
+				 hal_ring_hdl, soc, ring_id);
+
+ring_access_fail:
+	dp_tx_ring_access_end_wrapper(soc, hal_ring_hdl, 0);
+
+	return status;
+}
+#endif
+
 QDF_STATUS dp_tx_desc_pool_init_li(struct dp_soc *soc,
 				   uint32_t num_elem,
 				   uint8_t pool_id,

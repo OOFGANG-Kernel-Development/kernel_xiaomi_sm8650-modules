@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -141,7 +141,6 @@ struct dlm_reject_ap_timestamp {
  * @btm_mbo_retry: BTM MBO retry reason
  * @reassoc_rssi_reject: Reassociation RSSI rejection reason
  * @no_more_stas: AP reached STA capacity reason
- * @eapol_timeout: Deauth with EAPOL timeout reason
  * @source: source of the rejection
  * @connect_timestamp: Timestamp when the STA got connected with this BSSID
  */
@@ -175,8 +174,7 @@ struct dlm_reject_ap {
 				 btm_bss_termination:1,
 				 btm_mbo_retry:1,
 				 reassoc_rssi_reject:1,
-				 no_more_stas:1,
-				 eapol_timeout:1;
+				 no_more_stas:1;
 		};
 		uint32_t reject_ap_reason;
 	};

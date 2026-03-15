@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -143,8 +143,13 @@
 	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_REMOTE_CH_WIDTH_V2
 #define EHT_OPERATION \
 	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_EHT_OPERATION
-#define ASSOCIATED_BW \
-	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_ASSOCIATED_BW
+
+/*
+ * MSB of rx_mc_bc_cnt indicates whether FW supports rx_mc_bc_cnt
+ * feature or not, if first bit is 1 it indicates that FW supports this
+ * feature, if it is 0 it indicates FW doesn't support this feature
+ */
+#define HDD_STATION_INFO_RX_MC_BC_COUNT (1 << 31)
 
 /*
  * Use this macro to check channel bandwidth 160MHZ
@@ -797,25 +802,6 @@ static inline int32_t hdd_add_eht_oper_info(
 }
 #endif
 
-static int32_t hdd_add_associated_bw(struct sk_buff *skb,
-				     struct hdd_station_ctx *hdd_sta_ctx)
-{
-	int32_t ret = 0;
-	struct hdd_connection_info *conn_info;
-	uint32_t bw = 0;
-
-	conn_info = &hdd_sta_ctx->cache_conn_info;
-	bw = hdd_convert_phy_bw_to_nl_bw(conn_info->ch_width);
-
-	if (nla_put_u32(skb, ASSOCIATED_BW,
-			bw)) {
-		hdd_err("Failed to put associated bw");
-		ret = -EINVAL;
-	}
-
-	return ret;
-}
-
 static uint32_t hdd_get_prev_connected_bss_ies_len(
 					struct hdd_station_ctx *hdd_sta_ctx)
 {
@@ -1002,12 +988,6 @@ hdd_populate_station_info_skb(struct sk_buff *skb,
 		hdd_err("disconnect_reason put fail");
 		return QDF_STATUS_E_FAILURE;
 	}
-
-	if (hdd_add_associated_bw(skb, hdd_sta_ctx)) {
-		hdd_err("associated bw put fail");
-		return QDF_STATUS_E_FAILURE;
-	}
-
 	return QDF_STATUS_SUCCESS;
 }
 
@@ -1480,10 +1460,17 @@ static int hdd_get_cached_station_remote(struct hdd_context *hdd_ctx,
 		hdd_err("dot11 mode put fail");
 		goto fail;
 	}
-
-	if (nla_put_u32(skb, REMOTE_RX_BC_MC_COUNT, stainfo->rx_mc_bc_cnt)) {
+	if (!(stainfo->rx_mc_bc_cnt & HDD_STATION_INFO_RX_MC_BC_COUNT)) {
+		hdd_debug("rx mc bc count is not supported by FW");
+	} else if (nla_put_u32(skb, REMOTE_RX_BC_MC_COUNT,
+			       (stainfo->rx_mc_bc_cnt &
+			       (~HDD_STATION_INFO_RX_MC_BC_COUNT)))) {
 		hdd_err("rx mc bc put fail");
 		goto fail;
+	} else {
+		hdd_nofl_debug("Remote STA RX mc_bc_count: %d",
+			       (stainfo->rx_mc_bc_cnt &
+			       (~HDD_STATION_INFO_RX_MC_BC_COUNT)));
 	}
 
 	/* Currently rx_retry count is not supported */
@@ -1601,7 +1588,7 @@ static int hdd_get_connected_station_info(struct wlan_hdd_link_info *link_info,
 						       nl_buf_len);
 	if (!skb) {
 		hdd_err("wlan_cfg80211_vendor_cmd_alloc_reply_skb failed");
-		return -ENOMEM;
+		goto fail;
 	}
 
 	hdd_info("stainfo");
@@ -2363,7 +2350,7 @@ static int hdd_get_connected_station_info_ex(struct hdd_context *hdd_ctx,
 						       nl_buf_len);
 	if (!skb) {
 		hdd_err_rl("wlan_cfg80211_vendor_cmd_alloc_reply_skb failed");
-		return -ENOMEM;
+		goto fail;
 	}
 
 	if (qdf_is_macaddr_zero(&stainfo->mld_addr))

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -49,7 +49,6 @@
 #include "wmi.h"
 #include "wlan_cm_roam_public_struct.h"
 #include "target_if.h"
-#include <qdf_hang_event_notifier.h>
 
 /* Platform specific configuration for max. no. of fragments */
 #define QCA_OL_11AC_TX_MAX_FRAGS            2
@@ -478,7 +477,7 @@ struct beacon_tim_ie {
 	uint8_t dtim_count;
 	uint8_t dtim_period;
 	uint8_t tim_bitctl;
-	QDF_FLEX_ARRAY(uint8_t, tim_bitmap);
+	uint8_t tim_bitmap[1];
 } __ATTRIB_PACK;
 
 /**
@@ -803,63 +802,6 @@ struct wma_wlm_stats_data {
 };
 #endif
 
-#define WLAN_WMA_MAX_PF_SYM 50
-#define WLAN_WMA_PF_APPS_NOTIFY_BUF_LEN QDF_HANG_EVENT_DATA_SIZE
-#define WLAN_WMA_PF_SYM_LEN 4
-#define WLAN_WMA_PF_SYM_CNT_LEN 1
-#define WLAN_WMA_PF_SYM_FLAGS_LEN 1
-#define WLAN_WMA_PER_PF_SYM_NOTIFY_BUF_LEN  (WLAN_WMA_PF_SYM_LEN + \
-					     WLAN_WMA_PF_SYM_CNT_LEN + \
-					     WLAN_WMA_PF_SYM_FLAGS_LEN)
-
-/*
- * struct wow_pf_sym - WOW PF wakeup symbol info
- * @symbol: Address of PF symbol
- * @count: Count of PF symbol
- * @flags: Flags associated with @symbol
- */
-struct wow_pf_sym {
-	uint32_t symbol;
-	uint8_t count;
-	uint8_t flags;
-};
-
-/*
- * struct wow_pf_wakeup_ev_data - WOW PF wakeup event data
- * @pf_sym: Array of each unique PF symbol in wakeup event payload
- * @num_pf_syms: Total unique symbols in event.
- * @pending_pf_syms: Pending PF symbols to process
- */
-struct wow_pf_wakeup_ev_data {
-	struct wow_pf_sym *pf_sym;
-	uint8_t num_pf_syms;
-	uint8_t pending_pf_syms;
-};
-
-/**
- * struct wma_pf_sym - Per symbol PF data in PF symbol history
- * @pf_sym: PF symbol info
- * @pf_event_ts: Array of page fault event ts
- */
-struct wma_pf_sym {
-	struct wow_pf_sym pf_sym;
-	qdf_time_t *pf_ev_ts;
-};
-
-/*
- * struct wma_pf_sym_hist - System level FW PF symbol history
- * @wma_pf_sym: Array of symbols in history.
- * @pf_notify_buf_ptr: Pointer to APPS notify buffer
- * @pf_notify_buf_len: Current data length of @pf_notify_buf_ptr
- * @lock: Lock to access PF symbol history
- */
-struct wma_pf_sym_hist {
-	struct wma_pf_sym wma_pf_sym[WLAN_WMA_MAX_PF_SYM];
-	uint8_t *pf_notify_buf_ptr;
-	uint32_t pf_notify_buf_len;
-	qdf_spinlock_t lock;
-};
-
 /**
  * struct t_wma_handle - wma context
  * @wmi_handle: wmi handle
@@ -978,7 +920,10 @@ struct wma_pf_sym_hist {
  * * @fw_therm_throt_support: FW Supports thermal throttling?
  * @eht_cap: 802.11be capabilities
  * @set_hw_mode_resp_status: Set HW mode response status
- * @wma_pf_hist: PF symbol history
+ * @pagefault_wakeups_ts: Stores timestamps at which host wakes up by fw
+ * because of pagefaults
+ * @num_page_fault_wakeups: Stores the number of times host wakes up by fw
+ * because of pagefaults
  *
  * This structure is the global wma context.  It contains global wma
  * module parameters and handles of other modules.
@@ -1115,7 +1060,8 @@ typedef struct {
 	qdf_wake_lock_t sap_d3_wow_wake_lock;
 	qdf_wake_lock_t go_d3_wow_wake_lock;
 	enum set_hw_mode_status set_hw_mode_resp_status;
-	struct wma_pf_sym_hist wma_pf_hist;
+	qdf_time_t *pagefault_wakeups_ts;
+	uint8_t num_page_fault_wakeups;
 } t_wma_handle, *tp_wma_handle;
 
 /**
@@ -1766,29 +1712,6 @@ QDF_STATUS wma_peer_unmap_conf_cb(uint8_t vdev_id,
 
 bool wma_objmgr_peer_exist(tp_wma_handle wma,
 			   uint8_t *peer_addr, uint8_t *peer_vdev_id);
-
-#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
-/**
- * wma_peer_tbl_trans_add_entry() - Add peer transition to peer history
- * @peer: Object manager peer pointer
- * @is_create: Set to %true if @peer is getting created
- * @peer_info: Info of peer setup on @peer create,
- *               %NULL if @is_create is %false.
- *
- * Adds new entry to peer history about the transition of peer in the system.
- * The APIs has to be called to keep record of create and delete of peer.
- *
- * Returns: void
- */
-void wma_peer_tbl_trans_add_entry(struct wlan_objmgr_peer *peer, bool is_create,
-				  struct cdp_peer_setup_info *peer_info);
-#else
-static inline void
-wma_peer_tbl_trans_add_entry(struct wlan_objmgr_peer *peer, bool is_create,
-			     struct cdp_peer_setup_info *peer_info)
-{
-}
-#endif
 
 /**
  * wma_get_cca_stats() - send request to fw to get CCA
@@ -2470,13 +2393,12 @@ void wma_set_peer_ucast_cipher(uint8_t *mac_addr, int32_t cipher,
  * @session_id: vdev session identifier
  * @pairwise: denotes if it is pairwise or group key
  * @key_index: Key Index
- * @peer_mac: MAC address of crypto key entity
  * @cipher_type: cipher type being used for the encryption/decryption
  *
  * Return: None
  */
 void wma_update_set_key(uint8_t session_id, bool pairwise,
-			uint8_t key_index, const uint8_t *peer_mac,
+			uint8_t key_index,
 			enum wlan_crypto_cipher_type cipher_type);
 
 #ifdef WLAN_FEATURE_MOTION_DETECTION
@@ -2559,15 +2481,6 @@ void wma_add_bss_lfr3(tp_wma_handle wma, struct bss_params *add_bss);
 QDF_STATUS wma_add_bss_lfr2_vdev_start(struct wlan_objmgr_vdev *vdev,
 				       struct bss_params *add_bss);
 #endif
-
-/**
- * wma_set_vdev_bw() - wma send vdev bw
- * @vdev_id: vdev id
- * @bw: band width
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS wma_set_vdev_bw(uint8_t vdev_id, uint8_t bw);
 
 /**
  * wma_send_peer_assoc_req() - wma send peer assoc req when sta connect

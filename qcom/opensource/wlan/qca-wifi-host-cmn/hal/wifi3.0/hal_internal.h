@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -520,7 +520,6 @@ struct hal_reg_write_q_elem {
  * @coalesces: writes not enqueued since srng is already queued up
  * @direct: writes not enqueued and written to register directly
  * @dequeue_delay: dequeue operation be delayed
- * @force_direct_write: writes forced and written to register directly
  */
 struct hal_reg_write_srng_stats {
 	uint32_t enqueues;
@@ -528,9 +527,6 @@ struct hal_reg_write_srng_stats {
 	uint32_t coalesces;
 	uint32_t direct;
 	uint32_t dequeue_delay;
-#ifdef DELAYED_REG_FORCE_WRITE
-	uint32_t force_direct_write;
-#endif
 };
 
 /**
@@ -867,25 +863,11 @@ struct hal_srng {
 #if defined(FEATURE_HAL_DELAYED_REG_WRITE)
 	/* flag to indicate whether srng is already queued for delayed write */
 	uint8_t reg_write_in_progress;
-#ifdef DELAYED_REG_FORCE_WRITE
-	/* flag to force register direct write next */
-	bool force_reg_direct_write;
-	/* flag to record if last time register direct write */
-	bool is_last_reg_direct_write;
-	/* count for delayed register write hang */
-	uint16_t delay_reg_write_hang_cnt;
-#endif
 	/* last dequeue elem time stamp */
 	qdf_time_t last_dequeue_time;
 
 	/* srng specific delayed write stats */
 	struct hal_reg_write_srng_stats wstats;
-
-	union {
-		uint32_t updated_hp;
-		uint32_t updated_tp;
-	};
-	uint32_t force_cnt;
 #endif
 #ifdef WLAN_DP_SRNG_USAGE_WM_TRACKING
 	struct hal_srng_high_wm_info high_wm;
@@ -1376,8 +1358,7 @@ struct hal_hw_txrx_ops {
 	uint32_t (*hal_rx_get_reo_error_code)(hal_ring_desc_t rx_desc);
 	void (*hal_rx_tlv_csum_err_get)(uint8_t *rx_tlv_hdr,
 					uint32_t *ip_csum_err,
-					uint32_t *tcp_udp_csum_err,
-					uint32_t *ip_frag);
+					uint32_t *tcp_udp_csum_err);
 	void (*hal_rx_mpdu_desc_info_get)(void *desc_addr,
 					  void *mpdu_desc_info_hdl);
 	uint8_t (*hal_rx_err_status_get)(hal_ring_desc_t rx_desc);
@@ -1482,9 +1463,6 @@ struct hal_hw_txrx_ops {
 					hal_soc_handle_t hal_soc_hdl);
 	uint32_t (*hal_tx_ring_halt_get)(hal_soc_handle_t hal_soc_hdl);
 	bool (*hal_rx_en_mcast_fp_data_filter)(void);
-	void (*hal_rx_parse_eht_sig_hdr)(struct hal_soc *hal_soc,
-					 uint8_t *tlv,
-					 void *ppdu_info_handle);
 };
 
 /**
@@ -1700,7 +1678,6 @@ void hal_qca8074_attach(struct hal_soc *hal_soc);
  * @hal_soc: HAL soc
  */
 void hal_kiwi_attach(struct hal_soc *hal_soc);
-void hal_peach_attach(struct hal_soc *hal_soc);
 
 void hal_qcn9224v2_attach(struct hal_soc *hal_soc);
 void hal_wcn6450_attach(struct hal_soc *hal_soc);

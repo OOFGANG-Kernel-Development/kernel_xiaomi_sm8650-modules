@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -189,11 +189,6 @@ sap_is_chan_change_needed(struct sap_context *sap_ctx)
 	struct ch_params *ch_params;
 	QDF_STATUS status;
 	struct mac_context *mac_ctx;
-
-	if (!sap_phymode_is_eht(sap_ctx->phyMode)) {
-		sap_debug("phy mode: 0x%x", sap_ctx->phyMode);
-		return true;
-	}
 
 	mac_ctx = sap_get_mac_context();
 	if (!mac_ctx) {
@@ -1148,7 +1143,6 @@ sap_validate_chan(struct sap_context *sap_context,
 	struct ch_params ch_params = {0};
 	bool is_go_scc_strict = false;
 	bool start_sap_on_provided_freq = false;
-	enum QDF_OPMODE opmode = QDF_SAP_MODE;
 
 	mac_handle = cds_get_context(QDF_MODULE_ID_SME);
 	mac_ctx = MAC_CONTEXT(mac_handle);
@@ -1171,10 +1165,8 @@ sap_validate_chan(struct sap_context *sap_context,
 		return QDF_STATUS_SUCCESS;
 	}
 
-	if (sap_context->vdev)
-		opmode = wlan_vdev_mlme_get_opmode(sap_context->vdev);
-
-	if (opmode == QDF_P2P_GO_MODE) {
+	if (sap_context->vdev &&
+	    sap_context->vdev->vdev_mlme.vdev_opmode == QDF_P2P_GO_MODE) {
 	       /*
 		* check whether go_force_scc is enabled or not.
 		* If it not enabled then don't any force scc on existing go and
@@ -1301,7 +1293,7 @@ validation_done:
 
 	if ((sap_context->acs_cfg->acs_mode ||
 	     policy_mgr_restrict_sap_on_unsafe_chan(mac_ctx->psoc)) &&
-	    !policy_mgr_is_sap_freq_allowed(mac_ctx->psoc, opmode,
+	    !policy_mgr_is_sap_freq_allowed(mac_ctx->psoc,
 					    sap_context->chan_freq)) {
 		sap_warn("Abort SAP start due to unsafe channel");
 		return QDF_STATUS_E_ABORTED;
@@ -3245,6 +3237,7 @@ wlansap_is_power_change_required(struct mac_context *mac_ctx,
 	struct wlan_objmgr_vdev *sta_vdev;
 	uint8_t sta_vdev_id;
 	enum hw_mode_bandwidth ch_wd;
+	uint8_t country[CDS_COUNTRY_CODE_LEN + 1];
 	enum channel_state state;
 	uint32_t ap_pwr_type_6g = 0;
 	bool indoor_ch_support = false;
@@ -3273,6 +3266,12 @@ wlansap_is_power_change_required(struct mac_context *mac_ctx,
 
 	if (ap_pwr_type_6g == REG_INDOOR_AP && indoor_ch_support) {
 		sap_debug("STA is connected to Indoor AP and indoor concurrency is supported");
+		return false;
+	}
+
+	wlan_reg_read_current_country(mac_ctx->psoc, country);
+	if (!wlan_reg_ctry_support_vlp(country)) {
+		sap_debug("Device country doesn't support VLP");
 		return false;
 	}
 
@@ -3731,9 +3730,7 @@ bool wlansap_validate_channel_post_csa(mac_handle_t mac_handle,
 	     (!policy_mgr_restrict_sap_on_unsafe_chan(mac_ctx->psoc) ||
 	      target_psoc_get_sap_coex_fixed_chan_cap(
 		      wlan_psoc_get_tgt_if_handle(mac_ctx->psoc)))) ||
-	    (policy_mgr_is_sap_freq_allowed(mac_ctx->psoc,
-				wlan_vdev_mlme_get_opmode(sap_ctx->vdev),
-				sap_ctx->chan_freq) &&
+	    (policy_mgr_is_sap_freq_allowed(mac_ctx->psoc, sap_ctx->chan_freq) &&
 	     !wlan_reg_is_disable_for_pwrmode(mac_ctx->pdev, sap_ctx->chan_freq,
 					      REG_CURRENT_PWR_MODE)))
 		return true;
@@ -4368,6 +4365,10 @@ static QDF_STATUS sap_get_freq_list(struct sap_context *sap_ctx,
 	uint8_t i;
 	bool srd_chan_enabled;
 	enum QDF_OPMODE vdev_opmode;
+	bool is_sap_only_allow_sta_dfs_indoor_chan = true;
+	uint32_t work_freq = 0;
+	uint32_t max_num_of_conc_connections = 0;
+	struct policy_mgr_conc_connection_info *pm_conc_connection_list = NULL;
 
 	mac_ctx = sap_get_mac_context();
 	if (!mac_ctx) {
@@ -4375,6 +4376,16 @@ static QDF_STATUS sap_get_freq_list(struct sap_context *sap_ctx,
 		*num_ch = 0;
 		*freq_list = NULL;
 		return QDF_STATUS_E_FAULT;
+	}
+
+	pm_conc_connection_list = policy_mgr_get_conn_info(&max_num_of_conc_connections);
+	if (mac_ctx->psoc) {
+		if (policy_mgr_get_connection_count(mac_ctx->psoc) == 1) {
+			work_freq = pm_conc_connection_list[0].freq;
+			sap_debug("allow sap to use freq %u", work_freq);
+		}
+		is_sap_only_allow_sta_dfs_indoor_chan =
+			policy_mgr_is_sap_only_allow_sta_dfs_indoor_chan(mac_ctx->psoc);
 	}
 
 	weight_list = mac_ctx->mlme_cfg->acs.normalize_weight_chan;
@@ -4466,6 +4477,17 @@ static QDF_STATUS sap_get_freq_list(struct sap_context *sap_ctx,
 					sap_ctx->acs_cfg->freq_list,
 					sap_ctx->acs_cfg->ch_list_count))
 			continue;
+
+		/* Only allow sap to use indoor/dfs channel when sta using same channel.
+		 * Currently, sap can work on the same channel only when a connection
+		 * is working on indoor/dfs channel
+		 */
+		if (mac_ctx->pdev && work_freq != chan_freq &&
+				is_sap_only_allow_sta_dfs_indoor_chan &&
+				(wlan_reg_is_freq_indoor(mac_ctx->pdev, chan_freq) ||
+				wlan_reg_is_dfs_for_freq(mac_ctx->pdev, chan_freq)))
+			continue;
+
 		/* Dont scan DFS channels in case of MCC disallowed
 		 * As it can result in SAP starting on DFS channel
 		 * resulting  MCC on DFS channel

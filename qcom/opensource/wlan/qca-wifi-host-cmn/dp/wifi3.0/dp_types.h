@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -20,6 +20,9 @@
 #ifndef _DP_TYPES_H_
 #define _DP_TYPES_H_
 
+#ifdef WLAN_FEATURE_OSRTP
+#include "xsk_buff_pool.h"
+#endif
 #include <qdf_types.h>
 #include <qdf_nbuf.h>
 #include <qdf_lock.h>
@@ -710,6 +713,10 @@ struct dp_tx_desc_s {
 	void *tcl_cmd_vaddr;
 	qdf_dma_addr_t tcl_cmd_paddr;
 #endif
+#ifdef WLAN_FEATURE_OSRTP
+	uint64_t xdp_addr;
+	struct xsk_buff_pool *xsk_pool;
+#endif
 };
 
 #ifdef QCA_AC_BASED_FLOW_CONTROL
@@ -1190,22 +1197,6 @@ struct reo_cmd_event_history {
 };
 #endif /* WLAN_FEATURE_DP_EVENT_HISTORY */
 
-/**
- * struct htt_t2h_msg_stats: HTT T2H message stats
- * @peer_map: Peer map event count
- * @peer_unmap: Peer unmap event count (peer_unmap -= ml_peer_unmap)
- * @invalid_peer_unmap: Peer unmap with invalid peer id
- * @ml_peer_map: MLD peer map count
- * @ml_peer_unmap: MLD peer unmap count
- */
-struct htt_t2h_msg_stats {
-	uint32_t peer_map;
-	uint32_t peer_unmap;
-	uint32_t invalid_peer_unmap;
-	uint32_t ml_peer_map;
-	uint32_t ml_peer_unmap;
-};
-
 /* SoC level data path statistics */
 struct dp_soc_stats {
 	struct {
@@ -1301,8 +1292,6 @@ struct dp_soc_stats {
 		uint32_t rx_hw_stats_requested;
 		/* Number of hw stats request timeout */
 		uint32_t rx_hw_stats_timeout;
-		/* Dropped fragment count */
-		uint32_t rx_frag_drop_cnt;
 
 		struct {
 			/* Invalid RBM error count */
@@ -1408,8 +1397,6 @@ struct dp_soc_stats {
 			uint32_t defrag_ad1_invalid;
 			/* decrypt error drop */
 			uint32_t decrypt_err_drop;
-			/* unencrypt error drop */
-			uint32_t unencrypt_err_drop;
 #ifdef GLOBAL_ASSERT_AVOIDANCE
 			/* rx_desc NULL war count*/
 			uint32_t rx_desc_null;
@@ -1420,10 +1407,6 @@ struct dp_soc_stats {
 			/* Invalid chip id received in intrabss path */
 			uint64_t intra_bss_bad_chipid;
 #endif
-			/* HP Out of sync at the end of dp_rx_err_process */
-			uint32_t hp_oos2;
-			/* Rx exception ring near full */
-			uint32_t near_full;
 		} err;
 
 		/* packet count per core - per ring */
@@ -1433,7 +1416,6 @@ struct dp_soc_stats {
 #ifdef WLAN_FEATURE_DP_EVENT_HISTORY
 	struct reo_cmd_event_history cmd_event_history;
 #endif /* WLAN_FEATURE_DP_EVENT_HISTORY */
-	struct htt_t2h_msg_stats t2h_msg_stats;
 };
 
 union dp_align_mac_addr {
@@ -1567,7 +1549,7 @@ struct rx_refill_buff_pool {
 	uint16_t tail;
 	struct dp_pdev *dp_pdev;
 	uint16_t max_bufq_len;
-	qdf_nbuf_t *buf_elem;
+	qdf_nbuf_t buf_elem[2048];
 };
 
 #ifdef DP_TX_HW_DESC_HISTORY
@@ -2357,6 +2339,12 @@ struct dp_arch_ops {
 				struct dp_soc *soc, void *tx_comp_hal_desc,
 				struct dp_tx_desc_s **desc);
 
+#ifdef WLAN_FEATURE_OSRTP
+	QDF_STATUS (*tx_hw_enqueue_osrtp)(struct dp_soc *soc, struct dp_vdev *vdev,
+				struct dp_tx_desc_s *tx_desc,uint16_t fw_metadata,
+				struct dp_tx_msdu_info_s *msdu_info);
+#endif
+
 	qdf_nbuf_t (*dp_tx_mlo_mcast_send)(struct dp_soc *soc,
 					   struct dp_vdev *vdev,
 					   qdf_nbuf_t nbuf,
@@ -2670,6 +2658,15 @@ struct test_qaddr_del {
 	uint8_t chip_id;
 };
 
+#ifdef WLAN_FEATURE_OSRTP
+struct dp_osrtp_info {
+	uint32_t qid;
+	struct bpf_prog __rcu *prog;
+	struct xsk_buff_pool __rcu *xsk_pool;
+	struct xdp_rxq_info xdp_rxq;
+};
+#endif
+  
 #ifdef DP_RX_MSDU_DONE_FAIL_HISTORY
 
 #define DP_MSDU_DONE_FAIL_HIST_MAX 128
@@ -3128,6 +3125,9 @@ struct dp_soc {
 	/* RX buffer params */
 	struct rx_buff_pool rx_buff_pool[MAX_PDEV_CNT];
 	struct rx_refill_buff_pool rx_refill_buff_pool;
+#ifdef WLAN_FEATURE_OSRTP
+	struct dp_osrtp_info osrtp_info;
+#endif
 	/* Save recent operation related variable */
 	struct dp_last_op_info last_op_info;
 	TAILQ_HEAD(, dp_peer) inactive_peer_list;
@@ -3269,10 +3269,6 @@ struct dp_soc {
 #ifdef DP_RX_PEEK_MSDU_DONE_WAR
 	struct dp_rx_msdu_done_fail_desc_list msdu_done_fail_desc_list;
 #endif
-	/* monitor interface flags */
-	uint32_t mon_flags;
-	/* flag to check if wds is not supported */
-	bool wds_not_supported;
 };
 
 #ifdef IPA_OFFLOAD
@@ -3338,7 +3334,6 @@ struct dp_ipa_resources {
  * 3 bits page id 0 ~ 7 for WIN
  * WBM Idle List Desc size = 128,
  * Num descs per page = 4096/128 = 32 for MCL
- * Num descs per page = 16384/128 = 128 for MCL with page size of 16K
  * Num descs per page = 2MB/128 = 16384 for WIN
  */
 /*
@@ -3351,10 +3346,6 @@ struct dp_ipa_resources {
 #if PAGE_SIZE == 4096
 #define LINK_DESC_PAGE_ID_MASK  0x007FE0
 #define LINK_DESC_ID_SHIFT      5
-#define LINK_DESC_ID_START_21_BITS_COOKIE 0x8000
-#elif PAGE_SIZE == 16384
-#define LINK_DESC_PAGE_ID_MASK 0x007F80
-#define LINK_DESC_ID_SHIFT      7
 #define LINK_DESC_ID_START_21_BITS_COOKIE 0x8000
 #elif PAGE_SIZE == 65536
 #define LINK_DESC_PAGE_ID_MASK  0x007E00
@@ -3981,7 +3972,6 @@ struct dp_vdev_stats {
 
 /* VDEV structure for data path state */
 struct dp_vdev {
-	struct cdp_vdev cdp_vdev;
 	/* OS device abstraction */
 	qdf_device_t osdev;
 
@@ -4109,7 +4099,9 @@ struct dp_vdev {
 	/* Callback to handle rx fisa frames */
 	ol_txrx_fisa_rx_fp osif_fisa_rx;
 	ol_txrx_fisa_flush_fp osif_fisa_flush;
-
+#ifdef WLAN_FEATURE_OSRTP
+	ol_txrx_rx_osrtp_fp osif_rx_osrtp;
+#endif
 	/* call back function to flush out queued rx packets*/
 	ol_txrx_rx_flush_fp osif_rx_flush;
 	ol_txrx_rsim_rx_decap_fp osif_rsim_rx_decap;
@@ -4135,7 +4127,7 @@ struct dp_vdev {
 	ol_txrx_classify_critical_pkt_fp tx_classify_critical_pkt_cb;
 
 	/* delete notifier to DP component */
-	ol_txrx_vdev_del_notify_cb vdev_del_notify;
+	ol_txrx_vdev_delete_cb vdev_del_notify;
 
 	/* deferred vdev deletion state */
 	struct {

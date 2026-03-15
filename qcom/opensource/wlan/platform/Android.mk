@@ -1,4 +1,5 @@
 # Android Makefile for WLAN platform modules
+ifneq (, $(filter $(call get-component-name), miodm))
 
 ENABLE_WLAN_PLATFORM_DLKM := false
 ifeq ($(TARGET_KERNEL_DLKM_DISABLE), true)
@@ -133,3 +134,4 @@ LOCAL_MODULE_DEBUG_ENABLE := true
 LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
 include $(DLKM_DIR)/Build_external_kernelmodule.mk
 endif #ENABLE_WLAN_PLATFORM_DLKM
+endif

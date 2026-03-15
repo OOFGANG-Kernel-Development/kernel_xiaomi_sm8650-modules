@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
+#define DEBUG
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/platform_device.h>
@@ -843,9 +844,6 @@ static void interpolate_zdet_val(uint32_t *z, s64 z_meas_bias_removed, s64 z_val
 {
 	s64 lb_to_z = 0, lb_to_ub = 0, z_to_ub = 0, lb_corr = 0, ub_corr = 0, z_interp = 0;
 
-	if (lb < 0)
-		return;
-
 	/* If lb is the table upper bound, no interpolation needed, just use the lb corr factor */
 	if ((lb + 1) >= ARRAY_SIZE(zdet_dnl_table)) {
 		z_interp = (s64) ((flag_se_diff) ? (zdet_dnl_table[lb].diff_corr_mohms) :
@@ -987,16 +985,10 @@ static ssize_t usbcss_sysfs_store(struct kobject *kobj, struct kobj_attribute *a
 	bool update_xtalk = false, update_linearizer = false;
 
 	usbc_attr = container_of(attr, struct usbcss_hs_attr, attr);
-	if (!usbc_attr)
-		return -EINVAL;
-
 	wcd939x = usbc_attr->priv;
-
-	if (!wcd939x)
-		return -EINVAL;
-
 	pdata = dev_get_platdata(wcd939x->dev);
-	if (!pdata)
+
+	if (!wcd939x || !pdata)
 		return -EINVAL;
 
 	usbcss_hs = &pdata->usbcss_hs;
@@ -1390,15 +1382,12 @@ static int create_sysfs_entry_file(struct wcd939x_priv *wcd939x, char *name, int
 {
 	struct usbcss_hs_attr *usbc_attr;
 	char *name_copy;
-
 	usbc_attr = devm_kmalloc(wcd939x->dev, sizeof(*usbc_attr), GFP_KERNEL);
 	if (!usbc_attr)
 		return -ENOMEM;
-
 	name_copy = devm_kstrdup(wcd939x->dev, name, GFP_KERNEL);
 	if (!name_copy)
 		return -ENOMEM;
-
 	usbc_attr->priv = wcd939x;
 	usbc_attr->index = index;
 	usbc_attr->attr.attr.name = name_copy;
@@ -1406,7 +1395,6 @@ static int create_sysfs_entry_file(struct wcd939x_priv *wcd939x, char *name, int
 	usbc_attr->attr.show = usbcss_sysfs_show;
 	usbc_attr->attr.store = usbcss_sysfs_store;
 	sysfs_attr_init(&usbc_attr->attr.attr);
-
 	return sysfs_create_file(parent, &usbc_attr->attr.attr);
 }
 
@@ -1415,23 +1403,19 @@ static int usbcss_hs_sysfs_init(struct wcd939x_priv *wcd939x)
 	int rc = 0;
 	int i = 0;
 	struct kobject *kobj = NULL;
-
 	if (!wcd939x || !wcd939x->dev) {
 		pr_err("%s: Invalid wcd939x private data.\n", __func__);
 		return -EINVAL;
 	}
-
 	kobj = kobject_create_and_add("usbcss_hs", kernel_kobj);
 	if (!kobj) {
 		dev_err(wcd939x->dev, "%s: Could not create the USBC-SS HS kobj.\n", __func__);
 		return -ENOMEM;
 	}
-
 	for (i = 0; i < ARRAY_SIZE(usbcss_sysfs_files); i++) {
 		rc = create_sysfs_entry_file(wcd939x, usbcss_sysfs_files[i],
 				0644, i, kobj);
 	}
-
 	return 0;
 }
 
@@ -2356,6 +2340,14 @@ int wcd939x_mbhc_init(struct wcd939x_mbhc **mbhc,
 	snd_soc_add_component_controls(component, hph_type_detect_controls,
 				   ARRAY_SIZE(hph_type_detect_controls));
 */
+	wcd939x = dev_get_drvdata(component->dev);
+	if (!wcd939x) {
+		dev_err(component->dev, "%s: wcd939x pointer is NULL\n", __func__);
+		ret = -EINVAL;
+		goto err;
+	}
+	usbcss_hs_sysfs_init(wcd939x);
+
 	wcd939x = dev_get_drvdata(component->dev);
 	if (!wcd939x) {
 		dev_err(component->dev, "%s: wcd939x pointer is NULL\n", __func__);

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -459,7 +459,7 @@ struct mlo_link_state_cmd_params {
  * struct ml_link_info - ml link information
  * @vdev_id: vdev id for this link
  * @link_id: link id defined as in 802.11 BE spec.
- * @link_status: inactive 0, active 1
+ * @link_status: active 1, inactive 0
  * @reserved: reserved bits
  * @chan_freq: Channel frequency in MHz
  */
@@ -693,8 +693,6 @@ struct mlnawds_config {
  * @link_status_flags: Current status of link
  * @ap_link_addr: Associated link BSSID
  * @link_chan_info: Associated link channel info
- * @is_link_active: link state
- * @link_status_code: wlan status code for link
  */
 struct mlo_link_info {
 	struct qdf_mac_addr link_addr;
@@ -713,8 +711,6 @@ struct mlo_link_info {
 	struct qdf_mac_addr ap_link_addr;
 	struct wlan_channel *link_chan_info;
 #endif
-	bool is_link_active;
-	enum wlan_status_code link_status_code;
 };
 
 /**
@@ -1323,8 +1319,7 @@ struct mlo_osif_ext_ops {
 
 	QDF_STATUS
 	(*mlo_mgr_osif_link_switch_notification)(struct wlan_objmgr_vdev *vdev,
-						 uint8_t non_trans_vdev_id,
-						 bool is_start_notify);
+						 uint8_t non_trans_vdev_id);
 };
 
 /* maximum size of vdev bitmap array for MLO link set active command */

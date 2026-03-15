@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
+
+#define DEBUG
 
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -39,8 +41,6 @@ enum {
 	AUDIO_EXT_CLK_LPASS12,
 	AUDIO_EXT_CLK_LPASS13,
 	AUDIO_EXT_CLK_LPASS14,
-	AUDIO_EXT_CLK_LPASS15,
-	AUDIO_EXT_CLK_LPASS16,
 	AUDIO_EXT_CLK_LPASS_MAX,
 	AUDIO_EXT_CLK_EXTERNAL_PLL = AUDIO_EXT_CLK_LPASS_MAX,
 	AUDIO_EXT_CLK_MAX,
@@ -483,28 +483,6 @@ static struct audio_ext_clk audio_clk_array[] = {
 			.div = 1,
 			.hw.init = &(struct clk_init_data){
 				.name = "audio_lpass_mclk14",
-				.ops = &audio_ext_clk_ops,
-			},
-		},
-	},
-	{
-		.pnctrl_info = {NULL},
-		.fact = {
-			.mult = 1,
-			.div = 1,
-			.hw.init = &(struct clk_init_data){
-				.name = "audio_lpass_mclk15",
-				.ops = &audio_ext_clk_ops,
-			},
-		},
-	},
-	{
-		.pnctrl_info = {NULL},
-		.fact = {
-			.mult = 1,
-			.div = 1,
-			.hw.init = &(struct clk_init_data){
-				.name = "audio_lpass_mclk16",
 				.ops = &audio_ext_clk_ops,
 			},
 		},

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -158,7 +158,7 @@ struct wmi_ext_dbg_msg {
 	uint32_t len;
 	uint64_t ts;
 	enum WMI_MSG_TYPE type;
-	uint8_t buf[];
+	uint8_t buf[0];
 };
 #endif /*WMI_EXT_DBG */
 
@@ -541,7 +541,7 @@ QDF_STATUS (*send_vdev_nss_chain_params_cmd)(wmi_unified_t wmi_handle,
 					 struct vdev_nss_chains *user_cfg);
 
 QDF_STATUS (*send_vdev_stop_cmd)(wmi_unified_t wmi,
-				 struct vdev_stop_params *params);
+					uint8_t vdev_id);
 
 QDF_STATUS (*send_vdev_down_cmd)(wmi_unified_t wmi,
 			uint8_t vdev_id);
@@ -3237,13 +3237,6 @@ QDF_STATUS
 (*send_mlo_link_switch_req_cnf_cmd)(wmi_unified_t wmi_handle,
 				    struct wlan_mlo_link_switch_cnf *params);
 #endif
-#endif
-
-#if defined(WLAN_FEATURE_11BE_MLO) && defined(WLAN_FEATURE_ROAM_OFFLOAD)
-QDF_STATUS
-(*extract_roam_ml_info)(wmi_unified_t wmi_handle, void *evt_buf,
-			struct roam_mlo_link_info *dst, uint64_t timestamp,
-			uint8_t idx);
 #endif
 
 #ifdef WLAN_FEATURE_SON

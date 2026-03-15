@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -408,7 +408,7 @@ static irqreturn_t hif_ce_interrupt_handler(int irq, void *context)
 {
 	struct ce_tasklet_entry *tasklet_entry = context;
 
-	hif_rtpm_check_and_request_resume(false);
+	hif_rtpm_check_and_request_resume();
 	return ce_dispatch_interrupt(tasklet_entry->ce_id, tasklet_entry);
 }
 
@@ -575,7 +575,7 @@ void hif_ipci_irq_set_affinity_hint(struct hif_exec_context *hif_ext_group,
 			}
 		}
 	}
-	for (i = 0; i < hif_ext_group->numirq && i < HIF_MAX_GRP_IRQ; i++) {
+	for (i = 0; i < hif_ext_group->numirq; i++) {
 		if (mask_set) {
 			ret = hif_affinity_mgr_set_qrg_irq_affinity((struct hif_softc *)hif_ext_group->hif,
 								    hif_ext_group->os_irq[i],
@@ -639,9 +639,7 @@ static void hif_ipci_ce_irq_set_affinity_hint(struct hif_softc *scn)
 		return;
 	}
 	for (ce_id = 0; ce_id < scn->ce_count; ce_id++) {
-		/* skip affine to perf if the ce is used for datapath */
-		if ((host_ce_conf[ce_id].flags & CE_ATTR_DISABLE_INTR) ||
-		    hif_is_datapath_ce(scn->ce_id_to_state[ce_id]))
+		if (host_ce_conf[ce_id].flags & CE_ATTR_DISABLE_INTR)
 			continue;
 		qdf_cpumask_copy(&updated_mask, &ce_cpu_mask);
 		ret = hif_affinity_mgr_set_ce_irq_affinity(scn, ipci_sc->ce_msi_irq_num[ce_id],

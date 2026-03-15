@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -134,7 +134,6 @@ QDF_STATUS lim_prepare_disconnect_done_ind(struct mac_context *mac_ctx,
  * lim_send_sme_disassoc_ntf() - Send disassoc notification to upper layer
  * @mac: Global MAC context
  * @peerMacAddr: The peer MAC addr to which disassociate was initiated
- * @peerMldAddr: Peer MLD mac
  * @reasonCode: The reason for Disassociation
  * @disassocTrigger: The trigger for Disassociation
  * @aid: The STAID. This parameter is present only on AP
@@ -149,7 +148,6 @@ QDF_STATUS lim_prepare_disconnect_done_ind(struct mac_context *mac_ctx,
  */
 void lim_send_sme_disassoc_ntf(struct mac_context *mac,
 			       tSirMacAddr peerMacAddr,
-			       tSirMacAddr peerMldAddr,
 			       tSirResultCodes reasonCode,
 			       uint16_t disassocTrigger,
 			       uint16_t aid,
@@ -274,13 +272,11 @@ lim_process_beacon_tx_success_ind(struct mac_context *mac, uint16_t msgType,
  * lim_handle_sta_csa_param() - Handle CSA offload param
  * @mac_ctx: pointer to global adapter context
  * @csa_params: csa parameters.
- * @send_status: Flag to send CSA status to fw in case of failure
  *
  * Return: None
  */
 void lim_handle_sta_csa_param(struct mac_context *mac_ctx,
-			      struct csa_offload_params *csa_params,
-			      bool send_status);
+			      struct csa_offload_params *csa_params);
 
 #ifdef WLAN_FEATURE_11BE_MLO
 /**

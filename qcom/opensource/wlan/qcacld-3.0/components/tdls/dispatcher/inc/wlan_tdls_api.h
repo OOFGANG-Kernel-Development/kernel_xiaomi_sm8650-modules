@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -24,7 +24,6 @@
 #include "wlan_objmgr_psoc_obj.h"
 #include "wlan_objmgr_pdev_obj.h"
 #include "wlan_objmgr_vdev_obj.h"
-#include "wlan_tdls_main.h"
 
 #ifdef FEATURE_WLAN_TDLS
 #ifdef WLAN_FEATURE_11BE_MLO
@@ -54,16 +53,6 @@ bool wlan_tdls_is_fw_11be_mlo_capable(struct wlan_objmgr_psoc *psoc)
 void wlan_tdls_get_features_info(struct wlan_objmgr_psoc *psoc,
 				 struct wlan_tdls_features *tdls_feature_set);
 #endif
-
-/**
- * wlan_tdls_register_lim_callbacks() - Register callbacks for legacy LIM API
- * @psoc: Pointer to psoc object
- * @cbs: Pointer to callback struct
- *
- * Return: None
- */
-void wlan_tdls_register_lim_callbacks(struct wlan_objmgr_psoc *psoc,
-				      struct tdls_callbacks *cbs);
 
 /**
  * wlan_tdls_teardown_links() - notify TDLS module to teardown all TDLS links
@@ -114,15 +103,6 @@ wlan_tdls_notify_sta_connect(uint8_t vdev_id,
 			     bool tdls_chan_swit_prohibited,
 			     bool tdls_prohibited,
 			     struct wlan_objmgr_vdev *vdev);
-
-/**
- * wlan_is_tdls_session_present() - Get TDLS session status
- * @vdev: vdev pointer
- *
- * Return: QDF_STATUS_SUCCESS if success; other value if failed
- */
-QDF_STATUS
-wlan_is_tdls_session_present(struct wlan_objmgr_vdev *vdev);
 
 /**
  * wlan_tdls_update_tx_pkt_cnt() - update tx pkt count
@@ -226,39 +206,7 @@ void wlan_tdls_handle_p2p_client_connect(struct wlan_objmgr_psoc *psoc,
 void wlan_tdls_increment_discovery_attempts(struct wlan_objmgr_psoc *psoc,
 					    uint8_t vdev_id,
 					    uint8_t *peer_addr);
-/**
- * wlan_tdls_is_addba_request_allowed() - API to check if Add Block ack request
- * is allowed for TDLS peer in current state.
- * @vdev: Vdev object pointer
- * @mac_addr: Mac address of the peer
- *
- * Return: True if ADDBA frame can be allowed
- */
-bool wlan_tdls_is_addba_request_allowed(struct wlan_objmgr_vdev *vdev,
-					struct qdf_mac_addr *mac_addr);
-/*
- * wlan_tdls_delete_all_peers() - Delete all TDLS peers in lim
- * @vdev: Pointer to vdev object
- *
- * Return: None
- */
-void wlan_tdls_delete_all_peers(struct wlan_objmgr_vdev *vdev);
-
-/*
- * wlan_tdls_update_peer_kickout_count() - Update the TDLS peer sta kickout
- * count
- * @vdev: Pointer to vdev private object
- * @macaddr: Peer mac address
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS wlan_tdls_update_peer_kickout_count(struct wlan_objmgr_vdev *vdev,
-					       uint8_t *macaddr);
 #else
-static inline
-void wlan_tdls_register_lim_callbacks(struct wlan_objmgr_psoc *psoc,
-				      struct tdls_callbacks *cbs)
-{}
 
 #ifdef FEATURE_SET
 static inline
@@ -338,23 +286,5 @@ void wlan_tdls_increment_discovery_attempts(struct wlan_objmgr_psoc *psoc,
 					    uint8_t vdev_id,
 					    uint8_t *peer_addr)
 {}
-
-static inline
-bool wlan_tdls_is_addba_request_allowed(struct wlan_objmgr_vdev *vdev,
-					struct qdf_mac_addr *mac_addr)
-{
-	return false;
-}
-
-static inline
-void wlan_tdls_delete_all_peers(struct wlan_objmgr_vdev *vdev)
-{}
-
-static inline
-QDF_STATUS wlan_tdls_update_peer_kickout_count(struct wlan_objmgr_vdev *vdev,
-					       uint8_t *macaddr)
-{
-	return QDF_STATUS_SUCCESS;
-}
 #endif
 #endif

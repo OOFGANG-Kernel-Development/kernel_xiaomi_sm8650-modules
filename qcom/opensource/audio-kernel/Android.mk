@@ -1,4 +1,6 @@
 # Android makefile for audio kernel modules
+#
+ifneq (, $(filter $(call get-component-name), miodm))
 
 LOCAL_PATH := $(call my-dir)
 
@@ -20,10 +22,6 @@ endif
 
 ifeq ($(call is-board-platform-in-list,pineapple cliffs volcano),true)
 AUDIO_SELECT  := CONFIG_SND_SOC_PINEAPPLE=m
-endif
-
-ifeq ($(call is-board-platform-in-list,volcano),true)
-AUDIO_SELECT  := CONFIG_SND_SOC_VOLCANO=m
 endif
 
 ifeq ($(call is-board-platform-in-list,pitti),true)
@@ -341,20 +339,7 @@ LOCAL_MODULE_TAGS         := optional
 LOCAL_MODULE_DEBUG_ENABLE := true
 LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
 include $(DLKM_DIR)/Build_external_kernelmodule.mk
-###########################################################
 
-ifeq ($(call is-board-platform-in-list,volcano),true)
-include $(CLEAR_VARS)
-LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
-LOCAL_MODULE              := lpass_bt_swr_dlkm.ko
-LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/lpass_bt_swr_dlkm.ko
-LOCAL_MODULE_TAGS         := optional
-LOCAL_MODULE_DEBUG_ENABLE := true
-LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
-include $(DLKM_DIR)/Build_external_kernelmodule.mk
-endif
-
-ifneq ($(call is-board-platform-in-list, pitti),true)
 ########################### WSA884x CODEC  ###########################
 include $(CLEAR_VARS)
 LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
@@ -412,7 +397,6 @@ LOCAL_MODULE_DEBUG_ENABLE := true
 LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
 include $(DLKM_DIR)/Build_external_kernelmodule.mk
 ########################### WCD939x CODEC  ################################
-endif
 
 ifneq ($(call is-board-platform-in-list, niobe pitti),true)
 include $(CLEAR_VARS)
@@ -428,24 +412,6 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
 LOCAL_MODULE              := wcd939x_slave_dlkm.ko
 LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/wcd939x/wcd939x_slave_dlkm.ko
-LOCAL_MODULE_TAGS         := optional
-LOCAL_MODULE_DEBUG_ENABLE := true
-LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
-include $(DLKM_DIR)/Build_external_kernelmodule.mk
-###########################################################
-include $(CLEAR_VARS)
-LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
-LOCAL_MODULE              := wcd9378_dlkm.ko
-LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/wcd9378/wcd9378_dlkm.ko
-LOCAL_MODULE_TAGS         := optional
-LOCAL_MODULE_DEBUG_ENABLE := true
-LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
-include $(DLKM_DIR)/Build_external_kernelmodule.mk
-###########################################################
-include $(CLEAR_VARS)
-LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
-LOCAL_MODULE              := wcd9378_slave_dlkm.ko
-LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/wcd9378/wcd9378_slave_dlkm.ko
 LOCAL_MODULE_TAGS         := optional
 LOCAL_MODULE_DEBUG_ENABLE := true
 LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
@@ -571,7 +537,6 @@ LOCAL_MODULE_TAGS         := optional
 LOCAL_MODULE_DEBUG_ENABLE := true
 LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
 include $(DLKM_DIR)/Build_external_kernelmodule.mk
-###########################################################
 include $(CLEAR_VARS)
 LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
 LOCAL_MODULE              := wcd938x_slave_dlkm.ko
@@ -580,23 +545,53 @@ LOCAL_MODULE_TAGS         := optional
 LOCAL_MODULE_DEBUG_ENABLE := true
 LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
 include $(DLKM_DIR)/Build_external_kernelmodule.mk
+###########################################################
 endif
-##########################################################
-########################## AW882XX #################################
+########################## CS35L41 ################################
 include $(CLEAR_VARS)
 LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
-LOCAL_MODULE              := aw882xx_dlkm.ko
-LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/pa_combine/aw882xx_dlkm.ko
+LOCAL_MODULE              := cs35l41_dlkm.ko
+LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/cs35l41/cs35l41_dlkm.ko
 LOCAL_MODULE_TAGS         := optional
 LOCAL_MODULE_DEBUG_ENABLE := true
 LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
 include $(DLKM_DIR)/Build_external_kernelmodule.mk
 ###########################################################
-########################## FS19XX #################################
+########################## CS35L43 ################################
 include $(CLEAR_VARS)
 LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
-LOCAL_MODULE              := fs19xx_dlkm.ko
-LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/fs19xx/fs19xx_dlkm.ko
+LOCAL_MODULE              := cs35l43_dlkm.ko
+LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/cs35l43/cs35l43_dlkm.ko
+LOCAL_MODULE_TAGS         := optional
+LOCAL_MODULE_DEBUG_ENABLE := true
+LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
+include $(DLKM_DIR)/Build_external_kernelmodule.mk
+###########################################################
+########################## TLV320AIC3X #############################
+include $(CLEAR_VARS)
+LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
+LOCAL_MODULE              := tlv320aic3x_dlkm.ko
+LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/tlv320aic3x/tlv320aic3x_dlkm.ko
+LOCAL_MODULE_TAGS         := optional
+LOCAL_MODULE_DEBUG_ENABLE := true
+LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
+include $(DLKM_DIR)/Build_external_kernelmodule.mk
+###########################################################
+########################## TEF668X #############################
+include $(CLEAR_VARS)
+LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
+LOCAL_MODULE              := tef668x_dlkm.ko
+LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/tef668x/tef668x_dlkm.ko
+LOCAL_MODULE_TAGS         := optional
+LOCAL_MODULE_DEBUG_ENABLE := true
+LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
+include $(DLKM_DIR)/Build_external_kernelmodule.mk
+###########################################################
+########################## AW882XX #################################
+include $(CLEAR_VARS)
+LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
+LOCAL_MODULE              := aw882xx_dlkm.ko
+LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/aw882xx/aw882xx_dlkm.ko
 LOCAL_MODULE_TAGS         := optional
 LOCAL_MODULE_DEBUG_ENABLE := true
 LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
@@ -604,4 +599,5 @@ include $(DLKM_DIR)/Build_external_kernelmodule.mk
 ###########################################################
 endif # DLKM check
 endif # supported target check
+endif
 endif

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef WCD9378_REGISTERS_H
@@ -873,17 +873,6 @@ enum {
 #define WCD9378_TX_NEW_TX_CH34_MUX_CH3_SEL_SHIFT                          0x00
 #define WCD9378_CDC_HPH_GAIN_CTL_HPHR_RX_EN_SHIFT                         0x03
 #define WCD9378_CDC_HPH_GAIN_CTL_HPHL_RX_EN_SHIFT                         0x02
-#define WCD9378_CDC_AUX_GAIN_CTL_AUX_EN_SHIFT                             0x00
-
-#define WCD9378_CN_MBQ_ENABLE_MASK      (0x6000)
-#define WCD9378_CN_ENABLE_MASK          (0x4000)
-
-#define WCD9378_FU42_CH_VOL_CH1_MSB   (WCD9378_FU42_CH_VOL_CH1 | WCD9378_CN_MBQ_ENABLE_MASK)
-#define WCD9378_FU42_CH_VOL_CH1_LSB   (WCD9378_FU42_CH_VOL_CH1 | WCD9378_CN_ENABLE_MASK)
-#define WCD9378_FU42_CH_VOL_CH2_MSB   (WCD9378_FU42_CH_VOL_CH2 | WCD9378_CN_MBQ_ENABLE_MASK)
-#define WCD9378_FU42_CH_VOL_CH2_LSB   (WCD9378_FU42_CH_VOL_CH2 | WCD9378_CN_ENABLE_MASK)
-#define WCD9378_FU42_MUTE_CH1_CN      (WCD9378_FU42_MUTE_CH1 | WCD9378_CN_ENABLE_MASK)
-#define WCD9378_FU42_MUTE_CH2_CN      (WCD9378_FU42_MUTE_CH2 | WCD9378_CN_ENABLE_MASK)
 
 #define SWRS_SCP_BASE_CLK_BASE                 (0x004d)
 #define SWRS_SCP_BUSCLOCK_SCALE_BANK0          (0x0062)

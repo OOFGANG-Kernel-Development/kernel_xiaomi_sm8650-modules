@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -393,7 +393,7 @@ static uint8_t lim_convert_phymode_to_dot11mode(enum wlan_phymode phymode)
 
 /**
  * lim_calculate_dot11_mode() - calculate dot11 mode.
- * @mac_ctx: mac context
+ * @mac_context: mac context
  * @bcn: beacon structure
  * @band: reg_wifi_band
  *
@@ -515,7 +515,7 @@ static void lim_fill_dot11mode(struct mac_context *mac_ctx,
 #if defined(WLAN_FEATURE_HOST_ROAM) || defined(WLAN_FEATURE_ROAM_OFFLOAD)
 /**
  * lim_fill_session_power_info() - to fill power info in session
- * @mac: pointer to mac ctx
+ * @mac_ctx: pointer to mac ctx
  * @pbssDescription: Pointer to pbssDescription
  * @ft_session: Pointer to FT session
  * @pe_session: Pointer to PE session
@@ -620,7 +620,7 @@ lim_fill_ft_session(struct mac_context *mac,
 {
 	uint8_t bss_chan_id;
 	tSchBeaconStruct *pBeaconStruct;
-	uint8_t cb_mode;
+	ePhyChanBondState cbEnabledMode;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 
 	pBeaconStruct = qdf_mem_malloc(sizeof(tSchBeaconStruct));
@@ -691,7 +691,7 @@ lim_fill_ft_session(struct mac_context *mac,
 	}
 	if (IS_DOT11_MODE_EHT(ft_session->dot11mode) &&
 	    pBeaconStruct->eht_cap.present) {
-		lim_update_session_eht_capable(ft_session, true);
+		lim_update_session_eht_capable(mac, ft_session);
 		lim_copy_join_req_eht_cap(ft_session);
 	}
 	/* Assign default configured nss value in the new session */
@@ -702,12 +702,14 @@ lim_fill_ft_session(struct mac_context *mac,
 
 	ft_session->nss = ft_session ->vdev_nss;
 
-	cb_mode = lim_get_cb_mode_for_freq(mac, ft_session,
-					   ft_session->curr_op_freq);
-
+	if (ft_session->limRFBand == REG_BAND_2G) {
+		cbEnabledMode = mac->roam.configParam.channelBondingMode24GHz;
+	} else {
+		cbEnabledMode = mac->roam.configParam.channelBondingMode5GHz;
+	}
 	ft_session->htSupportedChannelWidthSet =
 	    (pBeaconStruct->HTInfo.present) ?
-	    (cb_mode && pBeaconStruct->HTInfo.recommendedTxWidthSet &&
+	    (cbEnabledMode && pBeaconStruct->HTInfo.recommendedTxWidthSet &&
 	     pBeaconStruct->HTCaps.supportedChannelWidthSet) : 0;
 	ft_session->htRecommendedTxWidthSet =
 		ft_session->htSupportedChannelWidthSet;
@@ -727,7 +729,7 @@ lim_fill_ft_session(struct mac_context *mac,
 	if (ft_session->htRecommendedTxWidthSet) {
 		ft_session->ch_width = CH_WIDTH_40MHZ;
 		if (ft_session->vhtCapabilityPresentInBeacon &&
-		    pBeaconStruct->VHTOperation.chanWidth) {
+				pBeaconStruct->VHTOperation.chanWidth) {
 			ft_session->ch_width =
 				pBeaconStruct->VHTOperation.chanWidth + 1;
 			ft_session->ch_center_freq_seg0 =
@@ -735,13 +737,13 @@ lim_fill_ft_session(struct mac_context *mac,
 			ft_session->ch_center_freq_seg1 =
 			pBeaconStruct->VHTOperation.chan_center_freq_seg1;
 		} else if (ft_session->vhtCapabilityPresentInBeacon &&
-			   pBeaconStruct->vendor_vht_ie.VHTOperation.chanWidth) {
+			   pBeaconStruct->vendor_vht_ie.VHTOperation.chanWidth){
 			ft_session->ch_width =
-				pBeaconStruct->vendor_vht_ie.VHTOperation.chanWidth + 1;
+			pBeaconStruct->vendor_vht_ie.VHTOperation.chanWidth + 1;
 			ft_session->ch_center_freq_seg0 =
-				pBeaconStruct->vendor_vht_ie.VHTOperation.chan_center_freq_seg0;
+		pBeaconStruct->vendor_vht_ie.VHTOperation.chan_center_freq_seg0;
 			ft_session->ch_center_freq_seg1 =
-				pBeaconStruct->vendor_vht_ie.VHTOperation.chan_center_freq_seg1;
+		pBeaconStruct->vendor_vht_ie.VHTOperation.chan_center_freq_seg1;
 
 		} else {
 			if (pBeaconStruct->HTInfo.secondaryChannelOffset ==

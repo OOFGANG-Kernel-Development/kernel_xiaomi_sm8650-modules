@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -28,7 +28,6 @@
 #include <target_if_mlo_mgr.h>
 #include <cdp_txrx_cmn.h>
 #include <wlan_cfg.h>
-#include "wlan_utility.h"
 
 void mlo_get_link_information(struct qdf_mac_addr *mld_addr,
 			      struct mlo_link_info *info)
@@ -812,20 +811,6 @@ void mlo_mlme_handle_sta_csa_param(struct wlan_objmgr_vdev *vdev,
 	mlo_ctx->mlme_ops->mlo_mlme_ext_handle_sta_csa_param(vdev, csa_param);
 }
 
-#ifdef WLAN_POLICY_MGR_ENABLE
-static bool mlo_get_vdev_is_force_inactive(struct wlan_objmgr_psoc *psoc,
-					   uint8_t vdev_id)
-{
-	return policy_mgr_vdev_is_force_inactive(psoc, vdev_id);
-}
-#else
-static inline bool mlo_get_vdev_is_force_inactive(struct wlan_objmgr_psoc *psoc,
-						  uint8_t vdev_id)
-{
-	return false;
-}
-#endif
-
 QDF_STATUS
 mlo_get_mlstats_vdev_params(struct wlan_objmgr_psoc *psoc,
 			    struct mlo_stats_vdev_params *info,
@@ -835,7 +820,6 @@ mlo_get_mlstats_vdev_params(struct wlan_objmgr_psoc *psoc,
 	struct wlan_objmgr_vdev *vdev;
 	int i;
 	uint16_t ml_vdev_cnt = 0;
-	uint16_t ml_active_vdev_cnt = 0;
 
 	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc, vdev_id,
 						    WLAN_MLO_MGR_ID);
@@ -847,17 +831,9 @@ mlo_get_mlstats_vdev_params(struct wlan_objmgr_psoc *psoc,
 	mlo_get_ml_vdev_list(vdev, &ml_vdev_cnt, ml_vdev_list);
 	for (i = 0; i < ml_vdev_cnt; i++) {
 		info->ml_vdev_id[i] = wlan_vdev_get_id(ml_vdev_list[i]);
-		if (mlo_get_vdev_is_force_inactive(psoc, info->ml_vdev_id[i])) {
-			mlo_nofl_debug_rl("Ignore stats on inactive link vdev %d",
-					  info->ml_vdev_id[i]);
-			mlo_release_vdev_ref(ml_vdev_list[i]);
-			continue;
-		}
-
-		ml_active_vdev_cnt++;
 		mlo_release_vdev_ref(ml_vdev_list[i]);
 	}
-	info->ml_vdev_count = ml_active_vdev_cnt;
+	info->ml_vdev_count = ml_vdev_cnt;
 	mlo_release_vdev_ref(vdev);
 
 	return QDF_STATUS_SUCCESS;
@@ -999,45 +975,5 @@ QDF_STATUS ml_post_get_link_state_msg(struct wlan_objmgr_vdev *vdev)
 				QDF_MODULE_ID_OS_IF,
 				&msg);
 	return qdf_status;
-}
-
-bool
-wlan_mlo_is_csa_allow(struct wlan_objmgr_vdev *vdev, uint16_t csa_freq)
-{
-	struct wlan_channel *chan;
-	struct wlan_objmgr_vdev *ml_vdev_list[WLAN_UMAC_MLO_MAX_VDEVS] = {0};
-	uint16_t ml_vdev_cnt = 0;
-	struct wlan_objmgr_vdev *t_vdev;
-	int i;
-	bool is_allow = true;
-
-	if (!vdev) {
-		mlo_err("vdev is NULL");
-		return false;
-	}
-
-	if (!wlan_vdev_mlme_is_mlo_vdev(vdev))
-		return true;
-
-	mlo_get_ml_vdev_list(vdev, &ml_vdev_cnt, ml_vdev_list);
-	for (i = 0; i < ml_vdev_cnt; i++) {
-		t_vdev = ml_vdev_list[i];
-		if (t_vdev == vdev)
-			goto next;
-		chan = wlan_vdev_get_active_channel(t_vdev);
-		if (!chan)
-			goto next;
-
-		if (csa_freq == chan->ch_freq) {
-			mlo_err("vdev %d will SCC with vdev %d on freq %d",
-				wlan_vdev_get_id(vdev),
-				wlan_vdev_get_id(t_vdev), csa_freq);
-			is_allow = false;
-		}
-next:
-		mlo_release_vdev_ref(t_vdev);
-	}
-
-	return is_allow;
 }
 

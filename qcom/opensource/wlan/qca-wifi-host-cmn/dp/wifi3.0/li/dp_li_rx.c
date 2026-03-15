@@ -17,6 +17,9 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
+#ifdef WLAN_FEATURE_OSRTP
+#include "xsk_buff_pool.h"
+#endif
 #include "cdp_txrx_cmn_struct.h"
 #include "hal_hw_headers.h"
 #include "dp_types.h"
@@ -246,6 +249,12 @@ uint32_t dp_rx_process_li(struct dp_intr *int_ctx,
 	uint32_t max_ast;
 	uint64_t current_time = 0;
 	uint16_t buf_size;
+#ifdef WLAN_FEATURE_OSRTP
+	qdf_nbuf_t deliver_xlist_head;
+	qdf_nbuf_t deliver_xlist_tail;
+	struct bpf_prog *prog;
+	struct xsk_buff_pool *xsk_pool = NULL;
+#endif
 
 	DP_HIST_INIT();
 
@@ -272,6 +281,10 @@ more_data:
 	ebuf_head = NULL;
 	ebuf_tail = NULL;
 	max_reap_limit = dp_rx_get_loop_pkt_limit(soc);
+#ifdef WLAN_FEATURE_OSRTP
+	deliver_xlist_head = NULL;
+	deliver_xlist_tail = NULL;
+#endif
 
 	qdf_mem_zero(rx_bufs_reaped, sizeof(rx_bufs_reaped));
 	qdf_mem_zero(&mpdu_desc_info, sizeof(mpdu_desc_info));
@@ -497,6 +510,7 @@ more_data:
 		 * in case double skb unmap happened.
 		 */
 		dp_rx_nbuf_unmap(soc, rx_desc, reo_ring_num);
+		rx_desc->unmapped = 1;
 		DP_RX_PROCESS_NBUF(soc, nbuf_head, nbuf_tail, ebuf_head,
 				   ebuf_tail, rx_desc);
 
@@ -549,6 +563,16 @@ done:
 	if (qdf_likely(txrx_peer))
 		vdev = NULL;
 
+#ifdef WLAN_FEATURE_OSRTP
+	rcu_read_lock();
+	xsk_pool = rcu_dereference(soc->osrtp_info.xsk_pool);
+	if (xsk_pool)
+		mi_xp_get_pool(xsk_pool);
+
+	prog = rcu_dereference(soc->osrtp_info.prog);
+	rcu_read_unlock();
+#endif
+
 	/*
 	 * BIG loop where each nbuf is dequeued from global queue,
 	 * processed and queued back on a per vdev basis. These nbufs
@@ -570,6 +594,14 @@ done:
 		rx_tlv_hdr = qdf_nbuf_data(nbuf);
 		vdev_id = QDF_NBUF_CB_RX_VDEV_ID(nbuf);
 		peer_id =  QDF_NBUF_CB_RX_PEER_ID(nbuf);
+
+#ifdef WLAN_FEATURE_OSRTP
+		if (dp_rx_is_list_ready(deliver_xlist_head, vdev, txrx_peer, peer_id, vdev_id)) {
+			dp_rx_deliver_osrtp_to_stack(soc, vdev, xsk_pool, deliver_xlist_head, deliver_xlist_tail);
+			deliver_xlist_head = NULL;
+			deliver_xlist_tail = NULL;
+		}
+#endif
 
 		if (dp_rx_is_list_ready(deliver_list_head, vdev, txrx_peer,
 					peer_id, vdev_id)) {
@@ -905,6 +937,11 @@ done:
 		dp_pkt_add_timestamp(txrx_peer->vdev, QDF_PKT_RX_DRIVER_ENTRY,
 				     current_time, nbuf);
 
+#ifdef WLAN_FEATURE_OSRTP
+		if (dp_rx_osrtp_check(soc, nbuf, xsk_pool, prog))
+			DP_RX_LIST_APPEND(deliver_xlist_head, deliver_xlist_tail, nbuf);
+		else
+#endif
 		DP_RX_LIST_APPEND(deliver_list_head,
 				  deliver_list_tail,
 				  nbuf);
@@ -922,6 +959,25 @@ done:
 		tid_stats->delivered_to_stack++;
 		nbuf = next;
 	}
+
+#ifdef WLAN_FEATURE_OSRTP
+	if (deliver_xlist_head) {
+		if (qdf_likely(txrx_peer)) {
+			dp_rx_deliver_osrtp_to_stack(soc, vdev, xsk_pool, deliver_xlist_head, deliver_xlist_tail);
+		} else {
+			nbuf = deliver_xlist_head;
+			while (nbuf) {
+				next = nbuf->next;
+				nbuf->next = NULL;
+				dp_rx_deliver_to_stack_no_peer(soc, nbuf);
+				nbuf = next;
+			}
+		}
+	}
+
+	if (xsk_pool)
+		mi_xp_put_pool(xsk_pool);
+#endif
 
 	DP_RX_DELIVER_TO_STACK(soc, vdev, txrx_peer, peer_id,
 			       pkt_capture_offload,

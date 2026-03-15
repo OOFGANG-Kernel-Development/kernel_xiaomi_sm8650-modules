@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -322,25 +322,6 @@ mlo_mgr_get_link_info_by_self_addr(struct wlan_objmgr_vdev *vdev,
 
 	return NULL;
 }
-
-#ifdef WLAN_FEATURE_ROAM_OFFLOAD
-uint8_t mlo_mgr_num_roam_links(struct wlan_objmgr_vdev *vdev)
-{
-	struct wlan_cm_connect_resp *reassoc_rsp;
-
-	if (!vdev->mlo_dev_ctx)
-		return 1;
-
-	if (!vdev->mlo_dev_ctx->sta_ctx)
-		return 0;
-
-	reassoc_rsp = vdev->mlo_dev_ctx->sta_ctx->copied_reassoc_rsp;
-	if (!reassoc_rsp || !reassoc_rsp->roaming_info)
-		return 0;
-
-	return reassoc_rsp->roaming_info->num_setup_links;
-}
-#endif
 
 void mlo_mgr_roam_update_ap_link_info(struct wlan_objmgr_vdev *vdev,
 				      struct ml_setup_link_param *src_link_info,
@@ -904,10 +885,8 @@ mlo_check_if_all_vdev_up(struct wlan_objmgr_vdev *vdev)
 		if (!mlo_dev_ctx->wlan_vdev_list[i])
 			continue;
 
-		if ((qdf_test_bit(i, sta_ctx->wlan_connected_links) ||
-		     qdf_test_bit(i, sta_ctx->wlan_connect_req_links)) &&
-		    (!QDF_IS_STATUS_SUCCESS(wlan_vdev_is_up(mlo_dev_ctx->wlan_vdev_list[i])) ||
-		    wlan_cm_is_vdev_disconnecting(mlo_dev_ctx->wlan_vdev_list[i]))) {
+		if (qdf_test_bit(i, sta_ctx->wlan_connected_links) &&
+		    !QDF_IS_STATUS_SUCCESS(wlan_vdev_is_up(mlo_dev_ctx->wlan_vdev_list[i]))) {
 			mlo_debug("Vdev id %d is not in up state",
 				  wlan_vdev_get_id(mlo_dev_ctx->wlan_vdev_list[i]));
 			return false;
@@ -1077,6 +1056,7 @@ mlo_roam_copy_reassoc_rsp(struct wlan_objmgr_vdev *vdev,
 		sta_ctx->copied_reassoc_rsp->roaming_info = NULL;
 		qdf_mem_free(sta_ctx->copied_reassoc_rsp);
 		sta_ctx->copied_reassoc_rsp = NULL;
+		connect_ies->assoc_rsp.len = 0;
 		return QDF_STATUS_E_NOMEM;
 	}
 
@@ -1233,7 +1213,8 @@ static QDF_STATUS
 mlo_roam_prepare_and_send_link_connect_req(struct wlan_objmgr_vdev *assoc_vdev,
 					   struct wlan_objmgr_vdev *link_vdev,
 					   struct wlan_cm_connect_resp *rsp,
-					   struct mlo_link_info *link_info)
+					   struct qdf_mac_addr *link_addr,
+					   uint16_t chan_freq)
 {
 	struct wlan_mlo_sta *sta_ctx;
 	struct wlan_cm_connect_req req = {0};
@@ -1251,14 +1232,11 @@ mlo_roam_prepare_and_send_link_connect_req(struct wlan_objmgr_vdev *assoc_vdev,
 
 	req.vdev_id = wlan_vdev_get_id(link_vdev);
 	req.source = CM_MLO_LINK_VDEV_CONNECT;
-	req.chan_freq = link_info->chan_freq;
-	req.link_id = link_info->link_id;
-	qdf_copy_macaddr(&req.bssid, &link_info->link_addr);
-	qdf_copy_macaddr(&req.bssid_hint, &link_info->link_addr);
+	req.chan_freq = chan_freq;
+	qdf_mem_copy(&req.bssid.bytes, link_addr->bytes, QDF_MAC_ADDR_SIZE);
 
 	req.ssid.length = ssid.length;
 	qdf_mem_copy(&req.ssid.ssid, &ssid.ssid, ssid.length);
-	qdf_copy_macaddr(&req.mld_addr, &rsp->mld_addr);
 
 	req.ml_parnter_info = rsp->ml_parnter_info;
 
@@ -1287,7 +1265,7 @@ mlo_roam_prepare_and_send_link_connect_req(struct wlan_objmgr_vdev *assoc_vdev,
 
 	mlme_info("vdev:%d Connecting to " QDF_SSID_FMT " link_addr: " QDF_MAC_ADDR_FMT " freq %d rsn_caps:0x%x auth_type:0x%x pairwise:0x%x grp:0x%x mcast:0x%x akms:0x%x assoc_ie_len:%d f_rsne:%d is_wps:%d dot11_filter:%d",
 		  req.vdev_id, QDF_SSID_REF(req.ssid.length, req.ssid.ssid),
-		  QDF_MAC_ADDR_REF(link_info->link_addr.bytes),
+		  QDF_MAC_ADDR_REF(link_addr->bytes),
 		  req.chan_freq, req.crypto.rsn_caps, req.crypto.auth_type,
 		  req.crypto.ciphers_pairwise, req.crypto.group_cipher,
 		  req.crypto.mgmt_ciphers, req.crypto.akm_suites,
@@ -1473,15 +1451,16 @@ mlo_roam_link_connect_notify(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id)
 		}
 
 		if (mlo_check_connect_req_bmap(link_vdev)) {
+			mlo_update_connect_req_links(link_vdev, false);
 			status = mlo_roam_prepare_and_send_link_connect_req(assoc_vdev,
-							link_vdev, rsp,
-							&partner_info.partner_link_info[i]);
+							link_vdev,
+							rsp,
+							&partner_info.partner_link_info[i].link_addr,
+							partner_info.partner_link_info[i].chan_freq);
 			if (QDF_IS_STATUS_ERROR(status))
 				goto err;
-			else {
-				mlo_update_connect_req_links(link_vdev, false);
+			else
 				goto end;
-			}
 		}
 	}
 err:
@@ -1571,8 +1550,7 @@ mlo_add_all_link_probe_rsp_to_scan_db(struct wlan_objmgr_psoc *psoc,
 
 	status = util_get_bvmlie_persta_partner_info(ml_ie,
 						     ml_ie_total_len,
-						     &ml_partner_info,
-						     WLAN_FC0_STYPE_INVALID);
+						     &ml_partner_info);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		mlme_err("Per STA profile parsing failed");
 		return status;

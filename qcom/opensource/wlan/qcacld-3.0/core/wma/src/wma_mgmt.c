@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -90,7 +90,6 @@
 #include "wlan_cm_api.h"
 #include "wlan_mlo_link_force.h"
 #include <target_if_spatial_reuse.h>
-#include "wlan_nan_api_i.h"
 
 /* Max debug string size for WMM in bytes */
 #define WMA_WMM_DEBUG_STRING_SIZE    512
@@ -873,14 +872,10 @@ void wma_set_sta_keep_alive(tp_wma_handle wma, uint8_t vdev_id,
 	params.timeperiod = timeperiod;
 	if (intr) {
 		if (intr->bss_max_idle_period) {
-			if (intr->bss_max_idle_period < timeperiod)
-				params.timeperiod = intr->bss_max_idle_period;
-
+			params.timeperiod = intr->bss_max_idle_period;
 			if (method == WMI_KEEP_ALIVE_NULL_PKT)
 				params.method = WMI_KEEP_ALIVE_MGMT_FRAME;
 		}
-
-		wlan_mlme_set_keepalive_period(intr->vdev, params.timeperiod);
 	}
 
 	if (hostv4addr)
@@ -2111,8 +2106,6 @@ static int wmi_unified_probe_rsp_tmpl_send(tp_wma_handle wma,
 
 	params.prb_rsp_template_len = probe_rsp_info->probeRespTemplateLen;
 	params.prb_rsp_template_frm = probe_rsp_info->probeRespTemplate;
-	params.go_ignore_non_p2p_probe_req =
-		probe_rsp_info->go_ignore_non_p2p_probe_req;
 
 	return wmi_unified_probe_rsp_tmpl_send_cmd(wma->wmi_handle, vdev_id,
 						   &params);
@@ -2161,15 +2154,6 @@ static void wma_upt_mlo_partner_info(struct beacon_tmpl_params *params,
 }
 #endif
 
-/*
- * csa_event_bitmap is used to indicate to FW when to
- * send the CSA switch count status from FW to host.
- * See WMI_CSA_EVENT_BMAP for more information.
- * If CSA switch count event is needed to be sent when
- * the switch count is 1 set the bitmap to
- * CSA_EVENT_BITMAP_FW_OFFLOAD (0X80000002).
- */
-#define CSA_EVENT_BITMAP_FW_OFFLOAD 0X80000002
 /**
  * wma_unified_bcn_tmpl_send() - send beacon template to fw
  * @wma:wma handle
@@ -2192,7 +2176,6 @@ static QDF_STATUS wma_unified_bcn_tmpl_send(tp_wma_handle wma,
 	uint16_t p2p_ie_len = 0;
 	uint64_t adjusted_tsf_le;
 	struct ieee80211_frame *wh;
-	bool csa_tx_offload;
 
 	if (!wma_is_vdev_valid(vdev_id)) {
 		wma_err("vdev id:%d is not active ", vdev_id);
@@ -2264,22 +2247,6 @@ static QDF_STATUS wma_unified_bcn_tmpl_send(tp_wma_handle wma,
 			bcn_info->ecsa_count_offset - bytes_to_strip;
 
 	wma_upt_mlo_partner_info(&params, bcn_info, bytes_to_strip);
-
-	csa_tx_offload = wlan_psoc_nif_fw_ext_cap_get(wma->psoc,
-						      WLAN_SOC_CEXT_CSA_TX_OFFLOAD);
-
-	/*
-	 * Set value of csa_event_bitmap to CSA_EVENT_BITMAP_FW_OFFLOAD,
-	 * if csa_tx_offload is enabled. This indicates FW to send the
-	 * CSA event to HOST when CSA down count is set to 1 instead 0.
-	 * When FW sends the event at CSA down count 0, it requests HOST
-	 * to issue VDEV restart 1TBTT timeout post beacon with
-	 * CSA down count 1 is sent. During this 1TBTT window,
-	 * frames might still get sent on the old channel.
-	 */
-	if ((bcn_info->csa_count_offset || bcn_info->ecsa_count_offset) &&
-	    csa_tx_offload)
-		params.csa_event_bitmap = CSA_EVENT_BITMAP_FW_OFFLOAD;
 
 	ret = wmi_unified_beacon_tmpl_send_cmd(wma->wmi_handle,
 				 &params);
@@ -2791,12 +2758,12 @@ static inline void wma_mgmt_pktdump_rx_handler(
  * Return: 0 for success or error code
  */
 static int wma_process_mgmt_tx_completion(tp_wma_handle wma_handle,
-					  uint32_t desc_id, uint32_t status,
-					  uint32_t vdev_id,  int32_t peer_rssi)
+					  uint32_t desc_id, uint32_t status)
 {
 	struct wlan_objmgr_pdev *pdev;
 	qdf_nbuf_t buf = NULL;
 	QDF_STATUS ret;
+	uint8_t vdev_id = 0;
 	struct wmi_mgmt_params mgmt_params = {};
 
 	if (wma_validate_handle(wma_handle))
@@ -2817,16 +2784,10 @@ static int wma_process_mgmt_tx_completion(tp_wma_handle wma_handle,
 	if (buf)
 		wma_mgmt_unmap_buf(wma_handle, buf);
 
+	vdev_id = mgmt_txrx_get_vdev_id(pdev, desc_id);
+	mgmt_params.vdev_id = vdev_id;
 
-	if (vdev_id == INVALID_VDEV_ID)
-		mgmt_params.vdev_id = mgmt_txrx_get_vdev_id(pdev, desc_id);
-	else
-		mgmt_params.vdev_id = vdev_id;
-
-	mgmt_params.peer_rssi = peer_rssi;
-
-	wma_mgmt_pktdump_tx_handler(wma_handle, buf, mgmt_params.vdev_id,
-				    status);
+	wma_mgmt_pktdump_tx_handler(wma_handle, buf, vdev_id, status);
 	ret = mgmt_txrx_tx_completion_handler(pdev, desc_id, status,
 					      &mgmt_params);
 
@@ -2873,7 +2834,6 @@ int wma_mgmt_tx_completion_handler(void *handle, uint8_t *cmpl_event_params,
 	tp_wma_handle wma_handle = (tp_wma_handle)handle;
 	WMI_MGMT_TX_COMPLETION_EVENTID_param_tlvs *param_buf;
 	wmi_mgmt_tx_compl_event_fixed_param *cmpl_params;
-	uint8_t vdev_id = INVALID_VDEV_ID;
 
 	param_buf = (WMI_MGMT_TX_COMPLETION_EVENTID_param_tlvs *)
 		cmpl_event_params;
@@ -2896,12 +2856,8 @@ int wma_mgmt_tx_completion_handler(void *handle, uint8_t *cmpl_event_params,
 						    &params);
 	}
 
-	if (WMI_VDEV_ID_VALID_FROM_INFO_GET(cmpl_params->info))
-		vdev_id = WMI_VDEV_ID_FROM_INFO_GET(cmpl_params->info);
-
 	wma_process_mgmt_tx_completion(wma_handle, cmpl_params->desc_id,
-				       cmpl_params->status, vdev_id,
-				       cmpl_params->ack_rssi);
+				       cmpl_params->status);
 
 	return 0;
 }
@@ -2975,8 +2931,7 @@ int wma_mgmt_tx_bundle_completion_handler(void *handle, uint8_t *buf,
 		}
 
 		wma_process_mgmt_tx_completion(wma_handle,
-					       desc_ids[i], status[i],
-					       INVALID_VDEV_ID, 0);
+					       desc_ids[i], status[i]);
 	}
 	return 0;
 }
@@ -3024,23 +2979,18 @@ void wma_process_update_opmode(tp_wma_handle wma_handle,
 
 	ch_width = wmi_get_ch_width_from_phy_mode(wma_handle->wmi_handle,
 						  fw_phymode);
-	wma_debug("ch_width: %d, fw phymode: %d peer_phymode: %d, op_mode: %d",
-		  ch_width, fw_phymode, peer_phymode,
-		  update_vht_opmode->opMode);
-
+	wma_debug("ch_width: %d, fw phymode: %d peer_phymode %d",
+		  ch_width, fw_phymode, peer_phymode);
 	if (ch_width < update_vht_opmode->opMode) {
 		wma_err("Invalid peer bw update %d, self bw %d",
 			update_vht_opmode->opMode, ch_width);
 		return;
 	}
 
+	wma_debug("opMode = %d", update_vht_opmode->opMode);
 	wma_set_peer_param(wma_handle, update_vht_opmode->peer_mac,
 			   WMI_HOST_PEER_CHWIDTH, update_vht_opmode->opMode,
 			   update_vht_opmode->smesessionId);
-
-	wma_set_peer_param(wma_handle, update_vht_opmode->peer_mac,
-			   WMI_HOST_PEER_PHYMODE,
-			   fw_phymode, update_vht_opmode->smesessionId);
 }
 
 /**
@@ -3390,8 +3340,7 @@ int wma_process_rmf_frame(tp_wma_handle wma_handle,
 			return -EINVAL;
 		}
 
-		if (iface->type == WMI_VDEV_TYPE_NDI ||
-		    iface->type == WMI_VDEV_TYPE_NAN) {
+		if (iface->type == WMI_VDEV_TYPE_NDI) {
 			hdr_len = IEEE80211_CCMP_HEADERLEN;
 			mic_len = IEEE80211_CCMP_MICLEN;
 		} else {
@@ -3542,16 +3491,14 @@ wma_check_and_process_rmf_frame(tp_wma_handle wma_handle,
 	struct ieee80211_frame *hdr = *wh;
 
 	iface = &(wma_handle->interfaces[vdev_id]);
-	if ((iface->type != WMI_VDEV_TYPE_NDI &&
-	     iface->type != WMI_VDEV_TYPE_NAN) && !iface->rmfEnabled)
+	if (iface->type != WMI_VDEV_TYPE_NDI && !iface->rmfEnabled)
 		return 0;
 
 	if (qdf_is_macaddr_group((struct qdf_mac_addr *)(hdr->i_addr1)) ||
 	    qdf_is_macaddr_broadcast((struct qdf_mac_addr *)(hdr->i_addr1)) ||
 	    wma_get_peer_pmf_status(wma_handle, hdr->i_addr2) ||
-	    ((iface->type == WMI_VDEV_TYPE_NDI ||
-	      iface->type == WMI_VDEV_TYPE_NAN) &&
-	     (hdr->i_fc[1] & IEEE80211_FC1_WEP))) {
+	    (iface->type == WMI_VDEV_TYPE_NDI &&
+	    (hdr->i_fc[1] & IEEE80211_FC1_WEP))) {
 		status = wma_process_rmf_frame(wma_handle, iface, hdr,
 					       rx_pkt, buf);
 		if (status)
@@ -3755,21 +3702,6 @@ int wma_form_rx_packet(qdf_nbuf_t buf,
 								 buf);
 			if (status)
 				return status;
-		} else if (mgt_subtype == MGMT_SUBTYPE_ACTION) {
-			/* NAN Action frame */
-			vdev_id = wlan_nan_get_vdev_id_from_bssid(
-							wma_handle->pdev,
-							wh->i_addr3,
-							WLAN_ACTION_OUI_ID);
-
-			if (vdev_id != WMA_INVALID_VDEV_ID) {
-				status = wma_check_and_process_rmf_frame(
-								wma_handle,
-								vdev_id, &wh,
-								rx_pkt, buf);
-				if (status)
-					return status;
-			}
 		}
 	}
 

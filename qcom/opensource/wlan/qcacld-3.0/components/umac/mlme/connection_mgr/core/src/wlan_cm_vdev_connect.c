@@ -45,7 +45,6 @@
 #include "wlan_mlo_link_force.h"
 #include "wlan_mlo_mgr_link_switch.h"
 #include "wlan_dp_api.h"
-#include <wlan_cp_stats_chipset_stats.h>
 
 #ifdef WLAN_FEATURE_FILS_SK
 void cm_update_hlp_info(struct wlan_objmgr_vdev *vdev,
@@ -746,8 +745,6 @@ void cm_connect_info(struct wlan_objmgr_vdev *vdev, bool connect_success,
 	struct wlan_objmgr_psoc *psoc;
 	struct wlan_mlme_psoc_ext_obj *mlme_obj;
 	enum phy_ch_width ch_width = CH_WIDTH_20MHZ;
-	enum wlan_phymode phy_mode = WLAN_PHYMODE_AUTO;
-
 	WLAN_HOST_DIAG_EVENT_DEF(conn_stats,
 				 struct host_event_wlan_connection_stats);
 
@@ -778,12 +775,10 @@ void cm_connect_info(struct wlan_objmgr_vdev *vdev, bool connect_success,
 
 	des_chan = wlan_vdev_mlme_get_des_chan(vdev);
 
-	wlan_mlme_get_sta_ch_width(vdev, &ch_width, &phy_mode);
+	wlan_mlme_get_sta_ch_width(vdev, &ch_width);
 	conn_stats.chnl_bw = cm_get_diag_ch_width(ch_width);
-
-	if (phy_mode == WLAN_PHYMODE_AUTO)
-		phy_mode = des_chan->ch_phymode;
-	conn_stats.dot11mode = cm_diag_dot11_mode_from_phy_mode(phy_mode);
+	conn_stats.dot11mode =
+		cm_diag_dot11_mode_from_phy_mode(des_chan->ch_phymode);
 
 	opmode = wlan_vdev_mlme_get_opmode(vdev);
 	conn_stats.bss_type = cm_get_diag_persona(opmode);
@@ -1063,7 +1058,7 @@ QDF_STATUS cm_connect_start_ind(struct wlan_objmgr_vdev *vdev,
 		return QDF_STATUS_E_INVAL;
 	}
 
-	if (!wlan_dp_is_local_pkt_capture_active(psoc) &&
+	if (!wlan_dp_is_local_pkt_capture_enabled(psoc) &&
 	    policy_mgr_is_sta_mon_concurrency(psoc))
 		return QDF_STATUS_E_NOSUPPORT;
 
@@ -1102,11 +1097,12 @@ QDF_STATUS cm_connect_start_ind(struct wlan_objmgr_vdev *vdev,
 	if (wlan_get_vendor_ie_ptr_from_oui(HS20_OUI_TYPE,
 					    HS20_OUI_TYPE_SIZE,
 					    req->assoc_ie.ptr,
-					    req->assoc_ie.len))
+					    req->assoc_ie.len)) {
 		src_cfg.bool_value = true;
-	wlan_cm_roam_cfg_set_value(wlan_vdev_get_psoc(vdev),
-				   wlan_vdev_get_id(vdev),
-				   HS_20_AP, &src_cfg);
+		wlan_cm_roam_cfg_set_value(wlan_vdev_get_psoc(vdev),
+					   wlan_vdev_get_id(vdev),
+					   HS_20_AP, &src_cfg);
+	}
 	if (req->source != CM_MLO_LINK_SWITCH_CONNECT)
 		ml_nlink_conn_change_notify(
 			psoc, wlan_vdev_get_id(vdev),
@@ -1165,6 +1161,52 @@ set_partner_info_for_2link_sap(struct scan_cache_entry *scan_entry,
 {
 }
 #endif
+
+static void
+cm_check_nontx_mbssid_partner_entries(struct cm_connect_req *conn_req)
+{
+	uint8_t idx;
+	struct scan_cache_entry *entry, *partner_entry;
+	qdf_list_t *candidate_list = conn_req->candidate_list;
+	struct qdf_mac_addr *mld_addr;
+	struct partner_link_info *partner_info;
+
+	entry = conn_req->cur_candidate->entry;
+	mld_addr = util_scan_entry_mldaddr(entry);
+
+	/*
+	 * If the entry is not one of following, return gracefully:
+	 *   -AP is not ML type
+	 *   -AP is SLO
+	 *   -AP is not a member of MBSSID set
+	 *   -AP BSSID equals to TxBSSID in MBSSID set
+	 */
+	if (!mld_addr || !entry->ml_info.num_links ||
+	    !entry->mbssid_info.profile_num ||
+	    !qdf_mem_cmp(entry->mbssid_info.trans_bssid, &entry->bssid,
+			 QDF_MAC_ADDR_SIZE)) {
+		return;
+	}
+
+	for (idx = 0; idx < entry->ml_info.num_links; idx++) {
+		if (!entry->ml_info.link_info[idx].is_valid_link)
+			continue;
+
+		partner_info = &entry->ml_info.link_info[idx];
+		partner_entry = cm_get_entry(candidate_list,
+					     &partner_info->link_addr);
+		/*
+		 * If partner entry is not found in candidate list or if
+		 * the MLD address of the entry is not equal to current
+		 * candidate MLD address, treat it as entry not found.
+		 */
+		if (!partner_entry ||
+		    !qdf_is_macaddr_equal(mld_addr,
+					  &partner_entry->ml_info.mld_mac_addr)) {
+			partner_info->is_scan_entry_not_found = true;
+		}
+	}
+}
 
 QDF_STATUS
 cm_get_ml_partner_info(struct wlan_objmgr_pdev *pdev,
@@ -1229,6 +1271,7 @@ cm_get_ml_partner_info(struct wlan_objmgr_pdev *pdev,
 	mlme_debug("sta and ap intersect num of partner link: %d", j);
 
 	set_partner_info_for_2link_sap(scan_entry, partner_info);
+	cm_check_nontx_mbssid_partner_entries(conn_req);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -1709,7 +1752,7 @@ cm_install_link_vdev_keys(struct wlan_objmgr_vdev *vdev)
 
 	wlan_crypto_aquire_lock();
 	for (i = 0; i < max_key_index; i++) {
-		crypto_key = wlan_crypto_get_key(vdev, NULL, i);
+		crypto_key = wlan_crypto_get_key(vdev, i);
 		if (!crypto_key)
 			continue;
 
@@ -1728,70 +1771,6 @@ cm_install_link_vdev_keys(struct wlan_objmgr_vdev *vdev)
 	}
 	mlo_defer_set_keys(vdev, link_id, false);
 }
-
-#ifdef WLAN_CHIPSET_STATS
-static void cm_cp_stats_cstats_log_connect_event(struct wlan_objmgr_vdev *vdev,
-					  struct wlan_cm_connect_resp *rsp)
-{
-	struct vdev_mlme_obj *vdev_mlme;
-	struct wlan_channel *des_chan;
-	enum phy_ch_width ch_width = CH_WIDTH_20MHZ;
-	struct wlan_crypto_params *crypto_params;
-	struct cstats_sta_connect_resp stat = {0};
-
-	if (QDF_IS_STATUS_SUCCESS(rsp->connect_status)) {
-		stat.cmn.hdr.evt_id =
-			WLAN_CHIPSET_STATS_STA_CONNECT_SUCCESS_EVENT_ID;
-	} else {
-		stat.cmn.hdr.evt_id =
-			WLAN_CHIPSET_STATS_STA_CONNECT_FAIL_EVENT_ID;
-	}
-
-	wlan_mlme_get_sta_ch_width(vdev, &ch_width, NULL);
-	des_chan = wlan_vdev_mlme_get_des_chan(vdev);
-	vdev_mlme = wlan_vdev_mlme_get_cmpt_obj(vdev);
-	if (!vdev_mlme) {
-		mlme_err("vdev component object is NULL");
-		return;
-	}
-
-	crypto_params = wlan_crypto_vdev_get_crypto_params(vdev);
-	if (!crypto_params) {
-		mlme_err("crypto params is null");
-		return;
-	}
-
-	cm_diag_get_auth_type(&stat.auth_type,
-			      crypto_params->authmodeset,
-			      crypto_params->key_mgmt,
-			      crypto_params->ucastcipherset);
-
-	stat.cmn.hdr.length = sizeof(struct cstats_sta_connect_resp) -
-			      sizeof(struct cstats_hdr);
-	stat.cmn.opmode = wlan_vdev_mlme_get_opmode(vdev);
-	stat.cmn.vdev_id = wlan_vdev_get_id(vdev);
-	stat.cmn.timestamp_us = qdf_get_time_of_the_day_us();
-	stat.cmn.time_tick = qdf_get_log_timestamp();
-	stat.freq = rsp->freq;
-	stat.chnl_bw = cm_get_diag_ch_width(ch_width);
-	stat.dot11mode = cm_diag_dot11_mode_from_phy_mode(des_chan->ch_phymode);
-	stat.qos_capability = vdev_mlme->ext_vdev_ptr->connect_info.qos_enabled;
-	stat.encryption_type =
-			cm_get_diag_enc_type(crypto_params->ucastcipherset);
-	stat.result_code = rsp->connect_status;
-	stat.ssid_len = rsp->ssid.length;
-	qdf_mem_copy(stat.ssid, rsp->ssid.ssid, rsp->ssid.length);
-	CSTATS_MAC_COPY(stat.bssid, rsp->bssid.bytes);
-
-	wlan_cstats_host_stats(sizeof(struct cstats_sta_connect_resp), &stat);
-}
-#else
-static inline void
-cm_cp_stats_cstats_log_connect_event(struct wlan_objmgr_vdev *vdev,
-				     struct wlan_cm_connect_resp *rsp)
-{
-}
-#endif /* WLAN_CHIPSET_STATS */
 
 QDF_STATUS
 cm_connect_complete_ind(struct wlan_objmgr_vdev *vdev,
@@ -1825,8 +1804,6 @@ cm_connect_complete_ind(struct wlan_objmgr_vdev *vdev,
 	}
 
 	cm_csr_connect_done_ind(vdev, rsp);
-
-	cm_cp_stats_cstats_log_connect_event(vdev, rsp);
 
 	cm_connect_info(vdev, QDF_IS_STATUS_SUCCESS(rsp->connect_status) ?
 			true : false, &rsp->bssid, &rsp->ssid,

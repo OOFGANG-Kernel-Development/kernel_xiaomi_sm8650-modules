@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1468,12 +1468,10 @@ void DP_PRINT_STATS(const char *fmt, ...);
 #define DP_TX_HIST_STATS_PER_PDEV()
 #endif /* DISABLE_DP_STATS */
 
-#define FRAME_MASK_IPV4_ARP   0x1
-#define FRAME_MASK_IPV4_DHCP  0x2
-#define FRAME_MASK_IPV4_EAPOL 0x4
-#define FRAME_MASK_IPV6_DHCP  0x8
-#define FRAME_MASK_DNS_QUERY  0x10
-#define FRAME_MASK_DNS_RESP   0x20
+#define FRAME_MASK_IPV4_ARP   1
+#define FRAME_MASK_IPV4_DHCP  2
+#define FRAME_MASK_IPV4_EAPOL 4
+#define FRAME_MASK_IPV6_DHCP  8
 
 static inline int dp_log2_ceil(unsigned int value)
 {
@@ -3412,14 +3410,6 @@ char *dp_srng_get_str_from_hal_ring_type(enum hal_ring_type ring_type);
 void dp_txrx_path_stats(struct dp_soc *soc);
 
 /**
- * dp_print_txrx_soc_stats() - Function to display soc tx rx stats
- * @soc: soc handle
- *
- * Return: none
- */
-void dp_print_txrx_soc_stats(struct dp_soc *soc);
-
-/**
  * dp_print_per_ring_stats(): Packet count per ring
  * @soc: soc handle
  *
@@ -4005,7 +3995,6 @@ dp_hal_srng_access_start(hal_soc_handle_t soc, hal_ring_handle_t hal_ring_hdl)
 static inline void
 dp_hal_srng_access_end(hal_soc_handle_t soc, hal_ring_handle_t hal_ring_hdl)
 {
-	hal_srng_delay_reg_force_write_detect(hal_ring_hdl);
 	hal_srng_access_end_unlocked(soc, hal_ring_hdl);
 }
 
@@ -4019,7 +4008,6 @@ dp_hal_srng_access_start(hal_soc_handle_t soc, hal_ring_handle_t hal_ring_hdl)
 static inline void
 dp_hal_srng_access_end(hal_soc_handle_t soc, hal_ring_handle_t hal_ring_hdl)
 {
-	hal_srng_delay_reg_force_write_detect(hal_ring_hdl);
 	hal_srng_access_end(soc, hal_ring_hdl);
 }
 #endif
@@ -4092,16 +4080,15 @@ static inline void *dp_srng_dst_get_next(struct dp_soc *dp_soc,
  * @hal_ring_hdl: opaque pointer to the HAL Rx Destination ring
  * @num_entries: Entry count
  *
- * Return: HAL ring descriptor
+ * Return: None
  */
-static inline void *dp_srng_dst_inv_cached_descs(struct dp_soc *dp_soc,
-						 hal_ring_handle_t hal_ring_hdl,
-						 uint32_t num_entries)
+static inline void dp_srng_dst_inv_cached_descs(struct dp_soc *dp_soc,
+						hal_ring_handle_t hal_ring_hdl,
+						uint32_t num_entries)
 {
 	hal_soc_handle_t hal_soc = dp_soc->hal_soc;
 
-	return hal_srng_dst_inv_cached_descs(hal_soc, hal_ring_hdl,
-					     num_entries);
+	hal_srng_dst_inv_cached_descs(hal_soc, hal_ring_hdl, num_entries);
 }
 #else
 static inline void *dp_srng_dst_get_next(struct dp_soc *dp_soc,
@@ -4112,11 +4099,10 @@ static inline void *dp_srng_dst_get_next(struct dp_soc *dp_soc,
 	return hal_srng_dst_get_next(hal_soc, hal_ring_hdl);
 }
 
-static inline void *dp_srng_dst_inv_cached_descs(struct dp_soc *dp_soc,
-						 hal_ring_handle_t hal_ring_hdl,
-						 uint32_t num_entries)
+static inline void dp_srng_dst_inv_cached_descs(struct dp_soc *dp_soc,
+						hal_ring_handle_t hal_ring_hdl,
+						uint32_t num_entries)
 {
-	return NULL;
 }
 #endif /* QCA_CACHED_RING_DESC */
 
@@ -4826,7 +4812,7 @@ struct dp_frag_history_opaque_atomic {
 	qdf_atomic_t index;
 	uint16_t num_entries_per_slot;
 	uint16_t allocated;
-	void *entry[];
+	void *entry[0];
 };
 
 static inline QDF_STATUS
@@ -5519,7 +5505,6 @@ dp_cfg_event_record_peer_evt(struct dp_soc *soc, enum dp_cfg_event_type event,
 	dp_cfg_event_record(soc, event, &cfg_evt_desc);
 }
 
-#ifdef WLAN_FEATURE_11BE_MLO
 static inline void
 dp_cfg_event_record_mlo_link_delink_evt(struct dp_soc *soc,
 					enum dp_cfg_event_type event,
@@ -5565,27 +5550,6 @@ dp_cfg_event_record_mlo_setup_vdev_update_evt(struct dp_soc *soc,
 	dp_cfg_event_record(soc, DP_CFG_EVENT_MLO_SETUP_VDEV_UPDATE,
 			    &cfg_evt_desc);
 }
-
-#else
-
-static inline void
-dp_cfg_event_record_mlo_link_delink_evt(struct dp_soc *soc,
-					enum dp_cfg_event_type event,
-					struct dp_peer *mld_peer,
-					struct dp_peer *link_peer,
-					uint8_t idx, uint8_t result)
-{
-}
-
-static inline void
-dp_cfg_event_record_mlo_setup_vdev_update_evt(struct dp_soc *soc,
-					      struct dp_peer *mld_peer,
-					      struct dp_vdev *prev_vdev,
-					      struct dp_vdev *new_vdev)
-{
-}
-
-#endif
 
 static inline void
 dp_cfg_event_record_peer_map_unmap_evt(struct dp_soc *soc,

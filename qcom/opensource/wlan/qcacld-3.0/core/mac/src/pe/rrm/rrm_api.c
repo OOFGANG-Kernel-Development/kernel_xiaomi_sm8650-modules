@@ -61,13 +61,20 @@
 /* Max passive scan dwell for wide band rrm scan, in milliseconds */
 #define RRM_SCAN_MAX_DWELL_TIME 110
 
+/* -------------------------------------------------------------------- */
 /**
- * rrm_cache_mgmt_tx_power() - Store Tx power for management frames.
- * @mac: pointer to mac context
- * @txPower: TX power
- * @pe_session: per vdev pe context
+ * rrm_cache_mgmt_tx_power
+ **
+ * FUNCTION:  Store Tx power for management frames.
  *
- * Return: None
+ * LOGIC:
+ *
+ * ASSUMPTIONS:
+ *
+ * NOTE:
+ *
+ * @param pe_session session entry.
+ * @return None
  */
 void
 rrm_cache_mgmt_tx_power(struct mac_context *mac, int8_t txPower,
@@ -81,12 +88,20 @@ rrm_cache_mgmt_tx_power(struct mac_context *mac, int8_t txPower,
 		pe_session->txMgmtPower = txPower;
 }
 
+/* -------------------------------------------------------------------- */
 /**
- * rrm_get_mgmt_tx_power() - Get the Tx power for management frames.
- * @mac: pointer to mac context
- * @pe_session: per vdev pe context
+ * rrm_get_mgmt_tx_power
  *
- * Return: TX power
+ * FUNCTION:  Get the Tx power for management frames.
+ *
+ * LOGIC:
+ *
+ * ASSUMPTIONS:
+ *
+ * NOTE:
+ *
+ * @param pe_session session entry.
+ * @return txPower
  */
 int8_t rrm_get_mgmt_tx_power(struct mac_context *mac, struct pe_session *pe_session)
 {
@@ -98,14 +113,21 @@ int8_t rrm_get_mgmt_tx_power(struct mac_context *mac, struct pe_session *pe_sess
 	return pe_session->txMgmtPower;
 }
 
+/* -------------------------------------------------------------------- */
 /**
- * rrm_send_set_max_tx_power_req() - Send WMA_SET_MAX_TX_POWER_REQ message
- * to change the max tx power.
- * @mac: pointer to mac context
- * @txPower: TX power to be set
- * @pe_session: per vdev pe context
+ * rrm_send_set_max_tx_power_req
  *
- * Return: None
+ * FUNCTION:  Send WMA_SET_MAX_TX_POWER_REQ message to change the max tx power.
+ *
+ * LOGIC:
+ *
+ * ASSUMPTIONS:
+ *
+ * NOTE:
+ *
+ * @param txPower txPower to be set.
+ * @param pe_session session entry.
+ * @return None
  */
 QDF_STATUS
 rrm_send_set_max_tx_power_req(struct mac_context *mac, int8_t txPower,
@@ -149,12 +171,21 @@ rrm_send_set_max_tx_power_req(struct mac_context *mac, int8_t txPower,
 	return retCode;
 }
 
+/* -------------------------------------------------------------------- */
 /**
- * rrm_set_max_tx_power_rsp() - Process WMA_SET_MAX_TX_POWER_RSP message
- * @mac: pointer to mac context
- * @limMsgQ: pointer to scheduler message
+ * rrm_set_max_tx_power_rsp
  *
- * Return: None
+ * FUNCTION:  Process WMA_SET_MAX_TX_POWER_RSP message.
+ *
+ * LOGIC:
+ *
+ * ASSUMPTIONS:
+ *
+ * NOTE:
+ *
+ * @param txPower txPower to be set.
+ * @param pe_session session entry.
+ * @return None
  */
 QDF_STATUS rrm_set_max_tx_power_rsp(struct mac_context *mac,
 				    struct scheduler_msg *limMsgQ)
@@ -207,15 +238,22 @@ static void rrm_calculate_and_fill_rcpi(uint8_t *rcpi, int8_t cur_rssi)
 		*rcpi = RCPI_MAX_VALUE;
 }
 
+/* -------------------------------------------------------------------- */
 /**
- * rrm_process_link_measurement_request() - Processes the Link measurement
- * request and send the report.
- * @mac: pointer to mac context
- * @pRxPacketInfo: pointer to packet info structure
- * @pLinkReq: pointer to the Link request frame structure.
- * @pe_session: session entry.
+ * rrm_process_link_measurement_request
  *
- * Return: None
+ * FUNCTION:  Processes the Link measurement request and send the report.
+ *
+ * LOGIC:
+ *
+ * ASSUMPTIONS:
+ *
+ * NOTE:
+ *
+ * @param pBd pointer to BD to extract RSSI and SNR
+ * @param pLinkReq pointer to the Link request frame structure.
+ * @param pe_session session entry.
+ * @return None
  */
 QDF_STATUS
 rrm_process_link_measurement_request(struct mac_context *mac,
@@ -328,14 +366,21 @@ rrm_process_link_measurement_request(struct mac_context *mac,
 						 pe_session);
 }
 
+/* -------------------------------------------------------------------- */
 /**
- * rrm_process_neighbor_report_response() - Processes the Neighbor Report
- * response from the peer AP.
- * @mac: pointer to mac context
- * @pNeighborRep: pointer to the Neighbor report frame structure.
- * @pe_session: session entry.
+ * rrm_process_neighbor_report_response
  *
- * Return: None
+ * FUNCTION:  Processes the Neighbor Report response from the peer AP.
+ *
+ * LOGIC:
+ *
+ * ASSUMPTIONS:
+ *
+ * NOTE:
+ *
+ * @param pNeighborRep pointer to the Neighbor report frame structure.
+ * @param pe_session session entry.
+ * @return None
  */
 QDF_STATUS
 rrm_process_neighbor_report_response(struct mac_context *mac,
@@ -449,13 +494,20 @@ rrm_process_neighbor_report_response(struct mac_context *mac,
 
 }
 
+/* -------------------------------------------------------------------- */
 /**
- * rrm_process_neighbor_report_req() - Create a Neighbor report request
- * and send it to peer.
- * @mac: pointer to mac context
- * @pNeighborReq: Neighbor report request params
+ * rrm_process_neighbor_report_req
  *
- * Return: None
+ * FUNCTION:
+ *
+ * LOGIC: Create a Neighbor report request and send it to peer.
+ *
+ * ASSUMPTIONS:
+ *
+ * NOTE:
+ *
+ * @param pNeighborReq Neighbor report request params .
+ * @return None
  */
 QDF_STATUS
 rrm_process_neighbor_report_req(struct mac_context *mac,
@@ -745,7 +797,7 @@ rrm_update_vdev_stats(tpSirMacRadioMeasureReport rrm_report, uint8_t vdev_id)
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	pe_nofl_debug("counter stats count: fragment (tx: %d rx: %d) group tx: %llu mac stats count: retry : %d multiple retry: %d frame duplicate %d",
+	pe_nofl_debug("counter stats count: fragment (tx: %d rx: %d) group tx: %d mac stats count: retry : %d multiple retry: %d frame duplicate %d",
 		      stats->tx.fragment_count, stats->rx.fragment_count,
 		      stats->tx.mcast.num, stats->tx.retry_count,
 		      stats->tx.multiple_retry_count,
@@ -890,7 +942,7 @@ static uint16_t rrm_get_max_meas_duration(struct mac_context *mac,
  * rrm_process_sta_stats_report_req: Process RRM sta stats request
  * @mac: mac context
  * @pCurrentReq: Current RRM request
- * @sta_stats_req: RRM Measurement Request
+ * @pStaStatsReq: RRM Measurement Request
  * @pe_session: pe session
  *
  * Return: rrm status
@@ -1050,7 +1102,6 @@ rrm_check_other_sta_sats_req_in_progress(
 /**
  * rrm_process_sta_stats_req: Process RRM sta stats request
  * @mac: mac context
- * @peer: peer mac
  * @session_entry: pe session
  * @radiomes_report: measurement report
  * @rrm_req: measurement request
@@ -1127,14 +1178,20 @@ failure:
 }
 
 /**
- * rrm_process_beacon_report_req() - Processes the Beacon report request
- * from the peer AP
- * @mac: pointer to mac context
- * @pCurrentReq: pointer to the current Req comtext
- * @pBeaconReq: pointer to the beacon report request IE from the peer
- * @pe_session: session entry
+ * rrm_process_beacon_report_req
  *
- * Return: None
+ * FUNCTION:  Processes the Beacon report request from the peer AP.
+ *
+ * LOGIC:
+ *
+ * ASSUMPTIONS:
+ *
+ * NOTE:
+ *
+ * @param pCurrentReq pointer to the current Req comtext.
+ * @param pBeaconReq pointer to the beacon report request IE from the peer.
+ * @param pe_session session entry.
+ * @return None
  */
 static tRrmRetStatus
 rrm_process_beacon_report_req(struct mac_context *mac,
@@ -1431,8 +1488,7 @@ rrm_check_ml_ie(uint8_t *ies, uint16_t len, uint8_t *mlie_copy_len)
 		return NULL;
 	}
 
-	mlo_debug("[802.11 BCN_RPT]: ML IE is present ml_ie_total_len:%zu",
-		  ml_ie_total_len);
+	mlo_debug("[802.11 BCN_RPT]: ML IE is present ml_ie_total_len:%d", ml_ie_total_len);
 
 	util_get_mlie_common_info_len(ml_ie, ml_ie_total_len,
 				      &ml_common_info_length);
@@ -1483,17 +1539,13 @@ rrm_copy_ml_ie(uint8_t eid, uint8_t extn_eid, uint8_t *ml_ie,
 /**
  * rrm_fill_beacon_ies() - Fills fixed fields and Ies in bss description to an
  * array of uint8_t.
- * @mac: pointer to mac context
- * @pIes: pointer to the buffer that should be populated with ies.
- * @pNumIes: returns the num of ies filled in this param.
- * @pIesMaxSize: Max size of the buffer pIes.
- * @eids: pointer to array of eids. If NULL, all ies will be populated.
- * @numEids: number of elements in array eids.
- * @eid: EID
- * @extn_eids: pointer to array of ext eids
- * @extn_eids_count: count of elements in array extn_eids
+ * @pIes - pointer to the buffer that should be populated with ies.
+ * @pNumIes - returns the num of ies filled in this param.
+ * @pIesMaxSize - Max size of the buffer pIes.
+ * @eids - pointer to array of eids. If NULL, all ies will be populated.
+ * @numEids - number of elements in array eids.
  * @start_offset: Offset from where the IEs in the bss_desc should be parsed
- * @bss_desc: pointer to Bss Description.
+ * @bss_desc - pointer to Bss Description.
  *
  * Return: Remaining length of IEs in current bss_desc which are not included
  *	   in pIes.
@@ -1573,8 +1625,7 @@ rrm_fill_beacon_ies(struct mac_context *mac, uint8_t *pIes,
 		i = 0;
 		do {
 			if (((!eids) || (*pBcnIes == eids[i])) ||
-			    ((*pBcnIes == eid) &&
-			     (extn_eids && *(pBcnIes + 2) == extn_eids[i]))) {
+				((*pBcnIes == eid) && *(pBcnIes + 2) == extn_eids[i])) {
 				if (((*pNumIes) + len) < pIesMaxSize) {
 						qdf_mem_copy(pIes, pBcnIes, len);
 						pIes += len;
@@ -1743,7 +1794,7 @@ rrm_process_beacon_report_xmit(struct mac_context *mac_ctx,
 					beacon_xmit_ind->duration;
 				beacon_report->phyType = bss_desc->nwType;
 				beacon_report->bcnProbeRsp = 1;
-				beacon_report->rsni = 0;
+				beacon_report->rsni = bss_desc->sinr;
 
 				rrm_calculate_and_fill_rcpi(&beacon_report->rcpi,
 							    bss_desc->rssi);
@@ -2285,7 +2336,7 @@ rrm_process_chan_load_report_xmit(struct mac_context *mac_ctx,
 		     sizeof(channel_load_report->bw_ind));
 	qdf_mem_copy(&channel_load_report->wide_bw, &chan_load_ind->wide_bw,
 		     sizeof(channel_load_report->wide_bw));
-	pe_err("send chan load report for bssId:" QDF_MAC_ADDR_FMT " reg_class:%d, channel:%d, measStartTime:%lu, measDuration:%d, chan_load:%d",
+	pe_err("send chan load report for bssId:"QDF_MAC_ADDR_FMT" reg_class:%d, channel:%d, measStartTime:%llu, measDuration:%d, chan_load:%d",
 	       QDF_MAC_ADDR_REF(sessionBssId.bytes),
 	       channel_load_report->op_class,
 	       channel_load_report->channel,
@@ -2576,11 +2627,18 @@ end:
 }
 
 /**
- * rrm_get_start_tsf() - Get the Start TSF.
- * @mac: pointer to mac context
- * @pStartTSF: store star TSF in this buffer.
+ * rrm_get_start_tsf
  *
- * Return: None
+ * FUNCTION:  Get the Start TSF.
+ *
+ * LOGIC:
+ *
+ * ASSUMPTIONS:
+ *
+ * NOTE:
+ *
+ * @param startTSF - store star TSF in this buffer.
+ * @return txPower
  */
 void rrm_get_start_tsf(struct mac_context *mac, uint32_t *pStartTSF)
 {
@@ -2591,12 +2649,19 @@ void rrm_get_start_tsf(struct mac_context *mac, uint32_t *pStartTSF)
 
 /* -------------------------------------------------------------------- */
 /**
- * rrm_get_capabilities() - Returns a pointer to tpRRMCaps with all the
- * caps enabled in RRM
- * @mac: pointer to mac context
- * @pe_session: pointer to pe session
+ * rrm_get_capabilities
  *
- * Return: pointer to tRRMCaps
+ * FUNCTION:
+ * Returns a pointer to tpRRMCaps with all the caps enabled in RRM
+ *
+ * LOGIC:
+ *
+ * ASSUMPTIONS:
+ *
+ * NOTE:
+ *
+ * @param pe_session
+ * @return pointer to tRRMCaps
  */
 tpRRMCaps rrm_get_capabilities(struct mac_context *mac, struct pe_session *pe_session)
 {
@@ -2675,8 +2740,9 @@ void rrm_cleanup(struct mac_context *mac, uint8_t idx)
 /**
  * lim_update_rrm_capability() - Update PE context's rrm capability
  * @mac_ctx: Global pointer to MAC context
+ * @join_req: Pointer to SME join request.
  *
- * Update PE context's rrm capability
+ * Update PE context's rrm capability based on SME join request.
  *
  * Return: None
  */

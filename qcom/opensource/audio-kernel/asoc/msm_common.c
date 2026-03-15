@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
+
+#define DEBUG
 
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
@@ -94,7 +96,6 @@ static const struct snd_pcm_hardware dummy_dma_hardware = {
 #define MAX_CPU_CLUSTER 4 /* Silver, Gold, T, Prime */
 
 static int qos_vote_status;
-static uint8_t cpu_vote_mask;
 static bool lpi_pcm_logging_enable;
 static bool vote_against_sleep_enable;
 static unsigned int vote_against_sleep_cnt;
@@ -413,13 +414,6 @@ int msm_common_snd_hw_params(struct snd_pcm_substream *substream,
 		return -EINVAL;
 	}
 
-#if !defined(CONFIG_TARGET_PRODUCT_UKE)
-	if (get_smartpa_type() == SMARTPA_FS19XX) {
-		slot_width = 16;
-		dev_info(rtd->card->dev, "%s: SMARTPA_FS19XX slot_width overwrite to 16.\n", __func__);
-	}
-#endif
-
 	if (index >= 0) {
 		mutex_lock(&pdata->lock[index]);
 		if (atomic_read(&pdata->lpass_intf_clk_ref_cnt[index]) == 0) {
@@ -656,13 +650,11 @@ static void msm_audio_add_qos_request(void)
 			    &msm_audio_req[cpu],
 			    DEV_PM_QOS_RESUME_LATENCY,
 			    PM_QOS_CPU_LATENCY_DEFAULT_VALUE);
-		if (ret < 0) {
+		if (ret < 0)
 			pr_err("%s error (%d) adding resume latency to cpu %d.\n",
                                                 __func__, ret, cpu);
-		} else {
-			cpu_vote_mask |= (1 << cpu);
-			pr_debug("%s set cpu affinity to logical core %d.\n", __func__, cpu);
-		}
+		pr_debug("%s set cpu affinity to logical core %d.\n", __func__, cpu);
+
 		/* Limit the request to 2 silver cpu cores. */
 		if (++num_req == 2)
 			break;
@@ -673,21 +665,14 @@ static void msm_audio_remove_qos_request(void)
 {
 	int cpu = 0;
 	int ret = 0;
-	uint8_t cpu_bit = 0;
 	cpumask_t *cluster_cpu_mask = NULL;
 
 	cluster_cpu_mask = topology_core_cpumask(cluster_first_cpu[0]);
 
 	if (msm_audio_req) {
 		for_each_cpu(cpu, cluster_cpu_mask) {
-			cpu_bit = 1 << cpu;
-			if (cpu_bit & cpu_vote_mask) {
-				ret = dev_pm_qos_remove_request(
-					    &msm_audio_req[cpu]);
-				cpu_vote_mask &= ~cpu_bit;
-			} else
-				pr_debug("%s: core %d not voted.\n",
-								__func__, cpu);
+			ret = dev_pm_qos_remove_request(
+				    &msm_audio_req[cpu]);
 			if (ret < 0)
 				pr_err("%s error (%d) removing request from cpu %d.\n",
                                                 __func__, ret, cpu);
@@ -974,7 +959,6 @@ void msm_common_get_backend_name(const char *stream_name, char **backend_name)
 static void msm_audio_update_qos_request(u32 latency)
 {
 	int cpu = 0;
-	uint8_t cpu_bit = 0;
 	int ret = -1;
 	int num_req = 0;
 	cpumask_t *cluster_cpu_mask = NULL;
@@ -983,13 +967,8 @@ static void msm_audio_update_qos_request(u32 latency)
 
 	if (msm_audio_req) {
 		for_each_cpu(cpu, cluster_cpu_mask) {
-			cpu_bit = 1 << cpu;
-			if (cpu_bit & cpu_vote_mask)
-				ret = dev_pm_qos_update_request(
-						&msm_audio_req[cpu], latency);
-			else
-				pr_debug("%s: core %d not voted.\n",
-								__func__, cpu);
+			ret = dev_pm_qos_update_request(
+					&msm_audio_req[cpu], latency);
 			if (1 == ret ) {
 				pr_debug("%s: updated latency of core %d to %u.\n",
 								__func__, cpu, latency);

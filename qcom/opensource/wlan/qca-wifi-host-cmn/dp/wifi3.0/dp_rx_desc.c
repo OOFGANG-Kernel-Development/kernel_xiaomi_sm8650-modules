@@ -234,6 +234,7 @@ void dp_rx_desc_nbuf_free(struct dp_soc *soc,
 {
 	qdf_nbuf_t nbuf_unmap_list = NULL;
 	qdf_nbuf_t nbuf_free_list = NULL;
+
 	qdf_spin_lock_bh(&rx_desc_pool->lock);
 	dp_rx_desc_nbuf_collect(soc, rx_desc_pool,
 				&nbuf_unmap_list, &nbuf_free_list);

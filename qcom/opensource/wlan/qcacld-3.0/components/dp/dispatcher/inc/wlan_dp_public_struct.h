@@ -23,6 +23,9 @@
 #ifndef _WLAN_DP_PUBLIC_STRUCT_H_
 #define _WLAN_DP_PUBLIC_STRUCT_H_
 
+#ifdef WLAN_FEATURE_OSRTP
+#include "xsk_buff_pool.h"
+#endif
 #include "wlan_cmn.h"
 #include "wlan_objmgr_cmn.h"
 #include "wlan_objmgr_global_obj.h"
@@ -634,6 +637,7 @@ union wlan_tp_data {
  * @dp_get_pause_map: Callback API to get pause map count
  * @dp_nud_failure_work: Callback API to handle NUD failuire work
  * @link_monitoring_cb: Callback API to handle link speed change
+ * @dp_rx_osrtp_pkt: convert nbuf to xdp buf and push it to userspace
  */
 struct wlan_dp_psoc_callbacks {
 	hdd_cb_handle callback_ctx;
@@ -719,6 +723,9 @@ struct wlan_dp_psoc_callbacks {
 	void (*link_monitoring_cb)(struct wlan_objmgr_psoc *psoc,
 				   uint8_t vdev_id,
 				   bool is_link_speed_good);
+#ifdef WLAN_FEATURE_OSRTP
+	QDF_STATUS (*dp_rx_osrtp_pkt)(qdf_nbuf_t nbuf, struct xsk_buff_pool *xsk_pool);
+#endif
 };
 
 /**

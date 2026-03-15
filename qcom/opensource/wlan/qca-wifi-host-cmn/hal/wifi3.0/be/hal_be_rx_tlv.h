@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -618,9 +618,6 @@ struct rx_mon_pkt_tlvs {
 #define HAL_RX_TLV_IP_CSUM_FAIL_GET(_rx_pkt_tlv)	\
 	HAL_RX_MSDU_END(_rx_pkt_tlv).ip_chksum_fail
 
-#define HAL_RX_TLV_IP_FRAG_GET(_rx_pkt_tlv)	\
-	HAL_RX_MSDU_END(_rx_pkt_tlv).ip_frag
-
 #define HAL_RX_TLV_TCP_UDP_CSUM_FAIL_GET(_rx_pkt_tlv)	\
 	HAL_RX_MSDU_END(_rx_pkt_tlv).tcp_udp_chksum_fail
 
@@ -964,8 +961,8 @@ static inline void hal_rx_print_pn_be(uint8_t *buf)
 	uint32_t pn_95_64 = HAL_RX_TLV_MPDU_PN_95_64_GET(rx_pkt_tlvs);
 	uint32_t pn_127_96 = HAL_RX_TLV_MPDU_PN_127_96_GET(rx_pkt_tlvs);
 
-	hal_err_rl("pn_127_96 0x%x pn_95_64 0x%x pn_63_32 0x%x pn_31_0 0x%x",
-		   pn_127_96, pn_95_64, pn_63_32, pn_31_0);
+	hal_debug("PN number pn_127_96 0x%x pn_95_64 0x%x pn_63_32 0x%x pn_31_0 0x%x",
+		  pn_127_96, pn_95_64, pn_63_32, pn_31_0);
 }
 
 static inline void hal_rx_tlv_get_pn_num_be(uint8_t *buf, uint64_t *pn_num)
@@ -1233,8 +1230,8 @@ static inline void hal_rx_print_pn_be(uint8_t *buf)
 	uint32_t pn_63_32 = HAL_RX_TLV_MPDU_PN_63_32_GET(rx_pkt_tlvs);
 	uint32_t pn_95_64 = HAL_RX_TLV_MPDU_PN_95_64_GET(rx_pkt_tlvs);
 
-	hal_err_rl("PN number pn_95_64 0x%x pn_63_32 0x%x pn_31_0 0x%x",
-		   pn_95_64, pn_63_32, pn_31_0);
+	hal_debug("PN number pn_95_64 0x%x pn_63_32 0x%x pn_31_0 0x%x",
+		  pn_95_64, pn_63_32, pn_31_0);
 }
 
 static inline void hal_rx_tlv_get_pn_num_be(uint8_t *buf, uint64_t *pn_num)
@@ -2477,20 +2474,18 @@ static inline uint8_t *hal_rx_pkt_hdr_get_be(uint8_t *buf)
  * @rx_tlv_hdr: start address of rx_tlv_hdr
  * @ip_csum_err: buffer to return ip_csum_fail flag
  * @tcp_udp_csum_err: placeholder to return tcp-udp checksum fail flag
- * @ip_frag: fragment IP flag
  *
  * Return: None
  */
 static inline void
 hal_rx_tlv_csum_err_get_be(uint8_t *rx_tlv_hdr, uint32_t *ip_csum_err,
-			   uint32_t *tcp_udp_csum_err, uint32_t *ip_frag)
+			   uint32_t *tcp_udp_csum_err)
 {
 	struct rx_pkt_tlvs *rx_pkt_tlvs =
 					(struct rx_pkt_tlvs *)rx_tlv_hdr;
 
 	*ip_csum_err = HAL_RX_TLV_IP_CSUM_FAIL_GET(rx_pkt_tlvs);
 	*tcp_udp_csum_err = HAL_RX_TLV_TCP_UDP_CSUM_FAIL_GET(rx_pkt_tlvs);
-	*ip_frag = HAL_RX_TLV_IP_FRAG_GET(rx_pkt_tlvs);
 }
 
 static inline
@@ -2588,20 +2583,5 @@ hal_rx_msdu_end_sa_sw_peer_id_get_be(uint8_t *buf)
 	hal_rx_msdu_end_t *msdu_end = &pkt_tlvs->msdu_end_tlv.rx_msdu_end;
 
 	return HAL_RX_MSDU_END_SA_SW_PEER_ID_GET(msdu_end);
-}
-
-/**
- * hal_rx_parse_eht_sig_hdr_be()
- *				    - process eht sig header
- * @hal_soc: HAL soc handle
- * @tlv: pointer to EHT SIG TLV buffer
- * @ppdu_info_handle: pointer to ppdu_info
- *
- * Return: None
- */
-static inline
-void hal_rx_parse_eht_sig_hdr_be(struct hal_soc *hal_soc, uint8_t *tlv,
-				 void *ppdu_info_handle)
-{
 }
 #endif /* _HAL_BE_RX_TLV_H_ */

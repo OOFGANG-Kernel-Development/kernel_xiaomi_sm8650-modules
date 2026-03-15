@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -182,6 +182,9 @@ static int wcd937x_init_reg(struct snd_soc_component *component)
 	usleep_range(10000, 10010);
 	snd_soc_component_update_bits(component, WCD937X_ANA_BIAS,
 				0x40, 0x00);
+	snd_soc_component_update_bits(component,
+				WCD937X_HPH_SURGE_HPHLR_SURGE_EN,
+				0xFF, 0xD9);
 	snd_soc_component_update_bits(component, WCD937X_MICB1_TEST_CTL_1,
 				0xFF, 0xFA);
 	snd_soc_component_update_bits(component, WCD937X_MICB2_TEST_CTL_1,
@@ -384,12 +387,6 @@ static int wcd937x_parse_port_mapping(struct device *dev,
 
 	for (i = 0; i < map_length; i++) {
 		port_num = dt_array[NUM_SWRS_DT_PARAMS * i];
-
-		if (port_num >= MAX_PORT || ch_iter >= MAX_CH_PER_PORT) {
-			dev_err(dev, "%s: Invalid port or channel number\n", __func__);
-			goto err_pdata_fail;
-		}
-
 		slave_port_type = dt_array[NUM_SWRS_DT_PARAMS * i + 1];
 		ch_mask = dt_array[NUM_SWRS_DT_PARAMS * i + 2];
 		ch_rate = dt_array[NUM_SWRS_DT_PARAMS * i + 3];
@@ -1835,11 +1832,6 @@ static int wcd937x_event_notify(struct notifier_block *block,
 		}
 		wcd937x->mbhc->wcd_mbhc.deinit_in_progress = false;
 		break;
-	case BOLERO_SLV_EVT_CLK_NOTIFY:
-		snd_soc_component_update_bits(component,
-			WCD937X_DIGITAL_TOP_CLK_CFG, 0x06,
-				((val >> 0x10) << 0x01));
-		break;
 	default:
 		dev_err(component->dev, "%s: invalid event %d\n", __func__,
 			event);
@@ -3178,7 +3170,7 @@ static int wcd937x_reset(struct device *dev)
 	if (rc) {
 		dev_err(dev, "%s: wcd sleep state request fail!\n",
 				__func__);
-		return -EPROBE_DEFER;
+		return rc;
 	}
 	/* 20ms sleep required after pulling the reset gpio to LOW */
 	usleep_range(20, 30);
@@ -3187,7 +3179,7 @@ static int wcd937x_reset(struct device *dev)
 	if (rc) {
 		dev_err(dev, "%s: wcd active state request fail!\n",
 				__func__);
-		return -EPROBE_DEFER;
+		return rc;
 	}
 	/* 20ms sleep required after pulling the reset gpio to HIGH */
 	usleep_range(20, 30);
@@ -3361,8 +3353,7 @@ static int wcd937x_bind(struct device *dev)
 	pdata = wcd937x_populate_dt_data(dev);
 	if (!pdata) {
 		dev_err(dev, "%s: Fail to obtain platform data\n", __func__);
-		ret = -EINVAL;
-		goto err_pdata;
+		return -EINVAL;
 	}
 	wcd937x->dev = dev;
 	wcd937x->dev->platform_data = pdata;
@@ -3412,11 +3403,7 @@ static int wcd937x_bind(struct device *dev)
 		goto err_bind_all;
 	}
 
-	ret = wcd937x_reset(dev);
-	if (ret == -EPROBE_DEFER) {
-		dev_err(dev, "%s: wcd reset failed!\n", __func__);
-		goto err_bind_all;
-	}
+	wcd937x_reset(dev);
 	/*
 	 * Add 5msec delay to provide sufficient time for
 	 * soundwire auto enumeration of slave devices as
@@ -3528,9 +3515,8 @@ err_irq:
 err:
 	component_unbind_all(dev, wcd937x);
 err_bind_all:
-	kfree(pdata);
-err_pdata:
 	dev_set_drvdata(dev, NULL);
+	kfree(pdata);
 	kfree(wcd937x);
 	return ret;
 }

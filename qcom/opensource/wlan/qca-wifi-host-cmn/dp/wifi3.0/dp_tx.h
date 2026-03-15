@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -105,7 +105,7 @@ do {                                                           \
 #define MAX_CDP_SEC_TYPE 12
 
 /* number of dwords for htt_tx_msdu_desc_ext2_t */
-#define DP_TX_MSDU_INFO_META_DATA_DWORDS 9
+#define DP_TX_MSDU_INFO_META_DATA_DWORDS 7
 
 #define dp_tx_alert(params...) QDF_TRACE_FATAL(QDF_MODULE_ID_DP_TX, params)
 #define dp_tx_err(params...) QDF_TRACE_ERROR(QDF_MODULE_ID_DP_TX, params)
@@ -572,6 +572,24 @@ QDF_STATUS dp_tso_soc_detach(struct cdp_soc_t *txrx_soc);
 qdf_nbuf_t dp_tx_send(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
 		      qdf_nbuf_t nbuf);
 
+
+#ifdef WLAN_FEATURE_OSRTP
+/**
+ * dp_tx_send_osrtp() - Transmit a osrtp frame on a given VAP
+ * @soc_hdl: DP soc handle
+ * @vdev_id: id of DP vdev handle
+ * @osrtp_desc: array of osrtp desc
+ * @pool: xsk buff pool
+ *
+ * Entry point for Core Tx layer (DP_TX) invoked from
+ * hard_start_xmit in OSIF/HDD
+ *
+ * Return: NULL on success,
+ *         nbuf when it fails to send
+ */
+QDF_STATUS dp_tx_send_osrtp(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
+			struct cdp_tx_osrtp_desc *osrtp_desc, struct xsk_buff_pool *pool);
+#endif
 /**
  * dp_tx_send_vdev_id_check() - Transmit a frame on a given VAP in special
  *      case to avoid check in per-packet path.
@@ -781,7 +799,6 @@ static inline QDF_STATUS dp_tx_pdev_init(struct dp_pdev *pdev)
  * @hal_ring_hdl: ring pointer
  * @last_prefetched_hw_desc: pointer to the last prefetched HW descriptor
  * @last_prefetched_sw_desc: pointer to last prefetch SW desc
- * @last_hw_desc: pointer to last HW desc
  *
  * Return: None
  */
@@ -793,17 +810,12 @@ void dp_tx_prefetch_hw_sw_nbuf_desc(struct dp_soc *soc,
 				    hal_ring_handle_t hal_ring_hdl,
 				    void **last_prefetched_hw_desc,
 				    struct dp_tx_desc_s
-				    **last_prefetched_sw_desc,
-				    void *last_hw_desc)
+				    **last_prefetched_sw_desc)
 {
 	if (*last_prefetched_sw_desc) {
 		qdf_prefetch((uint8_t *)(*last_prefetched_sw_desc)->nbuf);
 		qdf_prefetch((uint8_t *)(*last_prefetched_sw_desc)->nbuf + 64);
 	}
-
-	if (qdf_unlikely(last_hw_desc &&
-			 (*last_prefetched_hw_desc == last_hw_desc)))
-		return;
 
 	if (num_avail_for_reap && *last_prefetched_hw_desc) {
 		soc->arch_ops.tx_comp_get_params_from_hal_desc(soc,
@@ -831,8 +843,7 @@ void dp_tx_prefetch_hw_sw_nbuf_desc(struct dp_soc *soc,
 				    hal_ring_handle_t hal_ring_hdl,
 				    void **last_prefetched_hw_desc,
 				    struct dp_tx_desc_s
-				    **last_prefetched_sw_desc,
-				    void *last_hw_desc)
+				    **last_prefetched_sw_desc)
 {
 }
 #endif

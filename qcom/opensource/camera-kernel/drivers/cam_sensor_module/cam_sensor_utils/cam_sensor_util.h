@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_SENSOR_UTIL_H_
@@ -79,13 +79,13 @@ int32_t cam_sensor_handle_random_write(
 	struct cam_cmd_i2c_random_wr *cam_cmd_i2c_random_wr,
 	struct i2c_settings_array *i2c_reg_settings,
 	uint32_t *cmd_length_in_bytes, int32_t *offset,
-	struct list_head **list, uint32_t payload_count);
+	struct list_head **list);
 
 int32_t cam_sensor_handle_continuous_write(
 	struct cam_cmd_i2c_continuous_wr *cam_cmd_i2c_continuous_wr,
 	struct i2c_settings_array *i2c_reg_settings,
 	uint32_t *cmd_length_in_bytes, int32_t *offset,
-	struct list_head **list, uint32_t payload_count);
+	struct list_head **list);
 
 int32_t cam_sensor_handle_delay(
 	uint32_t **cmd_buf,
@@ -106,7 +106,7 @@ int32_t cam_sensor_handle_random_read(
 	uint16_t *cmd_length_in_bytes,
 	int32_t *offset,
 	struct list_head **list,
-	struct cam_buf_io_cfg *io_cfg, uint32_t payload_count);
+	struct cam_buf_io_cfg *io_cfg);
 
 int32_t cam_sensor_handle_continuous_read(
 	struct cam_cmd_i2c_continuous_rd *cmd_i2c_continuous_rd,
@@ -174,5 +174,11 @@ int cam_hw_notify_v4l2_error_event( char *name, void *ctrl, uint32_t id,
 	uint32_t error_type, uint32_t error_code);
 
 uint32_t cam_hw_get_cci_ops(struct i2c_settings_list *i2c_list);
+#if IS_ENABLED(CONFIG_MIISP)
+int cam_sensor_core_power_up_extra(struct cam_sensor_power_ctrl_t *ctrl,
+		struct cam_hw_soc_info *soc_info);
+int cam_sensor_util_power_down_extra(struct cam_sensor_power_ctrl_t *ctrl,
+		struct cam_hw_soc_info *soc_info);
+#endif
 //end
 #endif /* _CAM_SENSOR_UTIL_H_ */

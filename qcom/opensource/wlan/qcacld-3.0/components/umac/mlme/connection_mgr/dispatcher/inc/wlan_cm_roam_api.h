@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -112,8 +112,6 @@ wlan_roam_update_cfg(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
  */
 void wlan_cm_send_beacon_miss(uint8_t vdev_id, int32_t rssi);
 
-void cm_update_ext_cap_ie_at_source(struct wlan_objmgr_psoc *psoc,
-				    struct element_info *assoc_ie);
 #else
 static inline
 QDF_STATUS wlan_cm_roam_send_rso_cmd(struct wlan_objmgr_psoc *psoc,
@@ -151,11 +149,6 @@ wlan_cm_enable_roaming_on_connected_sta(struct wlan_objmgr_pdev *pdev,
 {
 	return QDF_STATUS_E_NOSUPPORT;
 }
-
-static inline
-void cm_update_ext_cap_ie_at_source(struct wlan_objmgr_psoc *psoc,
-				    struct element_info *assoc_ie)
-{}
 #endif
 
 /**
@@ -895,17 +888,6 @@ QDF_STATUS wlan_cm_set_roam_band_bitmask(struct wlan_objmgr_psoc *psoc,
 					 uint8_t vdev_id,
 					 uint32_t roam_band_bitmask);
 
-/**
- * wlan_cm_set_btm_config() - Set btm roaming disable flag for vdev
- * @psoc: psoc pointer
- * @vdev_id: vdev id
- * @is_disable_btm: to check whether btm roaming is disabled or not
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS wlan_cm_set_btm_config(struct wlan_objmgr_psoc *psoc,
-				  uint8_t vdev_id, bool is_disable_btm);
-
 #ifdef FEATURE_RX_LINKSPEED_ROAM_TRIGGER
 /**
  * struct roam_link_speed_cfg - link speed state config
@@ -1350,22 +1332,6 @@ QDF_STATUS
 wlan_cm_roam_stats_info_get(struct wlan_objmgr_vdev *vdev,
 			    struct enhance_roam_info **roam_info,
 			    uint32_t  *roam_num);
-
-/**
- * wlan_cm_roam_info_get() - get vdev roam info
- *
- * @vdev: pointer to vdev
- * @roam_info: pointer to buffer to copy roam stats info
- * @idx: index of roam stats cache buffer
- *
- * Return: QDF_STATUS
- */
-
-QDF_STATUS
-wlan_cm_roam_info_get(struct wlan_objmgr_vdev *vdev,
-		      struct enhance_roam_info **roam_info,
-		      uint8_t idx);
-
 #else
 static inline
 void mlme_cm_alloc_roam_stats_info(struct vdev_mlme_obj *vdev_mlme)
@@ -1538,13 +1504,6 @@ wlan_cm_set_roam_band_bitmask(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
 			      uint32_t roam_band_bitmask)
 {
 	return QDF_STATUS_E_NOSUPPORT;
-}
-
-static inline QDF_STATUS wlan_cm_set_btm_config(struct wlan_objmgr_psoc *psoc,
-						uint8_t vdev_id,
-						bool is_disable_btm)
-{
-	return QDF_STATUS_SUCCESS;
 }
 
 static inline
@@ -1989,17 +1948,17 @@ cm_roam_vendor_handoff_event_handler(struct wlan_objmgr_psoc *psoc,
 
 /**
  * cm_roam_update_vdev() - Update the STA and BSS
- * @vdev: Pointer to the vdev object
  * @sync_ind: Information needed for roam sync propagation
+ * @vdev_id: vdev id
  *
  * This function will perform all the vdev related operations with
  * respect to the self sta and the peer after roaming and completes
  * the roam synch propagation with respect to WMA layer.
  *
- * Return: QDF_STATUS
+ * Return: None
  */
-QDF_STATUS cm_roam_update_vdev(struct wlan_objmgr_vdev *vdev,
-			       struct roam_offload_synch_ind *sync_ind);
+void cm_roam_update_vdev(struct roam_offload_synch_ind *sync_ind,
+			 uint8_t vdev_id);
 
 /**
  * cm_roam_pe_sync_callback() - Callback registered at pe, gets invoked when
@@ -2145,12 +2104,12 @@ wlan_cm_set_assoc_btm_cap(struct wlan_objmgr_vdev *vdev, bool val);
 
 /**
  * wlan_cm_get_assoc_btm_cap() - Get the assoc BTM capability
- * @psoc: pointer to psoc
- * @vdev_id: vdev id
+ * @vdev: pointer to vdev
  *
  * Return: BTM cap
  */
-bool wlan_cm_get_assoc_btm_cap(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id);
+bool
+wlan_cm_get_assoc_btm_cap(struct wlan_objmgr_vdev *vdev);
 
 /**
  * wlan_cm_is_self_mld_roam_supported() - Is self mld roam supported
@@ -2314,14 +2273,6 @@ QDF_STATUS wlan_cm_link_switch_notif_cb(struct wlan_objmgr_vdev *vdev,
 	return QDF_STATUS_E_NOSUPPORT;
 }
 #endif /* WLAN_FEATURE_11BE_MLO && WLAN_FEATURE_ROAM_OFFLOAD */
-
-/**
- * cm_roam_get_roam_score_algo() - Get vendor roam score algorithm value
- * @psoc: Pointer to PSOC object
- *
- * Return: Vendor Roam score algorithm value
- */
-uint32_t cm_roam_get_roam_score_algo(struct wlan_objmgr_psoc *psoc);
 
 /**
  * wlan_update_peer_phy_mode() - update phymode in peer object

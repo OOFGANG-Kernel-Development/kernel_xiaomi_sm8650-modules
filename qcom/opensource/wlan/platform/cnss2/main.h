@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CNSS_MAIN_H
@@ -46,10 +46,6 @@
 #include "qmi.h"
 #include "cnss_prealloc.h"
 #include "cnss_common.h"
-#include <linux/pm_runtime.h>
-#if IS_ENABLED(CONFIG_PCIE_QCOM_ECAM)
-#include <linux/pm_domain.h>
-#endif
 
 #define MAX_NO_OF_MAC_ADDR		4
 #define QMI_WLFW_MAX_TIMESTAMP_LEN	32
@@ -78,7 +74,6 @@
 
 #define POWER_ON_RETRY_DELAY_MS         500
 #define WLFW_MAX_HANG_EVENT_DATA_SIZE   384
-#define CNSS_MBOX_MSG_MAX_LEN           64
 
 #define CNSS_EVENT_SYNC   BIT(0)
 #define CNSS_EVENT_UNINTERRUPTIBLE BIT(1)
@@ -121,11 +116,6 @@ struct cnss_vreg_info {
 
 enum cnss_vreg_type {
 	CNSS_VREG_PRIM,
-};
-
-enum cnss_pci_switch_type {
-	PCIE_DIRECT_ATTACH = 0,
-	PCIE_SWITCH_NTN3,
 };
 
 struct cnss_clk_cfg {
@@ -517,7 +507,6 @@ struct cnss_thermal_cdev {
 
 struct cnss_plat_data {
 	struct platform_device *plat_dev;
-	enum cnss_driver_mode driver_mode;
 	void *bus_priv;
 	enum cnss_dev_bus_type bus_type;
 	struct list_head vreg_list;
@@ -555,7 +544,6 @@ struct cnss_plat_data {
 	struct workqueue_struct *event_wq;
 	struct work_struct recovery_work;
 	struct delayed_work wlan_reg_driver_work;
-	struct work_struct cnss_dms_del_work;
 	struct qmi_handle qmi_wlfw;
 	struct qmi_handle qmi_dms;
 	struct wlfw_rf_chip_info chip_info;
@@ -566,9 +554,6 @@ struct cnss_plat_data {
 	char fw_build_id[QMI_WLFW_MAX_BUILD_ID_LEN + 1];
 	u32 otp_version;
 	u32 fw_mem_seg_len;
-#if IS_ENABLED(CONFIG_MEM_ALLOC_FALLBACK)
-	bool smaller_size_mem_req;
-#endif
 	struct cnss_fw_mem fw_mem[QMI_WLFW_MAX_NUM_MEM_SEG_V01];
 	struct cnss_fw_mem m3_mem;
 	struct cnss_fw_mem tme_lite_mem;
@@ -618,8 +603,6 @@ struct cnss_plat_data {
 	u64 dynamic_feature;
 	void *get_info_cb_ctx;
 	int (*get_info_cb)(void *ctx, void *event, int event_len);
-	void *get_driver_async_data_ctx;
-	int (*get_driver_async_data_cb)(void *ctx, uint16_t type, void *event, int event_len);
 	bool cbc_enabled;
 	u8 use_pm_domain;
 	u8 use_nv_mac;
@@ -630,14 +613,16 @@ struct cnss_plat_data {
 	u64 fw_caps;
 	u8 pcie_gen_speed;
 	struct iommu_domain *audio_iommu_domain;
-	bool is_audio_shared_iommu_group;
 	struct cnss_dms_data dms;
 	int power_up_error;
 	u32 hw_trc_override;
 	u8 charger_mode;
 	struct mbox_client mbox_client_data;
 	struct mbox_chan *mbox_chan;
+#if IS_ENABLED(CONFIG_MSM_QMP)
 	struct qmp *qmp;
+#endif
+	bool use_direct_qmp;
 	const char *vreg_ol_cpr, *vreg_ipa;
 	const char **pdc_init_table, **vreg_pdc_map, **pmu_vreg_map;
 	int pdc_init_table_len, vreg_pdc_map_len, pmu_vreg_map_len;
@@ -649,6 +634,7 @@ struct cnss_plat_data {
 	u32 hang_data_addr_offset;
 	/* bitmap to detect FEM combination */
 	u8 hwid_bitmap;
+	enum cnss_driver_mode driver_mode;
 	uint32_t num_shadow_regs_v3;
 	bool sec_peri_feature_disable;
 	struct device_node *dev_node;
@@ -662,12 +648,6 @@ struct cnss_plat_data {
 	u32 *on_chip_pmic_board_ids;
 	bool no_bwscale;
 	bool sleep_clk;
-	struct wlchip_serial_id_v01 serial_id;
-	bool ipa_shared_cb_enable;
-	u32 pcie_switch_type;
-	bool is_fw_managed_pwr;
-	struct device **pd_devs;
-	int pd_count;
 };
 
 #if IS_ENABLED(CONFIG_ARCH_QCOM)
@@ -697,7 +677,7 @@ struct cnss_plat_data *cnss_get_first_plat_priv(struct platform_device *plat_dev
 void cnss_pm_stay_awake(struct cnss_plat_data *plat_priv);
 void cnss_pm_relax(struct cnss_plat_data *plat_priv);
 struct cnss_plat_data *cnss_get_plat_priv_by_rc_num(int rc_num);
-int cnss_get_max_plat_env_count(void);
+int cnss_get_plat_env_count(void);
 struct cnss_plat_data *cnss_get_plat_env(int index);
 void cnss_get_qrtr_info(struct cnss_plat_data *plat_priv);
 void cnss_get_sleep_clk_supported(struct cnss_plat_data *plat_priv);
@@ -759,7 +739,6 @@ void cnss_aop_interface_deinit(struct cnss_plat_data *plat_priv);
 int cnss_aop_pdc_reconfig(struct cnss_plat_data *plat_priv);
 int cnss_aop_send_msg(struct cnss_plat_data *plat_priv, char *msg);
 void cnss_power_misc_params_init(struct cnss_plat_data *plat_priv);
-void cnss_pci_of_switch_type_init(struct cnss_plat_data *plat_priv);
 int cnss_aop_ol_cpr_cfg_setup(struct cnss_plat_data *plat_priv,
 			      struct wlfw_pmu_cfg_v01 *fw_pmu_cfg);
 int cnss_request_firmware_direct(struct cnss_plat_data *plat_priv,
@@ -779,12 +758,4 @@ size_t cnss_get_platform_name(struct cnss_plat_data *plat_priv,
 			      char *buf, const size_t buf_len);
 int cnss_iommu_map(struct iommu_domain *domain, unsigned long iova,
 		   phys_addr_t paddr, size_t size, int prot);
-int cnss_select_pinctrl_enable(struct cnss_plat_data *plat_priv);
-int cnss_select_pinctrl_state(struct cnss_plat_data *plat_priv, bool state);
-int cnss_fw_managed_power_regulator(struct cnss_plat_data *plat_priv,
-				    bool enabled);
-int cnss_fw_managed_power_gpio(struct cnss_plat_data *plat_priv,
-			       bool enabled);
-int cnss_fw_managed_domain_attach(struct cnss_plat_data *plat_priv);
-void cnss_fw_managed_domain_detach(struct cnss_plat_data *plat_priv);
 #endif /* _CNSS_MAIN_H */

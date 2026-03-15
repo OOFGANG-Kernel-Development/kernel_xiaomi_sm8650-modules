@@ -504,8 +504,7 @@ wlan_t2lm_validate_candidate(struct cnx_mgr *cm_ctx,
 	}
 
 	status = wlan_mlo_parse_bcn_prbresp_t2lm_ie(&t2lm_ctx,
-					util_scan_entry_t2lm(scan_entry),
-					util_scan_entry_t2lm_len(scan_entry));
+						    scan_entry->ie_list.t2lm[0]);
 	if (QDF_IS_STATUS_ERROR(status))
 		goto end;
 

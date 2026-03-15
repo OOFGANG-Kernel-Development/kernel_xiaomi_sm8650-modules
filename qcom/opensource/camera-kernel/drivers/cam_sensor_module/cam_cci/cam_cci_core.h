@@ -69,5 +69,4 @@ irqreturn_t cam_cci_threaded_irq(int irq_num, void *data);
 int32_t cam_cci_data_queue_burst_apply(struct cci_device *cci_dev,
 	enum cci_i2c_master_t master, enum cci_i2c_queue_t queue,
 	uint32_t triggerHalfQueue);
-
 #endif /* _CAM_CCI_CORE_H_ */

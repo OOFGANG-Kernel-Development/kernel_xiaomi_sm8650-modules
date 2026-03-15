@@ -19,6 +19,7 @@
 
 /* TFE resource constants */
 #define CAM_TFE_HW_IN_RES_MAX            (CAM_ISP_TFE_IN_RES_MAX & 0xFF)
+#define CAM_TFE_HW_OUT_RES_MAX           (CAM_ISP_TFE_OUT_RES_MAX & 0xFF)
 #define CAM_TFE_HW_RES_POOL_MAX          64
 
 /**
@@ -83,30 +84,6 @@ struct cam_tfe_cdm_user_data {
 };
 
 /**
- * struct cam_tfe_cmd_buf_desc_addr_len
- *
- * brief:			structure to store cpu addr and size of
- *				reg dump descriptors
- * @cpu_addr:			cpu addr of buffer
- * @size:			size of the buffer
- */
-struct cam_tfe_cmd_buf_desc_addr_len {
-	uintptr_t cpu_addr;
-	size_t    buf_size;
-};
-
-/**
- * struct cam_isp_tfe_hw_caps - BUS capabilities
- *
- * @max_tfe_out_res_type  :  max tfe out res type value from hw
- * @support_consumed_addr :  indicate whether hw supports last consumed address
- */
-struct cam_isp_tfe_hw_caps {
-	uint32_t     max_tfe_out_res_type;
-	bool         support_consumed_addr;
-};
-
-/**
  * struct cam_tfe_hw_mgr_ctx - TFE HW manager Context object
  *
  * @list:                     used by the ctx list.
@@ -117,9 +94,7 @@ struct cam_isp_tfe_hw_caps {
  * @res_list_csid:            csid resource list
  * @res_list_tfe_in:          tfe input resource list
  * @res_list_tfe_out:         tfe output resoruces array
- * @num_acq_tfe_out:          Number of acquired TFE out resources
  * @free_res_list:            free resources list for the branch node
- * @tfe_out_map:              Map for TFE out ports
  * @res_pool:                 memory storage for the free resource list
  * @base                      device base index array contain the all TFE HW
  *                            instance associated with this context.
@@ -138,8 +113,6 @@ struct cam_isp_tfe_hw_caps {
  * @is_rdi_only_context       flag to specify the context has only rdi resource
  * @reg_dump_buf_desc:        cmd buffer descriptors for reg dump
  * @num_reg_dump_buf:         count of descriptors in reg_dump_buf_desc
- * @reg_dump_cmd_buf_addr_len	store cpu addr and size of
- *                          reg dump descriptors for flush/error cases
  * @applied_req_id:           last request id to be applied
  * @last_dump_flush_req_id    last req id for which reg dump on flush was called
  * @last_dump_err_req_id      last req id for which reg dump on error was called
@@ -160,7 +133,6 @@ struct cam_isp_tfe_hw_caps {
  * @is_shdr                   Indicate if the usecase is SHDR
  * @is_shdr_slave             Indicate whether context is slave in shdr usecase
  * @ctx_state                 Indicate if ctx is active or paused
- * @skip_reg_dump_buf_put     Set if put_cpu_buf for reg dump buf is already called
  */
 struct cam_tfe_hw_mgr_ctx {
 	struct list_head                list;
@@ -172,11 +144,10 @@ struct cam_tfe_hw_mgr_ctx {
 
 	struct list_head                res_list_tfe_csid;
 	struct list_head                res_list_tfe_in;
-	struct cam_isp_hw_mgr_res       *res_list_tfe_out;
-	uint32_t                        num_acq_tfe_out;
+	struct cam_isp_hw_mgr_res
+			res_list_tfe_out[CAM_TFE_HW_OUT_RES_MAX];
 
 	struct list_head                free_res_list;
-	uint8_t                         *tfe_out_map;
 	struct cam_isp_hw_mgr_res       res_pool[CAM_TFE_HW_RES_POOL_MAX];
 
 	struct cam_isp_ctx_base_info    base[CAM_TFE_HW_NUM_MAX];
@@ -194,8 +165,6 @@ struct cam_tfe_hw_mgr_ctx {
 	struct cam_cmd_buf_desc         reg_dump_buf_desc[
 						CAM_REG_DUMP_MAX_BUF_ENTRIES];
 	uint32_t                        num_reg_dump_buf;
-	struct cam_tfe_cmd_buf_desc_addr_len
-			reg_dump_cmd_buf_addr_len[CAM_REG_DUMP_MAX_BUF_ENTRIES];
 	uint64_t                        applied_req_id;
 	uint64_t                        last_dump_flush_req_id;
 	uint64_t                        last_dump_err_req_id;
@@ -216,7 +185,6 @@ struct cam_tfe_hw_mgr_ctx {
 	bool                            is_shdr;
 	bool                            is_shdr_slave;
 	uint32_t                        ctx_state;
-	bool                            skip_reg_dump_buf_put;
 };
 
 /**
@@ -239,8 +207,8 @@ struct cam_tfe_hw_mgr_ctx {
  * @work q                 work queue for TFE hw manager
  * @debug_cfg              debug configuration
  * @path_port_map          Mapping of outport to TFE mux
+ * @support_consumed_addr  indicate whether hw supports last consumed address
  * @ctx_lock               Spinlock for HW manager
- * @isp_caps               Capability of underlying TFE HW
  */
 struct cam_tfe_hw_mgr {
 	struct cam_isp_hw_mgr            mgr_common;
@@ -260,8 +228,8 @@ struct cam_tfe_hw_mgr {
 	struct cam_req_mgr_core_workq   *workq;
 	struct cam_tfe_hw_mgr_debug      debug_cfg;
 	struct cam_isp_hw_path_port_map  path_port_map;
+	bool                             support_consumed_addr;
 	spinlock_t                       ctx_lock;
-	struct cam_isp_tfe_hw_caps       isp_caps;
 };
 
 /**

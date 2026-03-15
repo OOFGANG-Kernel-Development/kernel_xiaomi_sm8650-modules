@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -750,21 +750,6 @@ static void policy_mgr_get_hw_mode_params(
 		info->support_6ghz_band =
 			max_5g_freq > wlan_reg_min_6ghz_chan_freq();
 	}
-}
-
-QDF_STATUS policy_mgr_update_nss_req(struct wlan_objmgr_psoc *psoc,
-				     uint8_t vdev_id, uint8_t tx_nss,
-				     uint8_t rx_nss)
-{
-	struct policy_mgr_psoc_priv_obj *pm_ctx;
-
-	pm_ctx = policy_mgr_get_context(psoc);
-	if (!pm_ctx) {
-		policy_mgr_err("Invalid Context");
-		return QDF_STATUS_E_FAILURE;
-	}
-	return pm_ctx->hdd_cbacks.wlan_set_tx_rx_nss_cb(psoc, vdev_id,
-							tx_nss, rx_nss);
 }
 
 /**
@@ -6718,7 +6703,6 @@ policy_mgr_link_switch_notifier_cb(struct wlan_objmgr_vdev *vdev,
 			info[MAX_NUMBER_OF_CONC_CONNECTIONS] = { {0} };
 	uint8_t num_del = 0;
 	struct ml_nlink_change_event data;
-	uint16_t dyn_inact_bmap = 0, force_inact_bmap = 0;
 
 	if (notify_reason > MLO_LINK_SWITCH_NOTIFY_REASON_PRE_START_POST_SER)
 		return QDF_STATUS_SUCCESS;
@@ -6750,11 +6734,7 @@ policy_mgr_link_switch_notifier_cb(struct wlan_objmgr_vdev *vdev,
 		psoc, vdev_id, info, &num_del);
 	conc_ext_flags.value =
 	policy_mgr_get_conc_ext_flags(vdev, true);
-	ml_nlink_get_dynamic_inactive_links(psoc, vdev, &dyn_inact_bmap,
-					    &force_inact_bmap);
-
-	if (!(dyn_inact_bmap & BIT(new_ieee_link_id)) &&
-	    !policy_mgr_is_concurrency_allowed(psoc, PM_STA_MODE,
+	if (!policy_mgr_is_concurrency_allowed(psoc, PM_STA_MODE,
 					       new_primary_freq,
 					       HW_MODE_20_MHZ,
 					       conc_ext_flags.value,
@@ -7772,15 +7752,26 @@ policy_mgr_is_ml_sta_links_in_mcc(struct wlan_objmgr_psoc *psoc,
 	return false;
 }
 
-QDF_STATUS
-policy_mgr_is_ml_links_in_mcc_allowed(struct wlan_objmgr_psoc *psoc,
-				      struct wlan_objmgr_vdev *vdev,
-				      uint8_t *ml_sta_vdev_lst,
-				      uint8_t *num_ml_sta)
+/*
+ * policy_mgr_handle_mcc_ml_sta() - disables one ML STA link if causing MCC
+ * DBS - if ML STA links on 5 GHz + 6 GHz
+ * SBS - if both ML STA links on 5 GHz high/5 GHz low
+ * non-SBS - any combo (5/6 GHz + 5/6 GHz OR 2 GHz + 5/6 GHz)
+ * @psoc: psoc ctx
+ *
+ * Return: Success if MCC link is disabled else failure
+ */
+static QDF_STATUS
+policy_mgr_handle_mcc_ml_sta(struct wlan_objmgr_psoc *psoc,
+			     struct wlan_objmgr_vdev *vdev)
 {
-	uint8_t num_disabled_ml_sta = 0;
+	uint8_t num_ml_sta = 0, num_disabled_ml_sta = 0;
+	uint8_t ml_sta_vdev_lst[MAX_NUMBER_OF_CONC_CONNECTIONS] = {0};
 	qdf_freq_t ml_freq_lst[MAX_NUMBER_OF_CONC_CONNECTIONS] = {0};
 	struct policy_mgr_psoc_priv_obj *pm_ctx;
+
+	if ((wlan_vdev_mlme_get_opmode(vdev) != QDF_STA_MODE))
+		return QDF_STATUS_E_FAILURE;
 
 	pm_ctx = policy_mgr_get_context(psoc);
 	if (!pm_ctx) {
@@ -7788,19 +7779,19 @@ policy_mgr_is_ml_links_in_mcc_allowed(struct wlan_objmgr_psoc *psoc,
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	policy_mgr_get_ml_sta_info(pm_ctx, num_ml_sta, &num_disabled_ml_sta,
+	policy_mgr_get_ml_sta_info(pm_ctx, &num_ml_sta, &num_disabled_ml_sta,
 				   ml_sta_vdev_lst, ml_freq_lst,
 				   NULL, NULL, NULL);
-	if (*num_ml_sta < 2 || *num_ml_sta > MAX_NUMBER_OF_CONC_CONNECTIONS ||
+	if (num_ml_sta < 2 || num_ml_sta > MAX_NUMBER_OF_CONC_CONNECTIONS ||
 	    num_disabled_ml_sta) {
 		policy_mgr_debug("num_ml_sta invalid %d or link already disabled%d",
-				 *num_ml_sta, num_disabled_ml_sta);
+				 num_ml_sta, num_disabled_ml_sta);
 		return QDF_STATUS_E_FAILURE;
 	}
 
 	if (!policy_mgr_is_ml_sta_links_in_mcc(psoc, ml_freq_lst,
 					       ml_sta_vdev_lst, NULL,
-					       *num_ml_sta,
+					       num_ml_sta,
 					       NULL))
 		return QDF_STATUS_E_FAILURE;
 
@@ -7813,40 +7804,9 @@ policy_mgr_is_ml_links_in_mcc_allowed(struct wlan_objmgr_psoc *psoc,
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	return QDF_STATUS_SUCCESS;
-}
-
-/**
- * policy_mgr_handle_mcc_ml_sta() - disables one ML STA link if causing MCC
- * DBS - if ML STA links on 5 GHz + 6 GHz
- * SBS - if both ML STA links on 5 GHz high/5 GHz low
- * non-SBS - any combo (5/6 GHz + 5/6 GHz OR 2 GHz + 5/6 GHz)
- * @psoc: psoc ctx
- * @vdev: Pointer to vdev object
- *
- * Return: Success if MCC link is disabled else failure
- */
-static QDF_STATUS
-policy_mgr_handle_mcc_ml_sta(struct wlan_objmgr_psoc *psoc,
-			     struct wlan_objmgr_vdev *vdev)
-{
-	uint8_t num_ml_sta = 0;
-	uint8_t ml_sta_vdev_lst[MAX_NUMBER_OF_CONC_CONNECTIONS] = {0};
-	QDF_STATUS status;
-
-	if ((wlan_vdev_mlme_get_opmode(vdev) != QDF_STA_MODE))
-		return QDF_STATUS_E_FAILURE;
-
-	status = policy_mgr_is_ml_links_in_mcc_allowed(psoc, vdev,
-						       ml_sta_vdev_lst,
-						       &num_ml_sta);
-	if (QDF_IS_STATUS_ERROR(status))
-		return QDF_STATUS_E_FAILURE;
-
 	policy_mgr_mlo_sta_set_link(psoc, MLO_LINK_FORCE_REASON_CONNECT,
 				    MLO_LINK_FORCE_MODE_ACTIVE_NUM,
 				    num_ml_sta, ml_sta_vdev_lst);
-
 	return QDF_STATUS_SUCCESS;
 }
 
@@ -11283,9 +11243,6 @@ bool policy_mgr_is_sap_allowed_on_dfs_freq(struct wlan_objmgr_pdev *pdev,
 	uint8_t vdev_id_list[MAX_NUMBER_OF_CONC_CONNECTIONS] = {0};
 	struct wlan_objmgr_vdev *vdev;
 
-	if (!wlan_reg_is_dfs_for_freq(pdev, ch_freq))
-		return true;
-
 	psoc = wlan_pdev_get_psoc(pdev);
 	if (!psoc)
 		return false;
@@ -11295,10 +11252,6 @@ bool policy_mgr_is_sap_allowed_on_dfs_freq(struct wlan_objmgr_pdev *pdev,
 	sta_cnt = policy_mgr_get_mode_specific_conn_info(psoc, NULL,
 							 vdev_id_list,
 							 PM_STA_MODE);
-
-	if (sta_cnt >= MAX_NUMBER_OF_CONC_CONNECTIONS)
-		return false;
-
 	gc_cnt = policy_mgr_get_mode_specific_conn_info(psoc, NULL,
 							&vdev_id_list[sta_cnt],
 							PM_P2P_CLIENT_MODE);
@@ -11316,25 +11269,6 @@ bool policy_mgr_is_sap_allowed_on_dfs_freq(struct wlan_objmgr_pdev *pdev,
 		policy_mgr_err("SAP not allowed on DFS channel if no dfs master capability!!");
 		return false;
 	}
-
-	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc,
-						    vdev_id,
-						    WLAN_POLICY_MGR_ID);
-	if (!vdev) {
-		policy_mgr_err("Invalid vdev");
-		return false;
-	}
-	/* Allow the current CSA to continue if it's already started. This is
-	 * possible when SAP CSA started to move to STA channel but STA got
-	 * disconnected.
-	 */
-	if (!wlan_vdev_mlme_is_init_state(vdev) &&
-	    !wlan_vdev_is_up_active_state(vdev)) {
-		policy_mgr_debug("SAP is not yet UP: vdev %d", vdev_id);
-		wlan_objmgr_vdev_release_ref(vdev, WLAN_POLICY_MGR_ID);
-		return true;
-	}
-	wlan_objmgr_vdev_release_ref(vdev, WLAN_POLICY_MGR_ID);
 
 	/*
 	 * Check if any of the concurrent STA/ML-STA link/P2P client are in
@@ -11445,6 +11379,24 @@ bool policy_mgr_is_sta_sap_scc_allowed_on_dfs_chan(
 					       &sta_sap_scc_on_dfs_chnl);
 	if (policy_mgr_is_force_scc(psoc) && sta_sap_scc_on_dfs_chnl)
 		status = true;
+
+	return status;
+}
+
+bool policy_mgr_is_sap_only_allow_sta_dfs_indoor_chan(
+		struct wlan_objmgr_psoc *psoc)
+{
+	struct policy_mgr_psoc_priv_obj *pm_ctx;
+	bool status = true;
+
+	pm_ctx = policy_mgr_get_context(psoc);
+	if (!pm_ctx) {
+		policy_mgr_err("Invalid Context");
+		return status;
+	}
+
+	if (!pm_ctx->cfg.sap_only_allow_sta_dfs_indoor_chan)
+		status = false;
 
 	return status;
 }
@@ -12027,49 +11979,6 @@ bool policy_mgr_is_sap_go_on_2g(struct wlan_objmgr_psoc *psoc)
 	return ret;
 }
 
-static inline bool
-policy_mgr_is_chan_eligible_for_sap(struct policy_mgr_psoc_priv_obj *pm_ctx,
-				    uint8_t vdev_id, qdf_freq_t freq)
-{
-	struct wlan_objmgr_vdev *vdev;
-	enum channel_state ch_state;
-	enum reg_6g_ap_type sta_connected_pwr_type;
-	uint32_t ap_power_type_6g = 0;
-	bool is_eligible = false;
-
-	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(pm_ctx->psoc, vdev_id,
-						    WLAN_POLICY_MGR_ID);
-	if (!vdev)
-		return false;
-
-	ch_state = wlan_reg_get_channel_state_for_pwrmode(pm_ctx->pdev,
-							  freq,
-							  REG_CURRENT_PWR_MODE);
-	sta_connected_pwr_type = mlme_get_best_6g_power_type(vdev);
-	wlan_reg_get_cur_6g_ap_pwr_type(pm_ctx->pdev, &ap_power_type_6g);
-
-	/*
-	 * If the SAP user configured frequency is 6 GHz,
-	 * move the SAP to STA SCC in 6 GHz only if:
-	 * a) The channel is PSC
-	 * b) The channel supports AP in VLP power type
-	 * c) The DUT is configured to operate SAP in VLP only
-	 * d) The STA is connected to the 6 GHz AP in
-	 *    either VLP or LPI.
-	 *    - If the STA is in LPI, then lim_update_tx_power()
-	 *	would move the STA to VLP.
-	 */
-	if (WLAN_REG_IS_6GHZ_PSC_CHAN_FREQ(freq) &&
-	    ap_power_type_6g == REG_VERY_LOW_POWER_AP &&
-	    ch_state == CHANNEL_STATE_ENABLE &&
-	    (sta_connected_pwr_type == REG_VERY_LOW_POWER_AP ||
-	     sta_connected_pwr_type == REG_INDOOR_AP))
-		is_eligible = true;
-
-	wlan_objmgr_vdev_release_ref(vdev, WLAN_POLICY_MGR_ID);
-	return is_eligible;
-}
-
 bool policy_mgr_is_restart_sap_required(struct wlan_objmgr_psoc *psoc,
 					uint8_t vdev_id,
 					qdf_freq_t freq,
@@ -12247,20 +12156,14 @@ bool policy_mgr_is_restart_sap_required(struct wlan_objmgr_psoc *psoc,
 		}
 
 		if (scc_mode == QDF_MCC_TO_SCC_SWITCH_WITH_FAVORITE_CHANNEL &&
-		    WLAN_REG_IS_24GHZ_CH_FREQ(freq) && user_config_freq) {
-			if (connection[i].freq == freq && !num_5_or_6_conn &&
-			    !WLAN_REG_IS_24GHZ_CH_FREQ(user_config_freq)) {
-				policy_mgr_debug("SAP move to user configure %d from %d",
-						 user_config_freq, freq);
-				restart_required = true;
-			} else if (connection[i].freq != freq &&
-				   WLAN_REG_IS_6GHZ_CHAN_FREQ(user_config_freq) &&
-				   policy_mgr_is_chan_eligible_for_sap(pm_ctx,
-								       connection[i].vdev_id,
-								       connection[i].freq)) {
-				policy_mgr_debug("Move SAP to STA 6 GHz channel");
-				restart_required = true;
-			}
+		    connection[i].freq == freq &&
+		    WLAN_REG_IS_24GHZ_CH_FREQ(freq) &&
+		    !num_5_or_6_conn &&
+		    user_config_freq &&
+		    !WLAN_REG_IS_24GHZ_CH_FREQ(user_config_freq)) {
+			policy_mgr_debug("SAP move to user configure %d from %d",
+					 user_config_freq, freq);
+			restart_required = true;
 		}
 	}
 

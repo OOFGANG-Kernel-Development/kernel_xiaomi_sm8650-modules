@@ -1392,25 +1392,6 @@ QDF_STATUS wlan_reg_modify_pdev_chan_range(struct wlan_objmgr_pdev *pdev);
 QDF_STATUS wlan_reg_get_phybitmap(struct wlan_objmgr_pdev *pdev,
 				  uint16_t *phybitmap);
 
-#ifdef WLAN_FEATURE_11BE
-/**
- * wlan_reg_phybitmap_support_11be() - API to check if current reg domain
- * supports 11be
- * @pdev: PDEV object manager pointer
- *
- * If the max supported phy mode of current reg domain equals 11be then
- * return true else return false.
- * Return: bool
- */
-bool wlan_reg_phybitmap_support_11be(struct wlan_objmgr_pdev *pdev);
-#else
-static inline bool
-wlan_reg_phybitmap_support_11be(struct wlan_objmgr_pdev *pdev)
-{
-	return false;
-}
-#endif
-
 /**
  * wlan_reg_update_pdev_wireless_modes() - Update the wireless_modes in the
  * pdev_priv_obj with the input wireless_modes
@@ -2174,17 +2155,6 @@ bool wlan_reg_is_6ghz_op_class(struct wlan_objmgr_pdev *pdev,
 bool wlan_reg_is_6ghz_supported(struct wlan_objmgr_psoc *psoc);
 #endif
 
-/**
- * wlan_reg_chan_opclass_to_freq() - Convert channel number and opclass to frequency
- * @chan: IEEE Channel Number.
- * @op_class: Opclass.
- * @global_tbl_lookup: Global table lookup.
- *
- * Return: Channel center frequency else return 0.
- */
-uint16_t wlan_reg_chan_opclass_to_freq(uint8_t chan, uint8_t op_class,
-				       bool global_tbl_lookup);
-
 #ifdef HOST_OPCLASS_EXT
 /**
  * wlan_reg_country_chan_opclass_to_freq() - Convert channel number to
@@ -2207,36 +2177,19 @@ wlan_reg_country_chan_opclass_to_freq(struct wlan_objmgr_pdev *pdev,
 				      const uint8_t country[3],
 				      uint8_t chan, uint8_t op_class,
 				      bool strict);
+#endif
 
 /**
- * wlan_reg_chan_opclass_to_freq_prefer_global() - API to find the operating
- * channel freq from chan num and opclass.
- * @pdev: PDEV object manager pointer
- * @country: Two byte CC pointer
- * @chan_num: Channel index number.
- * @opclass: Operating class
+ * wlan_reg_chan_opclass_to_freq() - Convert channel number and opclass to frequency
+ * @chan: IEEE Channel Number.
+ * @op_class: Opclass.
+ * @global_tbl_lookup: Global table lookup.
  *
- * The API will check the global operating class table to convert the opclass
- * chan_num tuple to channel frequency and if there is not entry in global
- * opclass table for this tuple and if @country is not %NULL, then attempts to
- * convert the opclass and chan_num to channel frequency using the country
- * specific opclass table.
- *
- * Return: Valid channel frequency if success else zero
+ * Return: Channel center frequency else return 0.
  */
-qdf_freq_t
-wlan_reg_chan_opclass_to_freq_prefer_global(struct wlan_objmgr_pdev *pdev,
-					    const uint8_t *country,
-					    uint8_t chan_num, uint8_t opclass);
-#else
-static inline qdf_freq_t
-wlan_reg_chan_opclass_to_freq_prefer_global(struct wlan_objmgr_pdev *pdev,
-					    const uint8_t *country,
-					    uint8_t chan_num, uint8_t opclass)
-{
-	return wlan_reg_chan_opclass_to_freq(chan_num, opclass, true);
-}
-#endif
+uint16_t wlan_reg_chan_opclass_to_freq(uint8_t chan,
+				       uint8_t op_class,
+				       bool global_tbl_lookup);
 
 /**
  * wlan_reg_compute_6g_center_freq_from_cfi() - Given the IEEE value of the

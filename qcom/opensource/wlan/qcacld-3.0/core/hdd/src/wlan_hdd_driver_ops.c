@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2015-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -310,6 +310,14 @@ static void hdd_psoc_shutdown_notify(struct hdd_context *hdd_ctx)
 	hdd_enter();
 	wlan_cfg80211_cleanup_scan_queue(hdd_ctx->pdev, NULL);
 
+	if (ucfg_ipa_is_enabled()) {
+		ucfg_ipa_uc_force_pipe_shutdown(hdd_ctx->pdev);
+
+		if (pld_is_fw_rejuvenate(hdd_ctx->parent_dev) ||
+		    pld_is_pdr(hdd_ctx->parent_dev))
+			ucfg_ipa_fw_rejuvenate_send_msg(hdd_ctx->pdev);
+	}
+
 	cds_shutdown_notifier_call();
 	cds_shutdown_notifier_purge();
 
@@ -365,15 +373,8 @@ static void hdd_set_recovery_in_progress(void *data, uint8_t val)
 {
 	cds_set_recovery_in_progress(val);
 	/* SSR can be triggred late cleanup existing queue for kernel handshake */
-	if (!qdf_in_interrupt()) {
-		struct hdd_context *hdd_ctx;
-
-		hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
-		if (!hdd_ctx)
-			return;
-
-		wlan_cfg80211_cleanup_scan_queue(hdd_ctx->pdev, NULL);
-	}
+	if (!qdf_in_interrupt())
+		hdd_soc_recovery_cleanup();
 }
 
 /**

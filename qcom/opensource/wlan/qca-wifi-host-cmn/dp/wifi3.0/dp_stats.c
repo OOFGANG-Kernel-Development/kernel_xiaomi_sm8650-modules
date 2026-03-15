@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -6408,12 +6408,8 @@ dp_print_rx_err_stats(struct dp_soc *soc, struct dp_pdev *pdev)
 		       soc->stats.rx.err.intrabss_eapol_drop);
 	DP_PRINT_STATS("mic errors %u",
 		       pdev->stats.rx.err.mic_err);
-	DP_PRINT_STATS("2k jump msdu to stack: %u",
-		       pdev->soc->stats.rx.err.rx_2k_jump_to_stack);
 	DP_PRINT_STATS("2k jump msdu drop: %u",
 		       pdev->soc->stats.rx.err.rx_2k_jump_drop);
-	DP_PRINT_STATS("REO err oor msdu to stack %u",
-		       pdev->soc->stats.rx.err.reo_err_oor_to_stack);
 	DP_PRINT_STATS("REO err oor msdu drop: %u",
 		       pdev->soc->stats.rx.err.reo_err_oor_drop);
 	DP_PRINT_STATS("Invalid peer on rx path: %llu",
@@ -7937,51 +7933,6 @@ void dp_txrx_path_stats(struct dp_soc *soc)
 	}
 }
 
-/**
- * dp_print_txrx_soc_stats(): Print only soc stats related to tx and rx
- * @soc: DP SoC handle
- *
- * Return: void
- */
-void dp_print_txrx_soc_stats(struct dp_soc *soc)
-{
-	uint8_t error_code;
-	uint8_t loop_pdev;
-	struct dp_pdev *pdev;
-
-	if (!soc) {
-		dp_err("Invalid access");
-		return;
-	}
-
-	for (loop_pdev = 0; loop_pdev < soc->pdev_count; loop_pdev++) {
-		pdev = soc->pdev_list[loop_pdev];
-		DP_PRINT_STATS("Tx path Statistics:");
-		dp_print_tx_ring_stats(soc);
-		DP_PRINT_STATS("Invalid release source: %u",
-			       soc->stats.tx.invalid_release_source);
-		DP_PRINT_STATS("Invalid TX desc from completion ring: %u",
-			       soc->stats.tx.invalid_tx_comp_desc);
-		DP_PRINT_STATS("Invalid peer on tx path: %llu",
-			       pdev->soc->stats.tx.tx_invalid_peer.num);
-		DP_PRINT_STATS("Tx desc freed in non-completion path: %u",
-			       pdev->soc->stats.tx.tx_comp_exception);
-		DP_PRINT_STATS("Tx desc force freed: %u",
-			       pdev->soc->stats.tx.tx_comp_force_freed);
-		DP_PRINT_STATS("Rx path statistics:");
-		dp_print_rx_err_stats(soc, pdev);
-		for (error_code = 0; error_code < HAL_RXDMA_ERR_MAX;
-				error_code++) {
-			if (!pdev->soc->stats.rx.err.rxdma_error[error_code])
-				continue;
-			DP_PRINT_STATS("Rxdma error number (%u): %u msdus",
-				       error_code,
-				       pdev->soc->stats.rx.err
-				       .rxdma_error[error_code]);
-		}
-	}
-}
-
 #ifndef WLAN_SOFTUMAC_SUPPORT
 /**
  * dp_peer_ctrl_frames_stats_get() - function to agreegate peer stats
@@ -8609,7 +8560,7 @@ void dp_print_tso_stats(struct dp_soc *soc,
 		pdev = soc->pdev_list[loop_pdev];
 		DP_PRINT_STATS("TSO Statistics\n");
 		DP_PRINT_STATS(
-			  "From stack: %llu | Successful completions: %llu | TSO Packets: %llu | TSO Completions: %d",
+			  "From stack: %d | Successful completions: %d | TSO Packets: %d | TSO Completions: %d",
 			  pdev->stats.tx_i.rcvd.num,
 			  pdev->stats.tx.tx_success.num,
 			  pdev->stats.tso_stats.num_tso_pkts.num,

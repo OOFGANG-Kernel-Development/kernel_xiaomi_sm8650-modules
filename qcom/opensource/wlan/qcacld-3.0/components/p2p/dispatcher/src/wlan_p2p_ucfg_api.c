@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -679,9 +679,3 @@ ucfg_is_p2p_device_dynamic_set_mac_addr_supported(struct wlan_objmgr_psoc *psoc)
 				   wmi_service_p2p_device_update_mac_addr_support);
 }
 #endif
-
-bool ucfg_p2p_is_p2p_go_noa_in_progress(struct wlan_objmgr_pdev *pdev,
-					uint8_t vdev_id)
-{
-	return p2p_is_p2p_go_noa_in_progress(pdev, vdev_id);
-}

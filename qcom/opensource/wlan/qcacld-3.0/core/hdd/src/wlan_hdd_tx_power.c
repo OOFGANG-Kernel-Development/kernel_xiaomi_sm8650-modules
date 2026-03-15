@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -345,10 +345,7 @@ next_link:
 
 	for (i = 0; i < num_of_links; i++) {
 		tpc_attr = nla_nest_start(reply_skb, i);
-		if (!tpc_attr) {
-			hdd_err("tpc_attr null, %d", i);
-			continue;
-		}
+
 		if (nla_put(reply_skb, QCA_WLAN_VENDOR_ATTR_TPC_BSSID,
 			    QDF_MAC_ADDR_SIZE, &link_bssid[i])) {
 			hdd_err("failed to put mac_addr");
@@ -390,8 +387,7 @@ next_link:
 		}
 
 		hdd_debug("%d tpc for bssid "QDF_MAC_ADDR_FMT" is_psd %d reg power %d 6ghz pwr type %d ap_constraint_power %d",
-			  i, QDF_MAC_ADDR_REF(link_bssid[i].bytes),
-			  reg_tpc_info[i].is_psd_power,
+			  i, link_bssid[i].bytes, reg_tpc_info[i].is_psd_power,
 			  reg_tpc_info[i].reg_max[0],
 			  reg_tpc_info[i].power_type_6g,
 			  reg_tpc_info[i].ap_constraint_power);
@@ -405,10 +401,6 @@ next_link:
 		}
 		for (j = 0; j < reg_tpc_info[i].num_pwr_levels; j++) {
 			tpc_level = nla_nest_start(reply_skb, j);
-			if (!tpc_level) {
-				hdd_err("tpc_level null. level %d", j);
-				continue;
-			}
 			chan_power_info = &reg_tpc_info[i].chan_power_info[j];
 
 			attr_id = QCA_WLAN_VENDOR_ATTR_TPC_PWR_LEVEL_FREQUENCY;

@@ -43,6 +43,15 @@
 #include <qdf_nbuf.h>
 #include <qdf_net_stats.h>
 
+// MIUI ADD: WIFI_P2PHC
+#include "p2phc.h"
+// END WIFI_P2PHC
+
+#ifdef WLAN_FEATURE_OSRTP
+#include "xdp_sock_drv.h"
+#include "xsk_buff_pool.h"
+#endif
+
 /* Preprocessor definitions and constants */
 #undef QCA_DP_SAP_DUMP_SK_BUFF
 
@@ -704,6 +713,15 @@ QDF_STATUS dp_softap_start_xmit(qdf_nbuf_t nbuf, struct wlan_dp_link *dp_link)
 		goto drop_pkt_and_release_skb;
 	}
 
+	// MIUI ADD: WIFI_P2PHC
+	if (qdf_nbuf_is_ipv4_pkt(nbuf) &&
+		!qdf_nbuf_is_tso(nbuf) &&
+		!qdf_nbuf_is_bcast_pkt(nbuf) &&
+		!qdf_nbuf_data_is_ipv4_mcast_pkt(qdf_nbuf_data(nbuf))) {
+		p2phc_tx_netdev_hook(nbuf, NULL);
+	}
+	// END WIFI_P2PHC
+
 	if (dp_intf->txrx_ops.tx.tx(soc, dp_link->link_id, nbuf)) {
 		dp_debug("Failed to send packet to txrx for sta: "
 			 QDF_MAC_ADDR_FMT,
@@ -725,6 +743,62 @@ drop_pkt_accounting:
 
 	return QDF_STATUS_E_FAILURE;
 }
+
+#ifdef WLAN_FEATURE_OSRTP
+/**
+ * dp_softap_start_xmit_osrtp() - Transmit a osrtp frame from SAP interface
+ * @nbuf: pointer to Network buffer
+ * @dp_link: DP link handle
+ *
+ * Return: QDF_STATUS_SUCCESS on successful transmission
+ */
+QDF_STATUS dp_softap_start_xmit_osrtp(struct wlan_dp_link *dp_link,
+                struct cdp_tx_osrtp_desc *osrtp_desc, struct xsk_buff_pool *pool)
+{
+	struct qdf_mac_addr mac_addr;
+	int cpu = qdf_get_smp_processor_id();
+	struct qdf_mac_addr *dest_mac_addr = NULL;
+	void *soc = cds_get_context(QDF_MODULE_ID_SOC);
+	struct wlan_dp_intf *dp_intf = dp_link->dp_intf;
+	struct wlan_dp_psoc_context *dp_ctx = dp_intf->dp_ctx;
+	struct dp_tx_rx_stats *stats = &dp_intf->dp_stats.tx_rx_stats;
+	enum ol_txrx_peer_state peer_state;
+
+	++stats->per_cpu[cpu].tx_called;
+	stats->cont_txtimeout_cnt = 0;
+
+	if (QDF_IS_STATUS_ERROR(dp_softap_validate_driver_state(dp_intf)))
+		goto drop_pkt;
+
+	dest_mac_addr = (struct qdf_mac_addr *)((char *)mi_xsk_buff_raw_get_data(
+            pool, osrtp_desc->desc[0].addr) + QDF_NBUF_DEST_MAC_OFFSET);
+	qdf_copy_macaddr(&mac_addr, dest_mac_addr);
+	dp_wds_replace_peer_mac(soc, dp_link, mac_addr.bytes);
+	peer_state = cdp_peer_state_get(soc, dp_link->link_id, mac_addr.bytes, false);
+
+	if (peer_state != OL_TXRX_PEER_STATE_AUTH) {
+		dp_debug_rl("Station not authentication successful yet");
+		goto drop_pkt;
+	}
+
+	qdf_net_stats_add_tx_pkts(&dp_intf->stats, osrtp_desc->num_descs);
+	dp_ctx->no_tx_offload_pkt_cnt += osrtp_desc->num_descs;
+
+	if (dp_intf->txrx_ops.tx.tx_osrtp(soc, dp_link->link_id, osrtp_desc, pool)) {
+		dp_debug("Failed to send packet to txrx for sta: "
+			 QDF_MAC_ADDR_FMT,
+			 QDF_MAC_ADDR_REF(dest_mac_addr->bytes));
+		goto drop_pkt;
+	}
+
+	return QDF_STATUS_SUCCESS;
+
+drop_pkt:
+	qdf_net_stats_inc_tx_dropped(&dp_intf->stats);
+
+	return QDF_STATUS_E_FAILURE;
+}
+#endif
 
 void dp_softap_tx_timeout(struct wlan_dp_intf *dp_intf)
 {

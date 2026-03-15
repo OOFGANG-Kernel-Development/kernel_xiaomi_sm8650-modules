@@ -103,7 +103,6 @@ ifneq (, $(filter $(word 2,$(subst _, ,$(TARGET_PRODUCT))), aurora))
        CDEFINES += -DCONFIG_TARGET_PRODUCT_AURORA
 endif
 
-
 KBUILD_CPPFLAGS += $(CDEFINES)
 
 # Currently, for versions of gcc which support it, the kernel Makefile

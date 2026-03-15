@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -809,8 +809,8 @@ static void p2p_init_frame_info(struct p2p_frame_info *frame_info)
  *
  * Return: QDF_STATUS_SUCCESS - in case of success
  */
-QDF_STATUS p2p_get_frame_info(uint8_t *data_buf, uint32_t length,
-			      struct p2p_frame_info *frame_info)
+static QDF_STATUS p2p_get_frame_info(uint8_t *data_buf, uint32_t length,
+	struct p2p_frame_info *frame_info)
 {
 	uint8_t type;
 	uint8_t sub_type;
@@ -895,22 +895,6 @@ QDF_STATUS p2p_get_frame_info(uint8_t *data_buf, uint32_t length,
 	p2p_debug("%s", p2p_get_frame_type_str(frame_info));
 
 	return QDF_STATUS_SUCCESS;
-}
-
-bool p2p_is_action_frame_of_p2p_type(uint8_t *data_buf, uint32_t length)
-{
-	struct p2p_frame_info frame_info = {0};
-	QDF_STATUS status;
-
-	status = p2p_get_frame_info(data_buf, length, &frame_info);
-	if (QDF_IS_STATUS_ERROR(status))
-		return false;
-
-	if (frame_info.public_action_type != P2P_PUBLIC_ACTION_NOT_SUPPORT ||
-	    frame_info.action_type != P2P_ACTION_NOT_SUPPORT)
-		return true;
-
-	return false;
 }
 
 #ifdef WLAN_FEATURE_P2P_DEBUG
@@ -3184,6 +3168,7 @@ QDF_STATUS p2p_process_mgmt_tx(struct tx_action_context *tx_ctx)
 	struct wlan_objmgr_vdev *vdev;
 	QDF_STATUS status;
 	bool is_vdev_connected = false;
+	qdf_freq_t curr_op_freq;
 
 	status = p2p_tx_context_check_valid(tx_ctx);
 	if (status != QDF_STATUS_SUCCESS) {
@@ -3246,9 +3231,13 @@ QDF_STATUS p2p_process_mgmt_tx(struct tx_action_context *tx_ctx)
 	if (mode == QDF_STA_MODE)
 		is_vdev_connected = wlan_cm_is_vdev_connected(vdev);
 
+	curr_op_freq = wlan_get_operation_chan_freq(vdev);
+
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_P2P_ID);
 
-	if (!tx_ctx->off_chan || !tx_ctx->chan_freq) {
+	if (!tx_ctx->off_chan || !tx_ctx->chan_freq ||
+	    (curr_op_freq && curr_op_freq == tx_ctx->chan_freq &&
+	     !tx_ctx->duration)) {
 		if (!tx_ctx->chan_freq)
 			p2p_check_and_update_channel(tx_ctx);
 		if (!tx_ctx->chan_freq && mode == QDF_STA_MODE &&
@@ -3436,10 +3425,6 @@ QDF_STATUS p2p_process_mgmt_tx_ack_cnf(
 	return QDF_STATUS_SUCCESS;
 }
 
-#define P2P_IS_SOCIAL_CHANNEL(center_freq)	\
-	(((center_freq) == 2412) || ((center_freq) == 2437) || \
-		((center_freq) == 2462))
-
 QDF_STATUS p2p_process_rx_mgmt(
 	struct p2p_rx_mgmt_event *rx_mgmt_event)
 {
@@ -3486,16 +3471,6 @@ QDF_STATUS p2p_process_rx_mgmt(
 		} else {
 			p2p_debug("p2p frame, extend roc accordingly");
 			p2p_extend_roc_timer(p2p_soc_obj, &frame_info);
-		}
-
-		if (frame_info.public_action_type ==
-		    P2P_PUBLIC_ACTION_NEG_REQ &&
-		    wlan_reg_is_24ghz_ch_freq(rx_mgmt->rx_freq) &&
-		    !P2P_IS_SOCIAL_CHANNEL(rx_mgmt->rx_freq)) {
-			p2p_debug("Drop P2P Negotiation Req due to non-Social channel: %d",
-				  rx_mgmt->rx_freq);
-			qdf_mem_free(rx_mgmt);
-			return QDF_STATUS_SUCCESS;
 		}
 	}
 

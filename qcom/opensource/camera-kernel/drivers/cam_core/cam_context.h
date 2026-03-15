@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_CONTEXT_H_
@@ -69,7 +69,6 @@ enum cam_context_state {
  * @buf_tracker:           List of buffers we want to keep ref counts on
  *                         used by the HW block for a particular req
  * @pf_data                page fault debug data
- * @packet                 pointer to packet
  *
  */
 struct cam_ctx_request {
@@ -90,7 +89,6 @@ struct cam_ctx_request {
 	struct cam_context            *ctx;
 	struct list_head               buf_tracker;
 	struct cam_hw_mgr_pf_request_info  pf_data;
-	void                           *packet;
 };
 
 /**
@@ -282,38 +280,6 @@ struct cam_context {
 	int32_t                        exlink;
 	uint32_t                       batchsize;
 	/*xiaomi added detect framerate end*/
-};
-
-/**
- * struct cam_context_stream_dump - camera context stream information
- *
- * @hw_mgr_ctx_id:         Hw Mgr context id returned from hw mgr
- * @dev_id:                ID of device associated
- * @dev_hdl:               Device handle
- * @link_hdl:              Link handle
- * @sessoin_hdl:           Session handle
- * @refcount:              Context object refcount
- * @last_flush_req:        Last request to flush
- * @state:                 Current state for top level state machine
- */
-struct cam_context_stream_dump {
-	uint32_t                       hw_mgr_ctx_id;
-	uint32_t                       dev_id;
-	uint32_t                       dev_hdl;
-	uint32_t                       link_hdl;
-	uint32_t                       session_hdl;
-	uint32_t                       refcount;
-	uint32_t                       last_flush_req;
-	enum cam_context_state         state;
-};
-
-/**
- * struct cam_context_each_req_info - camera each request information
- *
- * @request_id:         request id
- */
-struct cam_context_each_req_info {
-	uint64_t              request_id;
 };
 
 /**

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1238,8 +1238,7 @@ next_desc:
 						       num_avail_for_reap,
 						       hal_ring_hdl,
 						       &last_prefetch_hw_desc,
-						       &last_prefetch_sw_desc,
-						       NULL);
+						       &last_prefetch_sw_desc);
 		}
 	}
 
@@ -1430,8 +1429,10 @@ dp_tx_hw_enqueue_be(struct dp_soc *soc, struct dp_vdev *vdev,
 
 ring_access_fail:
 	dp_tx_ring_access_end_wrapper(soc, hal_ring_hdl, coalesce);
-	dp_pkt_add_timestamp(vdev, QDF_PKT_TX_DRIVER_EXIT,
-			     qdf_get_log_timestamp(), tx_desc->nbuf);
+	// MIUI DEL: NETWORK_NetworkBoost
+	// dp_pkt_add_timestamp(vdev, QDF_PKT_TX_DRIVER_EXIT,
+	// 		     qdf_get_log_timestamp(), tx_desc->nbuf);
+	// END NETWORK_NetworkBoost
 	return status;
 }
 
@@ -2031,3 +2032,102 @@ QDF_STATUS dp_tx_desc_pool_alloc_be(struct dp_soc *soc, uint32_t num_elem,
 void dp_tx_desc_pool_free_be(struct dp_soc *soc, uint8_t pool_id)
 {
 }
+
+#ifdef WLAN_FEATURE_OSRTP
+QDF_STATUS
+dp_tx_hw_enqueue_osrtp_be(struct dp_soc *soc, struct dp_vdev *vdev,
+		    struct dp_tx_desc_s *tx_desc, uint16_t fw_metadata, struct dp_tx_msdu_info_s *msdu_info)
+{
+	void *hal_tx_desc;
+	uint32_t *hal_tx_desc_cached;
+	struct dp_tx_queue *tx_q = &msdu_info->tx_queue;
+	uint8_t ring_id = tx_q->ring_id;
+	uint8_t tid;
+	struct dp_vdev_be *be_vdev;
+	uint8_t cached_desc[HAL_TX_DESC_LEN_BYTES] = { 0 };
+	uint8_t bm_id = dp_tx_get_rbm_id_be(soc, ring_id);
+	hal_ring_handle_t hal_ring_hdl = NULL;
+	QDF_STATUS status = QDF_STATUS_E_RESOURCES;
+	uint8_t num_desc_bytes = HAL_TX_DESC_LEN_BYTES;
+	uint16_t ast_idx = vdev->bss_ast_idx;
+	uint16_t ast_hash = vdev->bss_ast_hash;
+
+	be_vdev = dp_get_be_vdev_from_dp_vdev(vdev);
+
+	if (!dp_tx_is_desc_id_valid(soc, tx_desc->id)) {
+		dp_err_rl("Invalid tx desc id:%d", tx_desc->id);
+		return QDF_STATUS_E_RESOURCES;
+	}
+
+	hal_tx_desc_cached = (void *)cached_desc;
+
+	hal_tx_desc_set_buf_addr_be(soc->hal_soc, hal_tx_desc_cached,
+				    tx_desc->dma_addr, bm_id, tx_desc->id,
+				    (tx_desc->flags & DP_TX_DESC_FLAG_FRAG));
+	hal_tx_desc_set_lmac_id_be(soc->hal_soc, hal_tx_desc_cached,
+				   vdev->lmac_id);
+
+	hal_tx_desc_set_search_index_be(soc->hal_soc, hal_tx_desc_cached,
+					ast_idx);
+	/*
+	 * Bank_ID is used as DSCP_TABLE number in beryllium
+	 * So there is no explicit field used for DSCP_TID_TABLE_NUM.
+	 */
+
+	hal_tx_desc_set_cache_set_num(soc->hal_soc, hal_tx_desc_cached,
+				      (ast_hash & 0xF));
+
+	hal_tx_desc_set_fw_metadata(hal_tx_desc_cached, fw_metadata);
+	hal_tx_desc_set_buf_length(hal_tx_desc_cached, tx_desc->length);
+	hal_tx_desc_set_buf_offset(hal_tx_desc_cached, tx_desc->pkt_offset);
+
+	if (tx_desc->flags & DP_TX_DESC_FLAG_TO_FW)
+		hal_tx_desc_set_to_fw(hal_tx_desc_cached, 1);
+
+	hal_tx_desc_set_bank_id(hal_tx_desc_cached, vdev->bank_id);
+
+	dp_tx_vdev_id_set_hal_tx_desc(hal_tx_desc_cached, vdev, msdu_info);
+
+	tid = msdu_info->tid;
+	if (tid != HTT_TX_EXT_TID_INVALID)
+		hal_tx_desc_set_hlos_tid(hal_tx_desc_cached, tid);
+	dp_tx_desc_set_ktimestamp(vdev, tx_desc);
+
+	hal_ring_hdl = dp_tx_get_hal_ring_hdl(soc, ring_id);
+
+	if (qdf_unlikely(dp_tx_hal_ring_access_start(soc, hal_ring_hdl))) {
+		dp_err("HAL RING Access Failed -- %pK", hal_ring_hdl);
+		DP_STATS_INC(soc, tx.tcl_ring_full[ring_id], 1);
+		DP_STATS_INC(vdev, tx_i[msdu_info->xmit_type].dropped.enqueue_fail, 1);
+		dp_sawf_tx_enqueue_fail_peer_stats(soc, tx_desc);
+		return status;
+	}
+
+	hal_tx_desc = hal_srng_src_get_next(soc->hal_soc, hal_ring_hdl);
+	if (qdf_unlikely(!hal_tx_desc)) {
+		dp_verbose_debug("TCL ring full ring_id:%d", ring_id);
+		DP_STATS_INC(soc, tx.tcl_ring_full[ring_id], 1);
+		DP_STATS_INC(vdev, tx_i[msdu_info->xmit_type].dropped.enqueue_fail, 1);
+		dp_sawf_tx_enqueue_fail_peer_stats(soc, tx_desc);
+		goto ring_access_fail;
+	}
+
+	tx_desc->flags |= DP_TX_DESC_FLAG_QUEUED_TX;
+
+	/* Sync cached descriptor with HW */
+	hal_tx_desc_sync(hal_tx_desc_cached, hal_tx_desc, num_desc_bytes);
+	DP_STATS_INC_PKT(vdev, tx_i[msdu_info->xmit_type].processed, 1, dp_tx_get_pkt_len(tx_desc));
+	DP_STATS_INC(soc, tx.tcl_enq[ring_id], 1);
+	dp_tx_update_stats(soc, tx_desc, ring_id);
+	status = QDF_STATUS_SUCCESS;
+
+	dp_tx_hw_desc_update_evt((uint8_t *)hal_tx_desc_cached,
+				 hal_ring_hdl, soc, ring_id);
+
+ring_access_fail:
+	dp_tx_ring_access_end_wrapper(soc, hal_ring_hdl, 0);
+
+	return status;
+}
+
+#endif

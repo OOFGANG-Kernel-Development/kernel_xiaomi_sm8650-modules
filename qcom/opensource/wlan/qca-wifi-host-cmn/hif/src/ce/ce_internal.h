@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -720,16 +720,11 @@ int hif_get_wake_ce_id(struct hif_softc *scn, uint8_t *ce_id);
  */
 int hif_get_fw_diag_ce_id(struct hif_softc *scn, uint8_t *ce_id);
 
-#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF) ||\
-	defined(RECORD_DP_CE_EVTS)
+#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)
 
 #ifndef HIF_CE_HISTORY_MAX
-#if defined(CONFIG_SLUB_DEBUG_ON)
 #define HIF_CE_HISTORY_MAX 1024
-#else
-#define HIF_CE_HISTORY_MAX 768
-#endif /* CONFIG_SLUB_DEBUG_ON */
-#endif /* !HIF_CE_HISTORY_MAX */
+#endif
 
 #define CE_DEBUG_MAX_DATA_BUF_SIZE 64
 
@@ -779,9 +774,7 @@ struct hif_ce_desc_event {
 };
 #else
 struct hif_ce_desc_event;
-#endif /* defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF) ||
-	* defined(RECORD_DP_CE_EVTS)
-	*/
+#endif /*#if defined(HIF_CONFIG_SLUB_DEBUG_ON)||defined(HIF_CE_DEBUG_DATA_BUF)*/
 
 /**
  * get_next_record_index() - get the next record index
@@ -797,8 +790,7 @@ struct hif_ce_desc_event;
  */
 int get_next_record_index(qdf_atomic_t *table_index, int array_size);
 
-#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF) ||\
-	defined(RECORD_DP_CE_EVTS)
+#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)
 /**
  * hif_record_ce_srng_desc_event() - Record data pointed by the CE descriptor
  * @scn: structure detailing a ce event
@@ -841,7 +833,7 @@ static inline
 void hif_clear_ce_desc_debug_data(struct hif_ce_desc_event *event)
 {
 }
-#endif /* HIF_CONFIG_SLUB_DEBUG_ON || HIF_CE_DEBUG_DATA_BUF||RECORD_DP_CE_EVTS*/
+#endif /* HIF_CONFIG_SLUB_DEBUG_ON || HIF_CE_DEBUG_DATA_BUF */
 
 #ifdef HIF_CE_DEBUG_DATA_BUF
 /**
@@ -918,16 +910,6 @@ void hif_ce_desc_record_rx_paddr(struct hif_softc *scn,
 }
 #endif /* HIF_RECORD_PADDR */
 
-static inline int ce_ring_try_aquire_lock(struct CE_handle *handle)
-{
-	struct CE_state *ce_state = (struct CE_state *)handle;
-
-	if (!qdf_spin_trylock_bh(&ce_state->ce_index_lock))
-		return -EINVAL;
-
-	return 0;
-}
-
 static inline void ce_ring_aquire_lock(struct CE_handle *handle)
 {
 	struct CE_state *ce_state = (struct CE_state *)handle;
@@ -979,19 +961,4 @@ static inline void ce_ring_inc_flush_cnt(struct CE_ring_state *ring)
 {
 	ring->flush_count++;
 }
-
-#ifdef QCA_WIFI_WCN6450
-static inline bool hif_is_datapath_ce(struct CE_state *ce_state)
-{
-	if (!ce_state)
-		return false;
-
-	return (ce_state->htt_tx_data || ce_state->htt_rx_data);
-}
-#else
-static inline bool hif_is_datapath_ce(struct CE_state *ce_state)
-{
-	return false;
-}
-#endif
 #endif /* __COPY_ENGINE_INTERNAL_H__ */

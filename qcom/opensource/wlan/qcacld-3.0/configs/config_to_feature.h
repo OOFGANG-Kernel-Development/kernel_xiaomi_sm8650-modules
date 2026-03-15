@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -587,13 +587,11 @@
 #define WLAN_FEATURE_PERIODIC_STA_STATS (1)
 #endif
 
-#if defined(CONFIG_WLAN_TX_FLOW_CONTROL_V2) || \
-	defined(CONFIG_WLAN_TX_FLOW_CONTROL_V2_HL)
+#ifdef CONFIG_WLAN_TX_FLOW_CONTROL_V2
 #define QCA_LL_TX_FLOW_CONTROL_V2 (1)
 #endif
 
-#if defined(CONFIG_WLAN_TX_FLOW_CONTROL_V2) || \
-	defined(CONFIG_WLAN_TX_FLOW_CONTROL_V2_HL)
+#ifdef CONFIG_WLAN_TX_FLOW_CONTROL_V2
 #define QCA_LL_TX_FLOW_GLOBAL_MGMT_POOL (1)
 #endif
 
@@ -1540,18 +1538,6 @@
 #define QCA_WIFI_PEACH (1)
 #endif
 
-#ifdef CONFIG_CNSS_PEACH_V2
-#define QCA_WIFI_PEACH_V2 (1)
-#endif
-
-#ifdef CONFIG_INCLUDE_HAL_KIWI
-#define INCLUDE_HAL_KIWI (1)
-#endif
-
-#ifdef CONFIG_INCLUDE_HAL_PEACH
-#define INCLUDE_HAL_PEACH (1)
-#endif
-
 #ifdef CONFIG_QCA_WIFI_QCA8074
 #define QCA_WIFI_QCA8074 (1)
 #endif
@@ -1694,8 +1680,7 @@
 #define QCA_WIFI_QCA6290_11AX_MU_UL (1)
 #endif
 
-#if defined(CONFIG_WLAN_TX_FLOW_CONTROL_V2) || \
-	defined(CONFIG_WLAN_TX_FLOW_CONTROL_V2_HL)
+#ifdef CONFIG_WLAN_TX_FLOW_CONTROL_V2
 #define QCA_AC_BASED_FLOW_CONTROL (1)
 #endif
 
@@ -1733,6 +1718,10 @@
 
 #ifdef CONFIG_LITHIUM
 #define FEATURE_IRQ_AFFINITY (1)
+#endif
+
+#ifdef CONFIG_RHINE
+#define DISABLE_MON_RING_MSI_CFG (1)
 #endif
 
 #ifdef CONFIG_RHINE
@@ -2073,10 +2062,6 @@
 
 #ifdef CONFIG_DYNAMIC_DEBUG
 #define FEATURE_MULTICAST_HOST_FW_MSGS (1)
-#endif
-
-#ifdef CONFIG_WLAN_CHIPSET_STATS
-#define WLAN_CHIPSET_STATS (1)
 #endif
 
 #ifdef CONFIG_ENABLE_SMMU_S1_TRANSLATION
@@ -2644,14 +2629,6 @@
 #define HIF_CPU_PERF_AFFINE_MASK (1)
 #endif
 
-#ifdef CONFIG_CE_CMN_REG_CFG_QMI
-#define CE_CMN_REG_CFG_QMI (1)
-#endif
-
-#ifdef CONFIG_RECORD_DP_CE_EVTS
-#define RECORD_DP_CE_EVTS
-#endif
-
 #ifdef CONFIG_HIF_CPU_CLEAR_AFFINITY
 #define HIF_CPU_CLEAR_AFFINITY (1)
 #endif
@@ -2940,22 +2917,12 @@
 #endif
 #endif
 
+#ifdef CONFIG_WLAN_FEATURE_11BE_SUPP_NONWPA3
+#define WLAN_FEATURE_11BE_SUPP_NONWPA3
+#endif
+
 #ifdef CONFIG_WLAN_MAX_ML_BSS_LINKS
 #define WLAN_MAX_ML_BSS_LINKS CONFIG_WLAN_MAX_ML_BSS_LINKS
-#endif
-
-#if defined(CONFIG_WLAN_FEATURE_11BE_MLO) && defined(CONFIG_WLAN_FEATURE_EMLSR)
-#ifndef CONFIG_WLAN_EMLSR_ENABLE
-#define CONFIG_WLAN_EMLSR_ENABLE (1)
-#endif
-#else
-#ifndef CONFIG_WLAN_EMLSR_ENABLE
-#define CONFIG_WLAN_EMLSR_ENABLE (0)
-#endif
-#endif
-
-#ifdef CONFIG_WLAN_EMLSR_ENABLE
-#define WLAN_EMLSR_ENABLE CONFIG_WLAN_EMLSR_ENABLE
 #endif
 
 #ifdef CONFIG_WALT_GET_CPU_TAKEN_SUPPORT
@@ -2996,11 +2963,12 @@
 #define DP_RX_PEEK_MSDU_DONE_WAR (1)
 #endif
 
+#ifdef CONFIG_SUPPORT_OSRTP
+#define WLAN_FEATURE_OSRTP (1)
+#endif
+
 #ifdef CONFIG_QDF_MAX_NO_OF_SAP_MODE
 #define QDF_MAX_NO_OF_SAP_MODE CONFIG_QDF_MAX_NO_OF_SAP_MODE
 #endif
 
-#ifdef CONFIG_LL_DP_SUPPORT_LEGACY
-#define LL_DP_SUPPORT_LEGACY (1)
-#endif
 #endif /* CONFIG_TO_FEATURE_H */

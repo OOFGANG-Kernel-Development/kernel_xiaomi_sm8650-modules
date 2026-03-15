@@ -37,6 +37,11 @@
 #define CAM_TPG_DEVICE_TYPE       (CAM_DEVICE_TYPE_BASE + 18)
 #define CAM_TFE_MC_DEVICE_TYPE    (CAM_DEVICE_TYPE_BASE + 19)
 #define CAM_APERTURE_DEVICE_TYPE  (CAM_DEVICE_TYPE_BASE + 20)
+#define CAM_ISPV4_DEVICE_TYPE     (CAM_DEVICE_TYPE_BASE + 21)
+
+/*Below is for MI ISP events which will notify user space*/
+/* V4L event type which user space will subscribe to */
+#define V4L_EVENT_MIISP_EVENT       (V4L_EVENT_CAM_REQ_MGR_EVENT | 0x200)
 
 /* cam_req_mgr hdl info */
 #define CAM_REQ_MGR_HDL_IDX_POS           8
@@ -943,6 +948,31 @@ struct cam_req_mgr_message {
 		struct cam_req_mgr_node_msg node_msg;
 		struct cam_req_mgr_pf_err_msg pf_err_msg;
 	} u;
+};
+
+enum miisp_message_type {
+	MIISP_RPMSG_MSG_TYPE,
+	MIISP_SOF_MSG_TYPE,
+	MIISP_EOF_MSG_TYPE,
+	MIISP_EXCEPTION_MSG_TYPE,
+	MIISP_COREDUMP_MSG_TYPE,
+	MIISP_WDT_MSG_TYPE,
+	MIISP_THERMAL_MSG_TYPE,
+	MIISP_RPMSG_TIMEOUT_TYPE,
+	MIISP_MSG_TYPE_MAX,
+};
+
+#define MIISP_MSG_MAX_LEN 13
+struct cam_miisp_message {
+	__s32 session_hdl;
+	union {
+		enum miisp_message_type msg_type;
+		__s32 reserved_type;
+	};
+	union {
+		__u32 data[MIISP_MSG_MAX_LEN];  /*52 Max*/
+	} u;
+	uint32_t len;
 };
 
 // xiaomi add

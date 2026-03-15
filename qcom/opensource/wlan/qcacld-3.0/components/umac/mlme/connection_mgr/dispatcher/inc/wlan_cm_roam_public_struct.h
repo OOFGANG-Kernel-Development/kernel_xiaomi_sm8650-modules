@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -93,7 +93,6 @@
 #define REASON_ROAM_ABORT                           53
 #define REASON_ROAM_SET_PRIMARY                     54
 #define REASON_ROAM_LINK_SWITCH_ASSOC_VDEV_CHANGE   55
-#define REASON_VDEV_RESTART_FROM_HOST               56
 
 #define FILS_MAX_KEYNAME_NAI_LENGTH WLAN_CM_FILS_MAX_KEYNAME_NAI_LENGTH
 #define WLAN_FILS_MAX_REALM_LEN WLAN_CM_FILS_MAX_REALM_LEN
@@ -116,8 +115,6 @@
 
 /* Default value of WTC reason code */
 #define DISABLE_VENDOR_BTM_CONFIG 2
-
-#define VENDOR_ROAM_SCORE_ALGORITHM_1 1
 
 #ifdef WLAN_FEATURE_HOST_ROAM
 #define MAX_FTIE_SIZE CM_MAX_FTIE_SIZE
@@ -295,7 +292,6 @@ struct rso_chan_info {
  * @neighbor_scan_min_period:
  * @specific_chan_info:
  * @neighbor_lookup_threshold:
- * @next_rssi_threshold: Next roam can trigger rssi threshold
  * @rssi_thresh_offset_5g:
  * @min_chan_scan_time:
  * @max_chan_scan_time:
@@ -326,7 +322,6 @@ struct rso_cfg_params {
 	uint32_t neighbor_scan_min_period;
 	struct rso_chan_info specific_chan_info;
 	uint8_t neighbor_lookup_threshold;
-	uint8_t next_rssi_threshold;
 	int8_t rssi_thresh_offset_5g;
 	uint32_t min_chan_scan_time;
 	uint32_t max_chan_scan_time;
@@ -426,14 +421,6 @@ enum roam_fail_params {
  * found after final BMISS.
  * @ROAM_FAIL_REASON_CURR_AP_STILL_OK: Background scan was abort, but
  * current network condition is fine.
- * @ROAM_FAIL_REASON_SCAN_CANCEL: Roam fail reason, scan cancelled
- * @ROAM_FAIL_REASON_SCREEN_ACTIVITY: Roam fail reason screen activity happened
- * @ROAM_FAIL_REASON_OTHER_PRIORITY_ROAM_SCAN: Roam fail due to other priority
- * roam scan started.
- * @ROAM_FAIL_REASON_REASSOC_TO_SAME_AP: Host internal reason code. Reassoc
- * command rejected due to reassociation request received for same AP.
- * @ROAM_FAIL_REASON_MLD_EXTRA_SCAN_REQUIRED: Roaming is not triggered as part
- * of the first roam scan as additional scan is required to scan all MLD links
  * @ROAM_FAIL_REASON_UNKNOWN: Default reason
  */
 enum wlan_roam_failure_reason_code {
@@ -474,11 +461,6 @@ enum wlan_roam_failure_reason_code {
 	ROAM_FAIL_REASON_NO_AP_FOUND_AND_FINAL_BMISS_SENT,
 	ROAM_FAIL_REASON_NO_CAND_AP_FOUND_AND_FINAL_BMISS_SENT,
 	ROAM_FAIL_REASON_CURR_AP_STILL_OK,
-	ROAM_FAIL_REASON_SCAN_CANCEL,
-	ROAM_FAIL_REASON_SCREEN_ACTIVITY,
-	ROAM_FAIL_REASON_OTHER_PRIORITY_ROAM_SCAN,
-	ROAM_FAIL_REASON_REASSOC_TO_SAME_AP,
-	ROAM_FAIL_REASON_MLD_EXTRA_SCAN_REQUIRED,
 	ROAM_FAIL_REASON_UNKNOWN = 255,
 };
 
@@ -611,7 +593,6 @@ struct sae_roam_auth_map {
  * @tried_candidate_freq_list: freq list on which connection tried
  * @rso_rsn_caps: rsn caps with global user MFP which can be used for
  *                cross-AKM roaming
- * @is_disable_btm: btm roaming disabled or not from userspace
  */
 struct rso_config {
 #ifdef WLAN_FEATURE_HOST_ROAM
@@ -666,7 +647,6 @@ struct rso_config {
 	bool is_forced_roaming;
 	struct wlan_chan_list tried_candidate_freq_list;
 	uint16_t rso_rsn_caps;
-	bool is_disable_btm;
 };
 
 /**
@@ -766,7 +746,6 @@ struct rso_config_params {
  * @ROAM_SPECIFIC_CHAN: specific channel list
  * @ROAM_RSSI_DIFF: rssi diff
  * @NEIGHBOUR_LOOKUP_THRESHOLD: lookup threshold
- * @NEXT_RSSI_THRESHOLD: Next roam can trigger rssi threshold
  * @SCAN_N_PROBE: scan n probe
  * @SCAN_HOME_AWAY: scan and away
  * @NEIGHBOUR_SCAN_REFRESH_PERIOD: scan refresh
@@ -782,7 +761,6 @@ struct rso_config_params {
  * @ROAM_BAND: Allowed band for roaming in FW
  * @HI_RSSI_SCAN_RSSI_DELTA:
  * @ROAM_RSSI_DIFF_6GHZ: roam rssi diff for 6 GHz AP
- * @IS_DISABLE_BTM: disable btm roaming
  */
 enum roam_cfg_param {
 	RSSI_CHANGE_THRESHOLD,
@@ -799,7 +777,6 @@ enum roam_cfg_param {
 	ROAM_SPECIFIC_CHAN,
 	ROAM_RSSI_DIFF,
 	NEIGHBOUR_LOOKUP_THRESHOLD,
-	NEXT_RSSI_THRESHOLD,
 	SCAN_N_PROBE,
 	SCAN_HOME_AWAY,
 	NEIGHBOUR_SCAN_REFRESH_PERIOD,
@@ -815,7 +792,6 @@ enum roam_cfg_param {
 	ROAM_BAND,
 	HI_RSSI_SCAN_RSSI_DELTA,
 	ROAM_RSSI_DIFF_6GHZ,
-	IS_DISABLE_BTM,
 };
 
 /**
@@ -1081,7 +1057,6 @@ enum roam_scan_dwell_type {
 /**
  * enum eroam_frame_subtype - Enhanced roam frame subtypes.
  *
- * @WLAN_ROAM_STATS_FRAME_SUBTYPE_INVALID: Invalid subtype
  * @WLAN_ROAM_STATS_FRAME_SUBTYPE_AUTH_RESP: Authentication resp frame
  * @WLAN_ROAM_STATS_FRAME_SUBTYPE_REASSOC_RESP: Reassociation resp frame
  * @WLAN_ROAM_STATS_FRAME_SUBTYPE_EAPOL_M1: EAPOL-Key M1 frame
@@ -1094,7 +1069,6 @@ enum roam_scan_dwell_type {
  * @WLAN_ROAM_STATS_FRAME_SUBTYPE_REASSOC_REQ: Reassociation req frame
  */
 enum eroam_frame_subtype {
-	WLAN_ROAM_STATS_FRAME_SUBTYPE_INVALID = 0,
 	WLAN_ROAM_STATS_FRAME_SUBTYPE_AUTH_RESP = 1,
 	WLAN_ROAM_STATS_FRAME_SUBTYPE_REASSOC_RESP = 2,
 	WLAN_ROAM_STATS_FRAME_SUBTYPE_EAPOL_M1 = 3,
@@ -1397,8 +1371,6 @@ struct wlan_roam_11k_offload_params {
  * @bss_load_threshold: BSS load threshold after which roam scan should trigger
  * @bss_load_sample_time: Time duration in milliseconds for which the bss load
  * trigger needs to be enabled
- * @bss_load_alpha: Factor for computing average bss load from current channel
- * utilization
  * @rssi_threshold_6ghz: RSSI threshold of the current connected AP below which
  * roam should be triggered if bss load threshold exceeds the configured value.
  * This value is applicable only when we are connected in 6GHz band.
@@ -1413,7 +1385,6 @@ struct wlan_roam_bss_load_config {
 	uint32_t vdev_id;
 	uint32_t bss_load_threshold;
 	uint32_t bss_load_sample_time;
-	uint32_t bss_load_alpha;
 	int32_t rssi_threshold_6ghz;
 	int32_t rssi_threshold_5ghz;
 	int32_t rssi_threshold_24ghz;
@@ -2247,38 +2218,6 @@ struct roam_msg_info {
 	uint32_t msg_param2;
 };
 
-#ifdef WLAN_FEATURE_11BE_MLO
-/**
- * struct roam_ml_info - Structure to hold the roamed link specific info
- * @link_addr: Self link address
- * @link_id:   IEEE Link id used for association
- * @link_accepted: True if link status is accepted. Else link status is rejected
- * @link_band: Band information of the link
- * @freq: Frequency of the link
- * @timestamp: FW timestamp (in milliseconds)
- */
-struct roam_ml_info {
-	struct qdf_mac_addr link_addr;
-	uint8_t link_id;
-	bool link_accepted;
-	enum reg_wifi_band link_band;
-	uint32_t freq;
-	uint64_t timestamp;
-};
-
-/**
- * struct roam_mlo_link_info - Roam message related information
- * @present:    Flag to check if the roam mlo link info tlv is present
- * @num_links:  Number of links
- * @ml_info:    Link information
- */
-struct roam_mlo_link_info {
-	bool present;
-	uint8_t num_links;
-	struct roam_ml_info ml_info[WLAN_MAX_ML_BSS_LINKS];
-};
-#endif
-
 /**
  * struct roam_event_rt_info - Roam event related information
  * @roam_scan_state: roam scan state notif value
@@ -2325,7 +2264,6 @@ enum roam_rt_stats_type {
  * reassociation response frame
  * @band: Band on which the packet is transmitted or received. Refer
  * enum wlan_diag_wifi_band
- * @link_info: Link information of associated links
  */
 struct roam_frame_info {
 	bool present;
@@ -2342,9 +2280,6 @@ struct roam_frame_info {
 	uint16_t retry_count;
 	uint16_t assoc_id;
 	uint8_t band;
-#ifdef WLAN_FEATURE_11BE_MLO
-	struct roam_mlo_link_info link_info;
-#endif
 };
 
 /**
@@ -2606,8 +2541,6 @@ struct roam_frame_stats {
  * @vdev_id: vdev id
  * @num_tlv: Number of roam scans triggered
  * @num_roam_msg_info: Number of roam_msg_info present in event
- * @enhance_roam_rt_event:  flag of whether we need send event for
- *  real time enhance roam stats info to user space
  * @trigger: Roam trigger related details
  * @scan: Roam scan event details
  * @result: Roam result related info
@@ -2622,7 +2555,6 @@ struct roam_stats_event {
 	uint8_t vdev_id;
 	uint8_t num_tlv;
 	uint8_t num_roam_msg_info;
-	bool enhance_roam_rt_event;
 	struct wmi_roam_trigger_info trigger[MAX_ROAM_SCAN_STATS_TLV];
 	struct wmi_roam_scan_data scan[MAX_ROAM_SCAN_STATS_TLV];
 	struct wmi_roam_result result[MAX_ROAM_SCAN_STATS_TLV];
@@ -2691,7 +2623,6 @@ struct roam_pmkid_req_event {
  * @send_roam_mlo_config: send MLO config to FW
  * @send_roam_scan_offload_rssi_params: Set the RSSI parameters for roam
  * offload scan
- * @send_roam_frequencies: send roam frequencies to FW
  */
 struct wlan_cm_roam_tx_ops {
 	QDF_STATUS (*send_vdev_set_pcl_cmd)(struct wlan_objmgr_vdev *vdev,
@@ -2750,9 +2681,6 @@ struct wlan_cm_roam_tx_ops {
 	QDF_STATUS (*send_roam_mlo_config)(struct wlan_objmgr_vdev *vdev,
 					   struct wlan_roam_mlo_config *req);
 #endif
-	QDF_STATUS (*send_roam_frequencies)(
-			struct wlan_objmgr_vdev *vdev,
-			struct wlan_roam_scan_channel_list *rso_ch_info);
 };
 
 /**

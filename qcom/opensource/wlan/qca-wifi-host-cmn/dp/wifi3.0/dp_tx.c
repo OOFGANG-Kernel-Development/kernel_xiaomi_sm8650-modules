@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,6 +17,11 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
+#ifdef WLAN_FEATURE_OSRTP
+#include "xsk_queue.h"
+#include "xdp_sock_drv.h"
+#include "xsk_buff_pool.h"
+#endif
 #include "htt.h"
 #include "dp_htt.h"
 #include "hal_hw_headers.h"
@@ -379,6 +384,13 @@ dp_tx_release_ds_tx_desc(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
 }
 #endif
 
+#ifdef WLAN_FEATURE_OSRTP
+static inline void dp_tx_osrtp_unmap(struct dp_soc *soc, struct dp_tx_desc_s *desc)
+{
+	dma_sync_single_range_for_cpu(soc->osdev->dev, desc->dma_addr, 0, desc->length, DMA_TO_DEVICE);
+}
+#endif
+
 void
 dp_tx_desc_release(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
 		   uint8_t desc_pool_id)
@@ -394,6 +406,14 @@ dp_tx_desc_release(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
 	soc = pdev->soc;
 
 	dp_tx_outstanding_dec(pdev);
+
+#ifdef WLAN_FEATURE_OSRTP
+	if (tx_desc->xsk_pool) {
+		dp_tx_osrtp_unmap(soc, tx_desc);
+		mi_xp_put_pool(tx_desc->xsk_pool);
+		tx_desc->xsk_pool = NULL;
+	}
+#endif
 
 	if (tx_desc->msdu_ext_desc) {
 		if (tx_desc->frm_type == dp_tx_frm_tso)
@@ -507,13 +527,12 @@ static uint8_t dp_tx_prepare_htt_metadata(struct dp_vdev *vdev, qdf_nbuf_t nbuf,
  * dp_tx_prepare_tso_ext_desc() - Prepare MSDU extension descriptor for TSO
  * @tso_seg: TSO segment to process
  * @ext_desc: Pointer to MSDU extension descriptor
- * @data_len: length of the tso segment
  *
  * Return: void
  */
 #if defined(FEATURE_TSO)
 static void dp_tx_prepare_tso_ext_desc(struct qdf_tso_seg_t *tso_seg,
-		void *ext_desc, uint16_t *data_len)
+		void *ext_desc)
 {
 	uint8_t num_frag;
 	uint32_t tso_flags;
@@ -546,14 +565,13 @@ static void dp_tx_prepare_tso_ext_desc(struct qdf_tso_seg_t *tso_seg,
 			tso_seg->tso_frags[num_frag].paddr, &lo, &hi);
 		hal_tx_ext_desc_set_buffer(ext_desc, num_frag, lo, hi,
 			tso_seg->tso_frags[num_frag].length);
-			*data_len += tso_seg->tso_frags[num_frag].length;
 	}
 
 	return;
 }
 #else
 static void dp_tx_prepare_tso_ext_desc(struct qdf_tso_seg_t *tso_seg,
-		void *ext_desc, uint16_t *data_len)
+		void *ext_desc)
 {
 	return;
 }
@@ -796,14 +814,12 @@ QDF_COMPILE_TIME_ASSERT(dp_tx_htt_metadata_len_check,
  * @vdev: DP Vdev handle
  * @msdu_info: MSDU info to be setup in MSDU extension descriptor
  * @desc_pool_id: Descriptor Pool ID
- * @data_len: length of the segment
  *
  * Return:
  */
 static
 struct dp_tx_ext_desc_elem_s *dp_tx_prepare_ext_desc(struct dp_vdev *vdev,
-		struct dp_tx_msdu_info_s *msdu_info, uint8_t desc_pool_id,
-		uint16_t *data_len)
+		struct dp_tx_msdu_info_s *msdu_info, uint8_t desc_pool_id)
 {
 	uint8_t i;
 	uint8_t cached_ext_desc[HAL_TX_EXT_DESC_WITH_META_DATA];
@@ -841,14 +857,13 @@ struct dp_tx_ext_desc_elem_s *dp_tx_prepare_ext_desc(struct dp_vdev *vdev,
 				seg_info->frags[i].paddr_lo,
 				seg_info->frags[i].paddr_hi,
 				seg_info->frags[i].len);
-			*data_len += seg_info->frags[i].len;
 		}
 
 		break;
 
 	case dp_tx_frm_tso:
 		dp_tx_prepare_tso_ext_desc(&msdu_info->u.tso_info.curr_seg->seg,
-				&cached_ext_desc[0], data_len);
+				&cached_ext_desc[0]);
 		break;
 
 
@@ -1313,37 +1328,6 @@ failure:
 	return NULL;
 }
 
-#ifdef WLAN_SOFTUMAC_SUPPORT
-/**
- * dp_tx_desc_update_length() - update the length field in tx descriptor
- * @tx_desc: tx descriptor reference
- * @flags: tx descriptor flgs
- * @len: tso segment length
- *
- * In SOFTUMAC architecture, FW can't access the EXT_DESC memory to
- * calculate the data payload size of the segment. Hence, update the
- * data segment length in the TCL_DATA_CMD.data_len for SOFTUMAC
- * architecture which is used by the FW to populate MSDU deatils
- * structure to TQM.
- */
-static inline void
-dp_tx_desc_update_length(struct dp_tx_desc_s *tx_desc,
-			 uint16_t flags, uint16_t len)
-{
-	tx_desc->length = len;
-}
-#else
-static inline void
-dp_tx_desc_update_length(struct dp_tx_desc_s *tx_desc,
-			 uint16_t flags, uint16_t len)
-{
-	if (flags & DP_TX_EXT_DESC_FLAG_METADATA_VALID)
-		tx_desc->length = HAL_TX_EXT_DESC_WITH_META_DATA;
-	else
-		tx_desc->length = HAL_TX_EXTENSION_DESC_LEN_BYTES;
-}
-#endif
-
 /**
  * dp_tx_prepare_desc() - Allocate and prepare Tx descriptor for multisegment
  *                        frame
@@ -1367,7 +1351,6 @@ static struct dp_tx_desc_s *dp_tx_prepare_desc(struct dp_vdev *vdev,
 	struct dp_tx_ext_desc_elem_s *msdu_ext_desc;
 	struct dp_pdev *pdev = vdev->pdev;
 	struct dp_soc *soc = pdev->soc;
-	uint16_t data_len = 0;
 
 	if (dp_tx_limit_check(vdev, nbuf))
 		return NULL;
@@ -1401,8 +1384,7 @@ static struct dp_tx_desc_s *dp_tx_prepare_desc(struct dp_vdev *vdev,
 
 	/* Handle scattered frames - TSO/SG/ME */
 	/* Allocate and prepare an extension descriptor for scattered frames */
-	msdu_ext_desc = dp_tx_prepare_ext_desc(vdev, msdu_info,
-					       desc_pool_id, &data_len);
+	msdu_ext_desc = dp_tx_prepare_ext_desc(vdev, msdu_info, desc_pool_id);
 	if (!msdu_ext_desc) {
 		dp_tx_info("Tx Extension Descriptor Alloc Fail");
 		goto failure;
@@ -1427,7 +1409,10 @@ static struct dp_tx_desc_s *dp_tx_prepare_desc(struct dp_vdev *vdev,
 
 	tx_desc->dma_addr = msdu_ext_desc->paddr;
 
-	dp_tx_desc_update_length(tx_desc, msdu_ext_desc->flags, data_len);
+	if (msdu_ext_desc->flags & DP_TX_EXT_DESC_FLAG_METADATA_VALID)
+		tx_desc->length = HAL_TX_EXT_DESC_WITH_META_DATA;
+	else
+		tx_desc->length = HAL_TX_EXTENSION_DESC_LEN_BYTES;
 
 	return tx_desc;
 failure:
@@ -4504,6 +4489,137 @@ send_multiple:
 	return nbuf;
 }
 
+#ifdef WLAN_FEATURE_OSRTP
+static bool dp_tx_comp_process_osrtp_desc(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc)
+{
+	if (tx_desc->xsk_pool) {
+		spin_lock(&tx_desc->xsk_pool->cq_lock);
+		xskq_prod_submit_addr(tx_desc->xsk_pool->cq, tx_desc->xdp_addr);
+		spin_unlock(&tx_desc->xsk_pool->cq_lock);
+
+		return true;
+	}
+
+	return false;
+}
+
+static struct dp_tx_desc_s *dp_tx_prepare_desc_osrtp(struct dp_vdev *vdev,
+		struct xdp_desc *desc, uint8_t desc_pool_id, struct xsk_buff_pool *pool)
+{
+	struct dp_tx_desc_s *tx_desc = NULL;
+	struct dp_pdev *pdev = vdev->pdev;
+	struct dp_soc *soc = pdev->soc;
+
+	if (__dp_tx_limit_check(soc))
+		return NULL;
+
+	tx_desc = dp_tx_desc_alloc(soc, desc_pool_id);
+	if (qdf_unlikely(!tx_desc)) {
+		DP_STATS_INC(vdev, tx_i[DP_XMIT_LINK].dropped.desc_na.num, 1);
+		DP_STATS_INC(vdev, tx_i[DP_XMIT_LINK].dropped.desc_na_exc_alloc_fail.num, 1);
+		return NULL;
+	}
+
+	dp_tx_outstanding_inc(pdev);
+
+	/* Initialize the SW tx descriptor */
+	tx_desc->nbuf = NULL;
+	tx_desc->frm_type = dp_tx_frm_std;
+	tx_desc->tx_encap_type = vdev->tx_encap_type;
+	tx_desc->vdev_id = vdev->vdev_id;
+	tx_desc->pdev = pdev;
+	tx_desc->msdu_ext_desc = NULL;
+	tx_desc->pkt_offset = 0;
+	tx_desc->length = desc->len;
+	tx_desc->xdp_addr = desc->addr;
+	tx_desc->dma_addr = mi_xsk_buff_raw_get_dma(pool, desc->addr);
+	mi_xsk_buff_raw_dma_sync_for_device(pool, tx_desc->dma_addr, desc->len);
+	tx_desc->xsk_pool = pool;
+	mi_xp_get_pool(tx_desc->xsk_pool);
+
+	return tx_desc;
+}
+
+static QDF_STATUS dp_tx_send_msdu_osrtp(struct dp_vdev *vdev, struct xdp_desc *desc,
+		       struct dp_tx_msdu_info_s *msdu_info, uint16_t peer_id, struct xsk_buff_pool *pool)
+{
+	QDF_STATUS status = QDF_STATUS_E_NOSUPPORT;
+	uint16_t htt_tcl_metadata = 0;
+	struct dp_pdev *pdev = vdev->pdev;
+	struct dp_soc *soc = pdev->soc;
+	struct dp_tx_desc_s *tx_desc = NULL;
+	struct dp_tx_queue *tx_q = &(msdu_info->tx_queue);
+
+	tx_desc = dp_tx_prepare_desc_osrtp(vdev, desc, tx_q->desc_pool_id, pool);
+	if (!tx_desc) {
+		dp_err_rl("Tx_desc prepare Fail vdev %pK queue %d", vdev, tx_q->desc_pool_id);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (qdf_unlikely(peer_id == DP_INVALID_PEER)) {
+		htt_tcl_metadata = vdev->htt_tcl_metadata;
+		DP_TX_TCL_METADATA_HOST_INSPECTED_SET(htt_tcl_metadata, 1);
+	} else if (qdf_unlikely(peer_id != HTT_INVALID_PEER)) {
+		DP_TX_TCL_METADATA_TYPE_SET(htt_tcl_metadata,
+						DP_TCL_METADATA_TYPE_PEER_BASED);
+		DP_TX_TCL_METADATA_PEER_ID_SET(htt_tcl_metadata,
+						   peer_id);
+		dp_tx_bypass_reinjection(soc, tx_desc, NULL);
+	} else
+		htt_tcl_metadata = vdev->htt_tcl_metadata;
+
+	/* Enqueue the Tx MSDU descriptor to HW for transmit */
+	status = soc->arch_ops.tx_hw_enqueue_osrtp(soc, vdev, tx_desc, htt_tcl_metadata, msdu_info);
+
+	if (status != QDF_STATUS_SUCCESS) {
+		dp_tx_err_rl("Tx_hw_enqueue Fail tx_desc %pK queue %d", tx_desc, msdu_info->tx_queue.ring_id);
+		dp_tx_desc_release(soc, tx_desc, tx_desc->pool_id);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS dp_tx_send_osrtp(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
+					struct cdp_tx_osrtp_desc *osrtp_desc, struct xsk_buff_pool *pool)
+{
+	int i = 0;
+	struct dp_vdev *vdev = NULL;
+	struct dp_soc *soc = cdp_soc_t_to_dp_soc(soc_hdl);
+	struct dp_tx_msdu_info_s msdu_info = {0};
+
+	if (qdf_unlikely(vdev_id >= MAX_VDEV_CNT))
+		return QDF_STATUS_E_INVAL;
+
+	/*
+	 * dp_vdev_get_ref_by_id does does a atomic operation avoid using
+	 * this in per packet path.
+	 *
+	 * As in this path vdev memory is already protected with netdev
+	 * tx lock
+	 */
+	vdev = soc->vdev_id_map[vdev_id];
+	if (qdf_unlikely(!vdev))
+		return QDF_STATUS_E_INVAL;
+
+#ifdef QCA_OL_TX_MULTIQ_SUPPORT
+	dp_tx_get_queue(vdev, NULL, &msdu_info.tx_queue);
+#else
+	msdu_info.tx_queue.desc_pool_id = DP_TX_GET_DESC_POOL_ID(vdev);
+	msdu_info.tx_queue.ring_id = DP_TX_GET_RING_ID(vdev);
+#endif
+	msdu_info.tid = DP_VO_TID;
+	msdu_info.xmit_type = DP_XMIT_LINK;
+
+	DP_STATS_INC(vdev, tx_i[DP_XMIT_LINK].rcvd_per_core[msdu_info.tx_queue.desc_pool_id], osrtp_desc->num_descs);
+
+	for (i = 0; i < osrtp_desc->num_descs; i++)
+		dp_tx_send_msdu_osrtp(vdev, &osrtp_desc->desc[i], &msdu_info, HTT_INVALID_PEER, pool);
+
+	return QDF_STATUS_SUCCESS;
+}
+#endif
+
 qdf_nbuf_t dp_tx_send_vdev_id_check(struct cdp_soc_t *soc_hdl,
 				    uint8_t vdev_id, qdf_nbuf_t nbuf)
 {
@@ -6469,6 +6585,9 @@ dp_tx_comp_process_desc_list(struct dp_soc *soc,
 	uint16_t peer_id = DP_INVALID_PEER;
 	dp_txrx_ref_handle txrx_ref_handle = NULL;
 	qdf_nbuf_queue_head_t h;
+#ifdef WLAN_FEATURE_OSRTP
+	struct xsk_buff_pool *xsk_pool = NULL;
+#endif
 
 	desc = comp_head;
 
@@ -6488,6 +6607,15 @@ dp_tx_comp_process_desc_list(struct dp_soc *soc,
 							   &txrx_ref_handle,
 							   DP_MOD_ID_TX_COMP);
 		}
+
+#ifdef WLAN_FEATURE_OSRTP
+		if (dp_tx_comp_process_osrtp_desc(soc, desc)) {
+			xsk_pool = desc->xsk_pool;
+			dp_tx_desc_release(soc, desc, desc->pool_id);
+			desc = next;
+			continue;
+		}
+#endif
 
 		if (dp_tx_mcast_reinject_handler(soc, desc)) {
 			desc = next;
@@ -6552,6 +6680,12 @@ dp_tx_comp_process_desc_list(struct dp_soc *soc,
 		desc = next;
 	}
 	dp_tx_nbuf_dev_kfree_list(&h);
+
+#ifdef WLAN_FEATURE_OSRTP
+	if (xsk_pool)
+		mi_xsk_tx_release(xsk_pool);
+#endif
+
 	if (txrx_peer)
 		dp_txrx_peer_unref_delete(txrx_ref_handle, DP_MOD_ID_TX_COMP);
 }
@@ -6573,7 +6707,7 @@ void dp_tx_dump_tx_desc(struct dp_tx_desc_s *tx_desc)
 		dp_tx_comp_warn("tx_desc->flags: 0x%x", tx_desc->flags);
 		dp_tx_comp_warn("tx_desc->id: %u", tx_desc->id);
 		dp_tx_comp_warn("tx_desc->dma_addr: 0x%x",
-				(unsigned int)tx_desc->dma_addr);
+				tx_desc->dma_addr);
 		dp_tx_comp_warn("tx_desc->vdev_id: %u",
 				tx_desc->vdev_id);
 		dp_tx_comp_warn("tx_desc->tx_status: %u",
@@ -6739,7 +6873,6 @@ uint32_t dp_tx_comp_handler(struct dp_intr *int_ctx, struct dp_soc *soc,
 {
 	void *tx_comp_hal_desc;
 	void *last_prefetched_hw_desc = NULL;
-	void *last_hw_desc = NULL;
 	struct dp_tx_desc_s *last_prefetched_sw_desc = NULL;
 	hal_soc_handle_t hal_soc;
 	uint8_t buffer_src;
@@ -6789,8 +6922,7 @@ more_data:
 	if (num_avail_for_reap >= quota)
 		num_avail_for_reap = quota;
 
-	last_hw_desc = dp_srng_dst_inv_cached_descs(soc, hal_ring_hdl,
-						    num_avail_for_reap);
+	dp_srng_dst_inv_cached_descs(soc, hal_ring_hdl, num_avail_for_reap);
 	last_prefetched_hw_desc = dp_srng_dst_prefetch_32_byte_desc(hal_soc,
 							    hal_ring_hdl,
 							    num_avail_for_reap);
@@ -6991,8 +7123,7 @@ next_desc:
 					       num_avail_for_reap,
 					       hal_ring_hdl,
 					       &last_prefetched_hw_desc,
-					       &last_prefetched_sw_desc,
-					       last_hw_desc);
+					       &last_prefetched_sw_desc);
 
 		if (dp_tx_comp_loop_pkt_limit_hit(soc, count, max_reap_limit))
 			break;

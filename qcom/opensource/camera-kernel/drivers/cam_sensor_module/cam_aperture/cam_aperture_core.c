@@ -546,7 +546,6 @@ int32_t cam_aperture_i2c_pkt_parse(struct cam_aperture_ctrl_t *a_ctrl,
 	struct cam_sensor_power_ctrl_t  *power_info = NULL;
 	struct skip_frame   *skip_frame_msg = NULL;
 	struct skip_frame    skip_info = {0};
-	uint32_t                payload_count = 0;
 
 	uint32_t                  j = 0;
 	struct list_head          *list = NULL;
@@ -812,7 +811,6 @@ int32_t cam_aperture_i2c_pkt_parse(struct cam_aperture_ctrl_t *a_ctrl,
 					struct cam_cmd_i2c_random_wr
 						*cam_cmd_i2c_random_wr =
 						(struct cam_cmd_i2c_random_wr *)cmd_buf;
-						payload_count = cam_cmd_i2c_random_wr->header.count;
 
 					if ((remain_len - byte_cnt) <
 						sizeof(struct cam_cmd_i2c_random_wr)) {
@@ -823,7 +821,7 @@ int32_t cam_aperture_i2c_pkt_parse(struct cam_aperture_ctrl_t *a_ctrl,
 					}
 					tot_size = sizeof(struct i2c_rdwr_header) +
 						(sizeof(struct i2c_random_wr_payload) *
-						payload_count);
+						cam_cmd_i2c_random_wr->header.count);
 
 					if (tot_size > (remain_len - byte_cnt)) {
 						CAM_ERR(CAM_APERTURE,
@@ -835,7 +833,7 @@ int32_t cam_aperture_i2c_pkt_parse(struct cam_aperture_ctrl_t *a_ctrl,
 					rc = cam_sensor_handle_random_write(
 						cam_cmd_i2c_random_wr,
 						i2c_reg_settings,
-						&cmd_length_in_bytes, &j, &list, payload_count);
+						&cmd_length_in_bytes, &j, &list);
 					if (rc < 0) {
 						CAM_ERR(CAM_APERTURE,
 						"Failed in random write %d", rc);
@@ -866,7 +864,7 @@ int32_t cam_aperture_i2c_pkt_parse(struct cam_aperture_ctrl_t *a_ctrl,
 					tot_size = sizeof(struct i2c_rdwr_header) +
 					sizeof(cam_cmd_i2c_continuous_wr->reg_addr) +
 					(sizeof(struct cam_cmd_read) *
-					payload_count);
+					cam_cmd_i2c_continuous_wr->header.count);
 
 					if (tot_size > (remain_len - byte_cnt)) {
 						CAM_ERR(CAM_APERTURE,
@@ -878,7 +876,7 @@ int32_t cam_aperture_i2c_pkt_parse(struct cam_aperture_ctrl_t *a_ctrl,
 					rc = cam_sensor_handle_continuous_write(
 						cam_cmd_i2c_continuous_wr,
 						i2c_reg_settings,
-						&cmd_length_in_bytes, &j, &list, payload_count);
+						&cmd_length_in_bytes, &j, &list);
 					if (rc < 0) {
 						CAM_ERR(CAM_APERTURE,
 						"Failed in continuous write %d", rc);

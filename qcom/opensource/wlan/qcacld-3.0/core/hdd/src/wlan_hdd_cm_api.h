@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -81,23 +81,6 @@ QDF_STATUS hdd_cm_netif_queue_control(struct wlan_objmgr_vdev *vdev,
 				      enum netif_action_type action,
 				      enum netif_reason_type reason);
 
-#if defined(WLAN_FEATURE_11BE_MLO) && defined(CFG80211_11BE_BASIC)
-/**
- * hdd_cm_connect_active_notify() - Callback to HDD on  connection request
- * becomes active.
- * @vdev_id: VDEV ID on which connection became active.
- *
- * The callback to make sure connection related fields are properly set
- * from HDD.
- *
- * Returns: void
- */
-void hdd_cm_connect_active_notify(uint8_t vdev_id);
-#else
-static inline void hdd_cm_connect_active_notify(uint8_t vdev_id)
-{
-}
-#endif
 QDF_STATUS hdd_cm_connect_complete(struct wlan_objmgr_vdev *vdev,
 				   struct wlan_cm_connect_resp *rsp,
 				   enum osif_cb_type type);
@@ -377,6 +360,16 @@ bool hdd_cm_is_connecting(struct wlan_hdd_link_info *link_info);
  * Return: true if disconnected, false otherwise
  */
 bool hdd_cm_is_disconnected(struct wlan_hdd_link_info *link_info);
+
+// MIUI ADD: WIFI_PowerSave
+/**
+ * hdd_cm_is_connected() - Function to check if vdev is connected or not
+ * @adapter: pointer to the adapter structure
+ *
+ * Return: true if connected, false otherwise
+ */
+bool hdd_cm_is_connected(struct wlan_hdd_link_info *link_info);
+// END WIFI_PowerSave
 
 /**
  * hdd_cm_is_vdev_roaming() - Function to check roaming in progress

@@ -138,6 +138,14 @@ struct cs35l43_private {
 	struct workqueue_struct *mbox_wq;
 	struct work_struct mbox_work;
 	struct cs35l43_write_seq power_on_seq;
+	//for sending dsp error to onetrack
+	struct mutex xlog_lock;
+	struct workqueue_struct *xlog_wq;
+	struct work_struct xlog_work;
+	char *error_reason;
+	unsigned int strm_arb_err_prev;
+	unsigned int strm_arb_inval_strm_prev;
+	unsigned int strm_arb_act_boot_prev;
 	//for cache cstool chain read/write reg values
 	int ctlbuf[REG_VALUE_SIZE/4];
 	//for cstool chain calib/apply impedance values

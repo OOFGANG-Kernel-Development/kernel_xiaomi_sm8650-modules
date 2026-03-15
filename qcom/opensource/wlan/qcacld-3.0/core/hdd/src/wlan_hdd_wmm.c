@@ -2027,6 +2027,11 @@ void hdd_wmm_get_user_priority_from_ip_tos(struct hdd_adapter *adapter,
 	}
 	*user_pri = adapter->dscp_to_up_map[dscp];
 
+	if (!tos && skb->priority && skb->priority < HDD_WMM_UP_TO_AC_MAP_SIZE) {
+		// cgroup net_prio. see net/core/netprio_cgroup.c.
+		*user_pri = skb->priority;
+	}
+
 #ifdef HDD_WMM_DEBUG
 	hdd_debug("tos is %d, dscp is %d, up is %d", tos, dscp, *user_pri);
 #endif /* HDD_WMM_DEBUG */

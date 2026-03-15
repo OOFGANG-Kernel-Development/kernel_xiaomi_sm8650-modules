@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -31,6 +31,9 @@
  * should be removed properly WIN legacy code handle
  */
 
+#ifdef WLAN_FEATURE_OSRTP
+#include "xsk_buff_pool.h"
+#endif
 #include "htc_api.h"
 #include "qdf_types.h"
 #include "qdf_nbuf.h"
@@ -98,7 +101,6 @@
 #define CDP_DP_RX_FISA_STATS	   26
 #define CDP_DP_SWLM_STATS	   27
 #define CDP_DP_TX_HW_LATENCY_STATS 28
-#define CDP_TXRX_SOC_STATS	   30
 
 #define WME_AC_TO_TID(_ac) (       \
 		((_ac) == WME_AC_VO) ? 6 : \
@@ -901,6 +903,14 @@ enum connectivity_stats_pkt_status {
 	PKT_TYPE_NONE,
 };
 
+#ifdef WLAN_FEATURE_OSRTP
+#define MAX_OSRTP_DESC_NUM		32
+struct cdp_tx_osrtp_desc {
+	int num_descs;
+	struct xdp_desc desc[MAX_OSRTP_DESC_NUM];
+};
+#endif
+
 /**
  * typedef ol_txrx_mgmt_tx_cb() - tx management delivery notification
  * callback function
@@ -952,6 +962,19 @@ typedef qdf_nbuf_t (*ol_txrx_tx_exc_fp)(struct cdp_soc_t *soc, uint8_t vdev_id,
 					struct cdp_tx_exception_metadata
 						*tx_exc_metadata);
 
+
+#ifdef WLAN_FEATURE_OSRTP
+/**
+ * typedef ol_txrx_tx_osrtp_fp() - top-level transmit osrtp frame function
+ * @soc: dp soc handle
+ * @vdev_id: handle to the virtual device object
+ * @desc: osrtp desc
+ * @pool: xsk buff pool
+ */
+typedef QDF_STATUS (*ol_txrx_tx_osrtp_fp)(struct cdp_soc_t *soc, uint8_t vdev_id,
+					struct cdp_tx_osrtp_desc *osrtp_desc, struct xsk_buff_pool *pool);
+#endif
+
 /**
  * typedef ol_txrx_completion_fp() - top-level transmit function
  *                                   for tx completion
@@ -1001,6 +1024,15 @@ typedef QDF_STATUS(*ol_txrx_fisa_rx_fp)(void *soc,
 					qdf_nbuf_t msdu_list);
 
 typedef QDF_STATUS(*ol_txrx_fisa_flush_fp)(void *soc, int ring_num);
+
+#ifdef WLAN_FEATURE_OSRTP
+/**
+ * typedef ol_txrx_rx_osrtp_fp() - receive function to hand osrtp frames
+ * @osif_dev: handle to the OSIF virtual device object
+ * @xdp: xdp buffer
+ */
+typedef QDF_STATUS(*ol_txrx_rx_osrtp_fp)(void *osif_dev, struct xsk_buff_pool *pool, qdf_nbuf_t msdu_list);
+#endif
 
 /**
  * typedef ol_txrx_rx_flush_fp() - receive function to hand batches of
@@ -1137,15 +1169,6 @@ typedef QDF_STATUS(*ol_txrx_get_tsf_time)(void *osif_dev, uint64_t input_time,
 					  uint64_t *tsf_time);
 
 /**
- * typedef ol_txrx_vdev_del_notify_cb ()- callback registered to notify when
- *					  cdp vdev is detached.
- * @context: osif vdev handle
- * @cdp_vdev: CDP vdev handle
- */
-typedef void (*ol_txrx_vdev_del_notify_cb)(ol_osif_vdev_handle context,
-					   struct cdp_vdev *cdp_vdev);
-
-/**
  * struct ol_txrx_ops - (pointers to) the functions used for tx and rx
  * data xfer
  *
@@ -1215,6 +1238,9 @@ struct ol_txrx_ops {
 		ol_txrx_tx_free_ext_fp tx_free_ext;
 		ol_txrx_completion_fp tx_comp;
 		ol_txrx_classify_critical_pkt_fp tx_classify_critical_pkt_cb;
+#ifdef WLAN_FEATURE_OSRTP
+		ol_txrx_tx_osrtp_fp tx_osrtp;
+#endif
 	} tx;
 
 	struct {
@@ -1231,6 +1257,9 @@ struct ol_txrx_ops {
 		ol_txrx_rsim_rx_decap_fp rsim_rx_decap;
 		ol_txrx_fisa_rx_fp	osif_fisa_rx;
 		ol_txrx_fisa_flush_fp   osif_fisa_flush;
+#ifdef WLAN_FEATURE_OSRTP
+		ol_txrx_rx_osrtp_fp rx_osrtp;
+#endif
 	} rx;
 	/* proxy arp function pointer - specified by OS shim, stored by txrx */
 	ol_txrx_proxy_arp_fp      proxy_arp;
@@ -1238,7 +1267,7 @@ struct ol_txrx_ops {
 
 	ol_txrx_get_key_fp  get_key;
 	ol_txrx_get_tsf_time get_tsf_time;
-	ol_txrx_vdev_del_notify_cb vdev_del_notify;
+	ol_txrx_vdev_delete_cb vdev_del_notify;
 };
 
 /**
@@ -1251,6 +1280,9 @@ struct ol_txrx_hardtart_ctxt {
 	ol_txrx_tx_fp         tx;
 	ol_txrx_tx_fast_fp    tx_fast;
 	ol_txrx_tx_exc_fp     tx_exception;
+#ifdef WLAN_FEATURE_OSRTP
+	ol_txrx_tx_osrtp_fp   tx_osrtp;
+#endif
 };
 
 /**
@@ -1502,7 +1534,6 @@ enum cdp_pdev_param_type {
  * @rx_pkt_tlv_size: RX packet TLV size
  * @cdp_ast_indication_disable: AST indication disable
  * @cdp_psoc_param_mlo_oper_mode: mlo operation mode
- * @cdp_monitor_flag: monitor interface flags
  */
 typedef union cdp_config_param_t {
 	/* peer params */
@@ -1620,7 +1651,6 @@ typedef union cdp_config_param_t {
 	uint16_t rx_pkt_tlv_size;
 	bool cdp_ast_indication_disable;
 	uint8_t cdp_psoc_param_mlo_oper_mode;
-	uint8_t cdp_monitor_flag;
 } cdp_config_param_type;
 
 /**
@@ -1794,7 +1824,6 @@ enum cdp_vdev_param_type {
  * @CDP_CFG_GET_MLO_OPER_MODE: Get MLO operation mode
  * @CDP_CFG_PEER_JITTER_STATS: Peer Jitter Stats
  * @CDP_CONFIG_DP_DEBUG_LOG: set/get dp debug logging
- * @CDP_MONITOR_FLAG: Monitor interface configuration
  */
 enum cdp_psoc_param_type {
 	CDP_ENABLE_RATE_STATS,
@@ -1825,7 +1854,6 @@ enum cdp_psoc_param_type {
 	CDP_CFG_GET_MLO_OPER_MODE,
 	CDP_CFG_PEER_JITTER_STATS,
 	CDP_CONFIG_DP_DEBUG_LOG,
-	CDP_MONITOR_FLAG,
 };
 
 #ifdef CONFIG_AP_PLATFORM

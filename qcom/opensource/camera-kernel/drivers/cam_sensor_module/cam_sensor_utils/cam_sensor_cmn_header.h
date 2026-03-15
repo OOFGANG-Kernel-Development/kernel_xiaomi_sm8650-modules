@@ -36,6 +36,9 @@
 #define CAM_OIS_NAME       "cam-ois"
 #define CAM_TPG_NAME       "cam-tpg"
 #define CAM_APERTURE_NAME  "cam-aperture"  //xiaomi add
+#if IS_ENABLED(CONFIG_MIISP)
+#define CAM_ISPV4_NAME     "cam-ispv4"
+#endif
 
 #define MAX_SYSTEM_PIPELINE_DELAY 2
 
@@ -384,6 +387,15 @@ struct msm_camera_gpio_conf {
 	uint8_t camera_on_table_size;
 	struct msm_camera_gpio_num_info *gpio_num_info;
 };
+
+#if IS_ENABLED(CONFIG_MIISP)
+struct sensor_reg_info {
+       uint32_t reg_addr;
+       uint32_t reg_data;
+       enum camera_sensor_i2c_type addr_type;
+       enum camera_sensor_i2c_type data_type;
+};
+#endif
 
 /**
  * cam_sensor_module_add_i2c_device()

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -182,11 +182,10 @@ static void lim_process_sae_msg_ap(struct mac_context *mac,
 		if (assoc_req->present) {
 			pe_debug("Assoc req cached; clean it up");
 			lim_process_assoc_cleanup(mac, session,
+						  assoc_req->assoc_req,
 						  assoc_req->sta_ds,
 						  assoc_req->assoc_req_copied);
 			assoc_req->present = false;
-			lim_free_assoc_req_frm_buf(assoc_req->assoc_req);
-			qdf_mem_free(assoc_req->assoc_req);
 		}
 		lim_delete_pre_auth_node(mac, sae_msg->peer_mac_addr);
 		return;
@@ -212,13 +211,11 @@ static void lim_process_sae_msg_ap(struct mac_context *mac,
 						  &assoc_req_copied,
 						  assoc_req->dup_entry, false,
 						  assoc_req->partner_peer_idx);
-		if (!assoc_ind_sent) {
+		if (!assoc_ind_sent)
 			lim_process_assoc_cleanup(mac, session,
+						  assoc_req->assoc_req,
 						  assoc_req->sta_ds,
 						  assoc_req_copied);
-			lim_free_assoc_req_frm_buf(assoc_req->assoc_req);
-			qdf_mem_free(assoc_req->assoc_req);
-		}
 	}
 }
 
@@ -444,6 +441,7 @@ static void lim_process_set_default_scan_ie_request(struct mac_context *mac_ctx,
 	uint16_t local_ie_len;
 	struct scheduler_msg msg_q = {0};
 	QDF_STATUS ret_code;
+	struct pe_session *pe_session;
 
 	if (!msg_buf) {
 		pe_err("msg_buf is NULL");
@@ -457,9 +455,11 @@ static void lim_process_set_default_scan_ie_request(struct mac_context *mac_ctx,
 	if (!local_ie_buf)
 		return;
 
+	pe_session = pe_find_session_by_vdev_id(mac_ctx,
+						set_ie_params->vdev_id);
 	if (lim_update_ext_cap_ie(mac_ctx,
 			(uint8_t *)set_ie_params->ie_data,
-			local_ie_buf, &local_ie_len, set_ie_params->vdev_id)) {
+			local_ie_buf, &local_ie_len, pe_session)) {
 		pe_err("Update ext cap IEs fails");
 		goto scan_ie_send_fail;
 	}
@@ -1047,34 +1047,10 @@ static bool
 lim_is_ignore_btm_frame(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
 			tSirMacFrameCtl fc, uint8_t *body, uint16_t frm_len)
 {
-	bool is_sta_roam_disabled_by_p2p, is_mbo_wo_pmf, is_disable_btm;
+	bool is_sta_roam_disabled_by_p2p, is_mbo_wo_pmf;
 	uint8_t action_id, category, token = 0;
 	tpSirMacActionFrameHdr action_hdr;
 	enum wlan_diag_btm_block_reason reason;
-	struct cm_roam_values_copy temp;
-
-	/*
-	 * Drop BTM frame, if BTM roam disabled by userspace via vendor
-	 * command QCA_WLAN_VENDOR_ATTR_CONFIG_BTM_SUPPORT
-	 */
-	wlan_cm_roam_cfg_get_value(psoc, vdev_id, IS_DISABLE_BTM, &temp);
-	is_disable_btm = temp.bool_value;
-	if (is_disable_btm) {
-		pe_debug("Drop BTM frame. vdev:%d BTM roam disabled by user",
-			 vdev_id);
-		return true;
-	}
-
-	/*
-	 * When DUT associated to BTM disabled AP and receives BTM req frame
-	 * from connected AP then instead of forwarding the BTM req frame to
-	 * supplicant, host should drop it
-	 */
-	if (!wlan_cm_get_assoc_btm_cap(psoc, vdev_id)) {
-		pe_debug("Drop BTM frame. vdev:%d BTM not supported by AP",
-			 vdev_id);
-		return true;
-	}
 
 	/*
 	 * Drop BTM frame received on STA interface if concurrent
@@ -1346,10 +1322,16 @@ lim_handle80211_frames(struct mac_context *mac, struct scheduler_msg *limMsg,
 		    (fc.subType != SIR_MAC_MGMT_PROBE_REQ) &&
 		    (fc.subType != SIR_MAC_MGMT_PROBE_RSP) &&
 		    (fc.subType != SIR_MAC_MGMT_BEACON) &&
-		    (fc.subType != SIR_MAC_MGMT_ACTION))
-			mgmt_txrx_frame_hex_dump((uint8_t *)pHdr,
-					 WMA_GET_RX_MPDU_LEN(pRxPacketInfo),
-					 false);
+		    (fc.subType != SIR_MAC_MGMT_ACTION)) {
+			pe_debug("RX MGMT - Type %hu, SubType %hu, seq num[%d]",
+				 fc.type, fc.subType,
+				 ((pHdr->seqControl.seqNumHi << HIGH_SEQ_NUM_OFFSET) |
+				 pHdr->seqControl.seqNumLo));
+			QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE,
+					   QDF_TRACE_LEVEL_DEBUG, pHdr,
+					   WMA_GET_RX_PAYLOAD_LEN(pRxPacketInfo)
+					   + SIR_MAC_HDR_LEN_3A);
+		}
 	}
 
 #ifdef FEATURE_WLAN_EXTSCAN
@@ -1409,8 +1391,10 @@ lim_handle80211_frames(struct mac_context *mac, struct scheduler_msg *limMsg,
 	}
 
 	/* Check if frame is registered by HDD */
-	if (lim_check_mgmt_registered_frames(mac, pRxPacketInfo, pe_session))
+	if (lim_check_mgmt_registered_frames(mac, pRxPacketInfo, pe_session)) {
+		pe_debug("Received frame is passed to SME");
 		goto end;
+	}
 
 	if (fc.protVer != SIR_MAC_PROTOCOL_VERSION) {   /* Received Frame with non-zero Protocol Version */
 		pe_err("Unexpected frame with protVersion %d received",

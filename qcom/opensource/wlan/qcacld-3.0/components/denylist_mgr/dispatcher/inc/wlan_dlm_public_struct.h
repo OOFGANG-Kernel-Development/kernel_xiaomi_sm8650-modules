@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -96,7 +96,6 @@ enum dlm_reject_ap_type {
  * @REASON_REASSOC_RSSI_REJECT: Re-Assoc resp received with reason code 34
  * @REASON_REASSOC_NO_MORE_STAS: Re-assoc reject received with reason code
  * 17
- * @REASON_EAPOL_TIMEOUT: Deauth received with reason code 15
  */
 enum dlm_reject_ap_reason {
 	REASON_UNKNOWN = 0,
@@ -112,7 +111,6 @@ enum dlm_reject_ap_reason {
 	REASON_BTM_MBO_RETRY,
 	REASON_REASSOC_RSSI_REJECT,
 	REASON_REASSOC_NO_MORE_STAS,
-	REASON_EAPOL_TIMEOUT,
 };
 
 /**

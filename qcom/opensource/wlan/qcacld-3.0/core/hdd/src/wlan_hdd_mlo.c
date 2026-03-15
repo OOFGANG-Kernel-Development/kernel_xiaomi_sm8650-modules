@@ -33,7 +33,7 @@
 #include <wlan_osif_priv.h>
 
 /*max time in ms, caller may wait for link state request get serviced */
-#define WLAN_WAIT_TIME_LINK_STATE 3000
+#define WLAN_WAIT_TIME_LINK_STATE 800
 
 #if defined(CFG80211_11BE_BASIC)
 #ifndef WLAN_HDD_MULTI_VDEV_SINGLE_NDEV
@@ -274,30 +274,17 @@ QDF_STATUS hdd_mlo_mgr_unregister_osif_ops(void)
 	return wlan_mlo_mgr_unregister_osif_ext_ops(mlo_mgr_ctx);
 }
 
-static struct osif_vdev_sync *link_switch_vdev_sync;
-
 QDF_STATUS hdd_adapter_link_switch_notification(struct wlan_objmgr_vdev *vdev,
-						uint8_t non_trans_vdev_id,
-						bool is_start_notify)
+						uint8_t non_trans_vdev_id)
 {
-	int errno;
 	bool found = false;
 	struct hdd_adapter *adapter;
 	struct vdev_osif_priv *osif_priv;
 	struct wlan_hdd_link_info *link_info, *iter_link_info;
-	struct osif_vdev_sync *vdev_sync;
 
 	osif_priv = wlan_vdev_get_ospriv(vdev);
 	if (!osif_priv) {
 		hdd_err("Invalid osif priv");
-		return QDF_STATUS_E_INVAL;
-	}
-
-	if (is_start_notify && link_switch_vdev_sync) {
-		hdd_err("Previous trans ops not stopped");
-		QDF_ASSERT(0);
-		osif_vdev_sync_trans_stop(link_switch_vdev_sync);
-		link_switch_vdev_sync = NULL;
 		return QDF_STATUS_E_INVAL;
 	}
 
@@ -310,32 +297,18 @@ QDF_STATUS hdd_adapter_link_switch_notification(struct wlan_objmgr_vdev *vdev,
 		return QDF_STATUS_E_INVAL;
 	}
 
-	if (is_start_notify) {
-		errno = osif_vdev_sync_op_start(adapter->dev, &vdev_sync);
-		if (errno)
-			return QDF_STATUS_E_FAILURE;
-	}
-
-	if (non_trans_vdev_id != WLAN_INVALID_VDEV_ID) {
-		hdd_adapter_for_each_link_info(adapter, iter_link_info) {
-			if (non_trans_vdev_id == iter_link_info->vdev_id) {
-				adapter->deflink = iter_link_info;
-				found = true;
-				break;
-			}
+	hdd_adapter_for_each_link_info(adapter, iter_link_info) {
+		if (non_trans_vdev_id == iter_link_info->vdev_id) {
+			adapter->deflink = iter_link_info;
+			found = true;
+			break;
 		}
-	} else {
-		found = true;
 	}
 
-	if (is_start_notify) {
-		link_switch_vdev_sync = vdev_sync;
-	} else if (link_switch_vdev_sync) {
-		osif_vdev_sync_op_stop(link_switch_vdev_sync);
-		link_switch_vdev_sync = NULL;
-	}
+	if (!found)
+		return QDF_STATUS_E_FAILURE;
 
-	return found ? QDF_STATUS_SUCCESS : QDF_STATUS_E_FAILURE;
+	return QDF_STATUS_SUCCESS;
 }
 #endif
 
@@ -404,17 +377,14 @@ QDF_STATUS hdd_derive_link_address_from_mld(struct wlan_objmgr_psoc *psoc,
 
 #ifdef WLAN_FEATURE_DYNAMIC_MAC_ADDR_UPDATE
 #ifdef WLAN_HDD_MULTI_VDEV_SINGLE_NDEV
-bool hdd_adapter_restore_link_vdev_map(struct hdd_adapter *adapter,
-				       bool same_vdev_mac_map)
+static void hdd_adapter_restore_link_vdev_map(struct hdd_adapter *adapter)
 {
 	int i;
-	bool mapping_changed = false;
 	unsigned long link_flags;
 	uint8_t vdev_id, cur_link_idx, temp_link_idx;
 	struct vdev_osif_priv *osif_priv;
 	struct wlan_objmgr_vdev *vdev;
 	struct wlan_hdd_link_info *temp_link_info, *link_info;
-	struct qdf_mac_addr temp_mac;
 
 	hdd_adapter_for_each_link_info(adapter, link_info) {
 		cur_link_idx = hdd_adapter_get_index_of_link_info(link_info);
@@ -467,14 +437,6 @@ bool hdd_adapter_restore_link_vdev_map(struct hdd_adapter *adapter,
 				osif_priv->legacy_osif_priv = link_info;
 		}
 
-		/* Preserve the VDEV-MAC mapping if requested */
-		if (same_vdev_mac_map) {
-			qdf_copy_macaddr(&temp_mac, &temp_link_info->link_addr);
-			qdf_copy_macaddr(&temp_link_info->link_addr,
-					 &link_info->link_addr);
-			qdf_copy_macaddr(&link_info->link_addr, &temp_mac);
-		}
-
 		/* Swap link flags */
 		link_flags = temp_link_info->link_flags;
 		temp_link_info->link_flags = link_info->link_flags;
@@ -486,21 +448,15 @@ bool hdd_adapter_restore_link_vdev_map(struct hdd_adapter *adapter,
 		adapter->curr_link_info_map[temp_link_idx] =
 				adapter->curr_link_info_map[cur_link_idx];
 		adapter->curr_link_info_map[cur_link_idx] = cur_link_idx;
-
-		if (!mapping_changed)
-			mapping_changed = true;
 	}
-
-	hdd_adapter_disable_all_links(adapter, !same_vdev_mac_map);
-
-	return mapping_changed;
+	hdd_adapter_disable_all_links(adapter);
 }
 
 int hdd_update_vdev_mac_address(struct hdd_adapter *adapter,
 				struct qdf_mac_addr mac_addr)
 {
 	int idx, i, ret = 0;
-	bool update_self_peer;
+	bool eht_capab, update_self_peer;
 	QDF_STATUS status;
 	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	struct wlan_hdd_link_info *link_info;
@@ -511,8 +467,8 @@ int hdd_update_vdev_mac_address(struct hdd_adapter *adapter,
 	 * For SAP mode, hdd_hostapd_set_mac_address() is the entry point for
 	 * MAC address update.
 	 */
-
-	if (!hdd_adapter_is_ml_adapter(adapter)) {
+	ucfg_psoc_mlme_get_11be_capab(hdd_ctx->psoc, &eht_capab);
+	if (!(eht_capab && hdd_adapter_is_ml_adapter(adapter))) {
 		struct qdf_mac_addr mld_addr = QDF_MAC_ADDR_ZERO_INIT;
 
 		ret = hdd_dynamic_mac_address_set(adapter->deflink, mac_addr,
@@ -527,7 +483,7 @@ int hdd_update_vdev_mac_address(struct hdd_adapter *adapter,
 	if (QDF_IS_STATUS_ERROR(status))
 		return qdf_status_to_os_return(status);
 
-	hdd_adapter_restore_link_vdev_map(adapter, false);
+	hdd_adapter_restore_link_vdev_map(adapter);
 
 	i = 0;
 	hdd_adapter_for_each_active_link_info(adapter, link_info) {
@@ -868,14 +824,6 @@ wlan_hdd_cached_link_state_request(struct hdd_adapter *adapter,
 	int errno;
 	struct qdf_mac_addr *mld_addr;
 	uint8_t link_iter = 0;
-	struct mlo_link_info *ml_link_info;
-	struct wlan_mlo_dev_context *mlo_ctx;
-
-	mlo_ctx = vdev->mlo_dev_ctx;
-	if (!mlo_ctx) {
-		hdd_err("null mlo_dev_ctx");
-		return -EINVAL;
-	}
 
 	hdd_adapter_for_each_link_info(adapter, link_info) {
 
@@ -887,6 +835,8 @@ wlan_hdd_cached_link_state_request(struct hdd_adapter *adapter,
 		sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(link_info);
 		link_state_event.link_info[link_iter].link_id =
 				sta_ctx->conn_info.ieee_link_id;
+		link_state_event.link_info[link_iter].link_status =
+				link_info->is_mlo_vdev_active;
 		link_state_event.link_info[link_iter].vdev_id =
 				link_info->vdev_id;
 		link_state_event.link_info[link_iter].chan_freq =
@@ -895,23 +845,11 @@ wlan_hdd_cached_link_state_request(struct hdd_adapter *adapter,
 		if (sta_ctx->conn_info.ieee_link_id == WLAN_INVALID_LINK_ID)
 			continue;
 
-		ml_link_info = mlo_mgr_get_ap_link_by_link_id(
-				mlo_ctx,
-				sta_ctx->conn_info.ieee_link_id);
-		if (!ml_link_info) {
-			hdd_debug("link: %d info does not exist",
-				  sta_ctx->conn_info.ieee_link_id);
-			return -EINVAL;
-		}
-
-		link_state_event.link_info[link_iter].link_status =
-			ml_link_info->is_link_active;
-
 		link_iter++;
 
 		hdd_debug_rl("vdev id %d sta_ctx->conn_info.ieee_link_id %d is_mlo_vdev_active %d ",
 			     link_info->vdev_id, sta_ctx->conn_info.ieee_link_id,
-			     ml_link_info->is_link_active);
+			     link_info->is_mlo_vdev_active);
 	}
 
 	link_state_event.num_mlo_vdev_link_info = link_iter;
@@ -971,7 +909,7 @@ static QDF_STATUS wlan_hdd_link_state_request(struct hdd_adapter *adapter,
 		.dealloc = NULL,
 	};
 
-	if (!wiphy || !vdev || !wlan_vdev_mlme_is_mlo_vdev(vdev))
+	if (!wiphy || !vdev)
 		return status;
 
 	if (adapter->device_mode != QDF_STA_MODE)

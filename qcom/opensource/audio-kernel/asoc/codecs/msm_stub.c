@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2011-2014, 2017-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/platform_device.h>
@@ -14,7 +14,7 @@
 #define DRV_NAME "msm-stub-codec"
 
 /* A dummy driver useful only to advertise hardware parameters */
-#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_TARGET_PRODUCT_PERIDOT) || defined(CONFIG_TARGET_PRODUCT_AMETHYST)
+#if defined(CONFIG_TARGET_PRODUCT_CHENFENG) || defined(CONFIG_TARGET_PRODUCT_PERIDOT)
 static struct snd_soc_dai_driver msm_stub_dais[] = {
 	{
 		.name = "msm-stub-rx",

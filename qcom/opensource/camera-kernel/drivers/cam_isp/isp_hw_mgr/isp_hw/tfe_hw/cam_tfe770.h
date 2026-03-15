@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 
@@ -1400,7 +1400,6 @@ static struct cam_tfe_bus_hw_info  tfe770_bus_hw_info = {
 	.rdi_width = 128,
 	.mode_cfg_shift = 16,
 	.height_shift = 16,
-	.max_out_res = CAM_ISP_TFE_OUT_RES_MAX & 0xFF,
 };
 
 struct cam_tfe_hw_info cam_tfe770 = {
@@ -1446,14 +1445,9 @@ struct cam_tfe_hw_info cam_tfe770 = {
 		0x00000000,
 	},
 	.error_irq_mask = {
-		0x001F1F00,
+		0x003F1F00,
 		0x00000000,
 		0x000002FF,
-	},
-	.non_fatal_error_irq_mask = {
-		0x00200000,
-		0x00000000,
-		0x00000000,
 	},
 	.bus_reg_irq_mask = {
 		0x00000002,

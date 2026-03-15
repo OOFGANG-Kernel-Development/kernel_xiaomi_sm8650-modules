@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -51,7 +51,7 @@ QDF_STATUS lim_cu_info_from_rnr_per_link_id(const uint8_t *rnr,
 
 	rnr_end = rnr + rnr[TAG_LEN_POS] + MIN_IE_LEN;
 	data = rnr + PAYLOAD_START_POS;
-	while ((data + sizeof(struct neighbor_ap_info_field)) <= rnr_end) {
+	while (data < rnr_end) {
 		neighbor_ap_info = (struct neighbor_ap_info_field *)data;
 		tbtt_count = neighbor_ap_info->tbtt_header.tbtt_info_count;
 		tbtt_len = neighbor_ap_info->tbtt_header.tbtt_info_length;
@@ -692,14 +692,8 @@ QDF_STATUS lim_mlo_proc_assoc_req_frm(struct wlan_objmgr_vdev *vdev,
 
 	qdf_copy_macaddr((struct qdf_mac_addr *)assoc_req->mld_mac,
 			 &ml_peer->peer_mld_addr);
-	status = lim_proc_assoc_req_frm_cmn(mac_ctx, sub_type, session, sa,
-					    assoc_req, ml_peer->assoc_id);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		lim_free_assoc_req_frm_buf(assoc_req);
-		qdf_mem_free(assoc_req);
-	}
-
-	return status;
+	return lim_proc_assoc_req_frm_cmn(mac_ctx, sub_type, session, sa,
+					  assoc_req, ml_peer->assoc_id);
 }
 
 void lim_mlo_ap_sta_assoc_suc(struct wlan_objmgr_peer *peer)
@@ -1204,15 +1198,8 @@ QDF_STATUS lim_store_mlo_ie_raw_info(uint8_t *ie, uint8_t *sta_prof_ie,
 				return QDF_STATUS_E_INVAL;
 			}
 
-			for (i = 0; i < pfrm[TAG_LEN_POS]; i++) {
-				if (copied > ml_ie_len) {
-					pe_debug("Buf length exceeded, copied %d ml_ie_len %d",
-						 copied, ml_ie_len);
-					qdf_mem_free(buf);
-					return QDF_STATUS_E_INVAL;
-				}
+			for (i = 0; i < pfrm[TAG_LEN_POS]; i++)
 				sta_data[index++] = buf[copied++];
-			}
 			sta_prof->num_data = index;
 
 			if (copied < ml_ie_len &&

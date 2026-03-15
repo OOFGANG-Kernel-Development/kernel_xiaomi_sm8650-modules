@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -87,8 +87,7 @@ void hif_ce_war_enable(void)
  * Note: For MCL, #if defined (HIF_CONFIG_SLUB_DEBUG_ON) needs to be checked
  * for defined here
  */
-#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF) ||\
-	defined(RECORD_DP_CE_EVTS)
+#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)
 
 #define CE_DEBUG_PRINT_BUF_SIZE(x) (((x) * 3) - 1)
 #define CE_DEBUG_DATA_PER_ROW 16
@@ -249,34 +248,6 @@ void hif_record_latest_evt(struct ce_desc_hist *ce_hist,
 	}
 }
 
-#ifdef RECORD_DP_CE_EVTS
-/**
- * is_evt_hist_allowed() - check if event history is allowed basis on
- * the event mask allowed for that ce id.
- * @ce_hist: ce history member
- * @ce_id: ce id on which event is occurring on
- * @type: event type
- * Return: true if event is allowed else false.
- */
-static inline bool
-is_evt_hist_allowed(struct ce_desc_hist *ce_hist, int ce_id,
-		    enum hif_ce_event_type type)
-{
-	uint64_t evt_mask = ce_hist->evt_mask[ce_id];
-
-	if (evt_mask & (1ULL << type))
-		return true;
-	else
-		return false;
-}
-#else
-static inline bool
-is_evt_hist_allowed(struct ce_desc_hist *ce_hist, int ce_id,
-		    enum hif_ce_event_type type)
-{
-	return true;
-}
-#endif /* RECORD_DP_CE_EVTS */
 /**
  * hif_record_ce_desc_event() - record ce descriptor events
  * @scn: hif_softc
@@ -304,7 +275,10 @@ void hif_record_ce_desc_event(struct hif_softc *scn, int ce_id,
 	else
 		return;
 
-	if (!ce_hist->enable[ce_id] && is_evt_hist_allowed(ce_hist, ce_id, type))
+	if (ce_id >= CE_COUNT_MAX)
+		return;
+
+	if (!ce_hist->enable[ce_id])
 		return;
 
 	if (!hist_ev)
@@ -367,7 +341,7 @@ inline void ce_deinit_ce_desc_event_log(struct hif_softc *scn, int ce_id)
 	qdf_mutex_destroy(&ce_hist->ce_dbg_datamem_lock[ce_id]);
 }
 
-#else
+#else /* (HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF) */
 void hif_record_ce_desc_event(struct hif_softc *scn,
 		int ce_id, enum hif_ce_event_type type,
 		union ce_desc *descriptor, void *memory,
@@ -384,7 +358,8 @@ inline void ce_init_ce_desc_event_log(struct hif_softc *scn, int ce_id,
 void ce_deinit_ce_desc_event_log(struct hif_softc *scn, int ce_id)
 {
 }
-#endif
+#endif /*defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF) */
+
 #ifdef NAPI_YIELD_BUDGET_BASED
 bool hif_ce_service_should_yield(struct hif_softc *scn,
 				 struct CE_state *ce_state)
@@ -1762,8 +1737,7 @@ static uint32_t hif_dump_desc_data_buf(uint8_t *buf, ssize_t pos,
  * Note: For MCL, #if defined (HIF_CONFIG_SLUB_DEBUG_ON) needs to be checked
  * for defined here
  */
-#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF) ||\
-	defined(RECORD_DP_CE_EVTS)
+#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)
 static const char *ce_event_type_to_str(enum hif_ce_event_type type)
 {
 	switch (type) {
@@ -1929,9 +1903,7 @@ ssize_t hif_input_desc_trace_buf_index(struct hif_softc *scn,
 	return size;
 }
 
-#endif /* defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF) ||
-	* defined(RECORD_DP_CE_EVTS)
-	*/
+#endif /*defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF) */
 
 #ifdef HIF_CE_DEBUG_DATA_BUF
 /*

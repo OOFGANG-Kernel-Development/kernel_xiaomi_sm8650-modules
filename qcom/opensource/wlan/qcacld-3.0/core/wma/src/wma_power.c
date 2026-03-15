@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1309,28 +1309,20 @@ static void wma_update_beacon_noa_ie(struct beacon_info *bcn,
 			/* TODO: Assuming p2p noa ie is last ie in the beacon */
 			qdf_mem_zero(bcn->noa_ie, (bcn->noa_sub_ie_len +
 						   sizeof(struct p2p_ie)));
-			if (bcn->len < (bcn->noa_sub_ie_len +
-					sizeof(struct p2p_ie)))
-				bcn->len = 0;
-			else
-				bcn->len -= (bcn->noa_sub_ie_len +
-					     sizeof(struct p2p_ie));
+			bcn->len -= (bcn->noa_sub_ie_len +
+				     sizeof(struct p2p_ie));
 			bcn->noa_ie = NULL;
 			bcn->noa_sub_ie_len = 0;
 		}
+		wma_debug("No need to update NoA");
 		return;
 	}
 
 	if (bcn->noa_sub_ie_len && bcn->noa_ie) {
-		if (bcn->len < (bcn->noa_sub_ie_len + sizeof(struct p2p_ie)))
-			bcn->len = 0;
-		else
-			bcn->len -= (bcn->noa_sub_ie_len +
-				     sizeof(struct p2p_ie));
-
 		/* NoA present in previous beacon, update it */
 		wma_debug("NoA present in previous beacon, update the NoA IE, bcn->len %u bcn->noa_sub_ie_len %u",
-			   bcn->len, bcn->noa_sub_ie_len);
+			 bcn->len, bcn->noa_sub_ie_len);
+		bcn->len -= (bcn->noa_sub_ie_len + sizeof(struct p2p_ie));
 		qdf_mem_zero(bcn->noa_ie,
 			     (bcn->noa_sub_ie_len + sizeof(struct p2p_ie)));
 	} else {                /* NoA is not present in previous beacon */
@@ -1731,8 +1723,6 @@ QDF_STATUS wma_enable_disable_imps(uint32_t pdev_id, uint32_t param_val)
 	if (QDF_IS_STATUS_ERROR(status))
 		wma_err("Unable to enable/disable:(%d) IMPS",
 			param_val);
-
-	wma->in_imps = !!param_val;
 
 	return status;
 }

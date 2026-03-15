@@ -1,38 +1,26 @@
 load("//build/kernel/kleaf:kernel.bzl", "ddk_module")
 load("//build/bazel_common_rules/dist:dist.bzl", "copy_to_dist_dir")
-load("//msm-kernel:target_variants.bzl", "get_all_variants")
-load("//msm-kernel:target_variants.bzl", "get_all_lunch_target_base_target_variants")
+load("//msm-kernel:target_variants.bzl", "get_all_variants", "get_arch_of_target")
 
-def _define_module(target, variant, lunch_target=None):
-    if lunch_target:
-        tv = "{}_{}".format(target, variant)
-        tvl = "{}_{}_{}".format(target, variant, lunch_target)
-        ddk_mod_name = "{}_camera".format(tvl)
-        defconfig = "{}_defconfig".format(lunch_target)
-    else:
-        tv = "{}_{}".format(target, variant)
-        ddk_mod_name = "{}_camera".format(tv)
-        defconfig = "{}_defconfig".format(target)
-
+def _define_module(target, variant):
+    tv = "{}_{}".format(target, variant)
     deps = [
         ":camera_headers",
         ":camera_banner",
         "//msm-kernel:all_headers",
-        "//vendor/qcom/opensource/securemsm-kernel:smcinvoke_kernel_headers",
-        "//vendor/qcom/opensource/securemsm-kernel:smmu_proxy_headers",
-        "//vendor/qcom/opensource/securemsm-kernel:{}_smcinvoke_dlkm".format(tv),
-        "//vendor/qcom/opensource/securemsm-kernel:{}_smmu_proxy_dlkm".format(tv),
-        "//vendor/qcom/opensource/mmrm-driver:{}_mmrm_driver".format(tv),
     ]
-
     if target == "pineapple":
         deps.extend([
             "//vendor/qcom/opensource/synx-kernel:synx_headers",
             "//vendor/qcom/opensource/synx-kernel:{}_modules".format(tv),
+            "//vendor/qcom/opensource/securemsm-kernel:smcinvoke_kernel_headers",
+            "//vendor/qcom/opensource/securemsm-kernel:smmu_proxy_headers",
+            "//vendor/qcom/opensource/securemsm-kernel:{}_smcinvoke_dlkm".format(tv),
+            "//vendor/qcom/opensource/securemsm-kernel:{}_smmu_proxy_dlkm".format(tv),
+            "//vendor/qcom/opensource/mmrm-driver:{}_mmrm_driver".format(tv),
         ])
-
     ddk_module(
-        name = ddk_mod_name,
+        name = "{}_camera".format(tv),
         out = "camera.ko",
         srcs = [
             "drivers/cam_req_mgr/cam_req_mgr_core.c",
@@ -259,25 +247,16 @@ def _define_module(target, variant, lunch_target=None):
                 ],
             },
         },
-
-        copts = ["-Wno-implicit-fallthrough", "-include", "$(location :camera_banner)"],
-
+        copts = ["-include", "$(location :camera_banner)"],
         deps = deps,
         kconfig = "Kconfig",
-        defconfig = defconfig,
+        defconfig = "{}_defconfig".format(tv),
         kernel_build = "//msm-kernel:{}".format(tv),
     )
 
-    if lunch_target:
-        dist_target_name = "{}_camera_dist".format(tvl)
-        data = [":{}_camera".format(tvl)]
-    else:
-        dist_target_name = "{}_camera_dist".format(tv)
-        data = [":{}_camera".format(tv)]
-
     copy_to_dist_dir(
-	name = dist_target_name,
-        data = data,
+	name = "{}_camera_dist".format(tv),
+        data = [":{}_camera".format(tv)],
         dist_dir = "out/target/product/{}/dlkm/lib/modules/".format(target),
         flat = True,
         wipe_dist_dir = False,
@@ -286,7 +265,13 @@ def _define_module(target, variant, lunch_target=None):
     )
 
 def define_camera_module():
+    skip = "false"
     for (t, v) in get_all_variants():
-        _define_module(t, v)
-    for (lt, bt, v) in get_all_lunch_target_base_target_variants():
-        _define_module(bt, v, lt)
+        if get_arch_of_target(t) == "pineapple":
+           skip = "true"
+        else:
+           _define_module(t, v)
+    if skip == "true":
+        _define_module("pineapple", "gki")
+        _define_module("pineapple", "consolidate")
+

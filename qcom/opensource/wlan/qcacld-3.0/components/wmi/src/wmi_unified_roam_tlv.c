@@ -2021,7 +2021,7 @@ extract_roam_frame_info_tlv(wmi_unified_t wmi_handle, void *evt_buf,
 	WMI_ROAM_STATS_EVENTID_param_tlvs *param_buf;
 	wmi_roam_frame_info *src_data = NULL;
 	struct roam_frame_info *dst_buf;
-	uint8_t i, subtype, idx;
+	uint8_t i, subtype;
 
 	param_buf = (WMI_ROAM_STATS_EVENTID_param_tlvs *)evt_buf;
 
@@ -2069,24 +2069,10 @@ extract_roam_frame_info_tlv(wmi_unified_t wmi_handle, void *evt_buf,
 				WMI_GET_BITS(src_data->frame_info,
 					     WLAN_FRAME_INFO_AUTH_ALG_OFFSET,
 					     4);
-		/*
-		 * src_data->status_code is treated as tx status under
-		 * following condition:
-		 * 1. if the frame is an authentication frame and req_resp bit
-		 * is set to '0'
-		 * 2. If the Frame is Association Request frame
-		 * 3. If the Frame is Re-Association Request Frame
-		 */
 
-		if ((!dst_buf->is_rsp &&
-		     dst_buf->subtype == MGMT_SUBTYPE_AUTH) ||
-		    dst_buf->subtype == MGMT_SUBTYPE_ASSOC_REQ ||
-		    dst_buf->subtype == MGMT_SUBTYPE_REASSOC_REQ ||
-		    dst_buf->type == ROAM_FRAME_INFO_FRAME_TYPE_EXT) {
+		if (!dst_buf->is_rsp)
 			dst_buf->tx_status = wmi_get_converted_tx_status(
 							src_data->status_code);
-			dst_buf->status_code = 0;
-		}
 
 		dst_buf->retry_count = src_data->retry_count;
 		dst_buf->rssi = (-1) * src_data->rssi_dbm_abs;
@@ -2095,14 +2081,6 @@ extract_roam_frame_info_tlv(wmi_unified_t wmi_handle, void *evt_buf,
 
 		dst_buf->band =
 			WMI_GET_MLO_BITMAP_BAND_INFO(src_data->frame_info_ext);
-
-		if (dst_buf->subtype == MGMT_SUBTYPE_ASSOC_RESP ||
-		    dst_buf->subtype == MGMT_SUBTYPE_REASSOC_RESP) {
-			idx = WMI_GET_MAP_ID(src_data->frame_info_ext);
-			wmi_unified_extract_ml_roam_info(wmi_handle, evt_buf,
-							 dst_buf,
-							 dst_buf->timestamp, idx);
-		}
 
 		dst_buf++;
 		src_data++;
@@ -2366,7 +2344,6 @@ wmi_fill_roam_sync_buffer(wmi_unified_t wmi_handle,
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	uint8_t kck_len;
 	uint8_t kek_len;
-	struct roam_scan_candidate_frame roam_candidate = {0};
 
 	synch_event = param_buf->fixed_param;
 	roam_sync_ind->roamed_vdev_id = synch_event->vdev_id;
@@ -2417,16 +2394,6 @@ wmi_fill_roam_sync_buffer(wmi_unified_t wmi_handle,
 		wmi_fill_data_synch_frame_event(rso_cfg, roam_sync_ind);
 	} else {
 		wmi_fill_data_synch_event(roam_sync_ind, param_buf);
-
-		roam_candidate.vdev_id = roam_sync_ind->roamed_vdev_id;
-		roam_candidate.frame_length =
-				roam_sync_ind->beacon_probe_resp_length;
-		roam_candidate.frame = (uint8_t *)roam_sync_ind +
-				       roam_sync_ind->beacon_probe_resp_offset;
-		roam_candidate.rssi = roam_sync_ind->rssi;
-		roam_candidate.roam_offload_candidate_frm = false;
-		wlan_cm_add_all_link_probe_rsp_to_scan_db(wlan_vdev_get_psoc(vdev),
-							  &roam_candidate);
 	}
 	chan = param_buf->chan;
 	if (chan) {
@@ -2672,8 +2639,34 @@ extract_roam_sync_event_tlv(wmi_unified_t wmi_handle, void *evt_buf,
 		reassoc_req_len = synch_event->reassoc_req_len;
 		reassoc_rsp_len = synch_event->reassoc_rsp_len;
 
+		if (synch_event->bcn_probe_rsp_len > WMI_SVC_MSG_MAX_SIZE) {
+			status = QDF_STATUS_E_FAILURE;
+			goto abort_roam;
+		}
+		if (synch_event->reassoc_rsp_len >
+			(WMI_SVC_MSG_MAX_SIZE - synch_event->bcn_probe_rsp_len)) {
+			status = QDF_STATUS_E_FAILURE;
+			goto abort_roam;
+		}
+		if (synch_event->reassoc_req_len >
+			WMI_SVC_MSG_MAX_SIZE - (synch_event->bcn_probe_rsp_len +
+			synch_event->reassoc_rsp_len)) {
+			status = QDF_STATUS_E_FAILURE;
+			goto abort_roam;
+		}
 		roam_synch_data_len = bcn_probe_rsp_len +
 			reassoc_rsp_len + reassoc_req_len;
+
+		/*
+		 * Below is the check for the entire size of the message
+		 * received from the firmware.
+		 */
+		if (roam_synch_data_len > WMI_SVC_MSG_MAX_SIZE -
+			(sizeof(*synch_event) + sizeof(wmi_channel) +
+			 sizeof(wmi_key_material) + sizeof(uint32_t))) {
+			status = QDF_STATUS_E_FAILURE;
+			goto abort_roam;
+		}
 		roam_synch_data_len += sizeof(struct roam_offload_synch_ind);
 	}
 
@@ -4123,19 +4116,8 @@ extract_roam_synch_key_event_tlv(wmi_unified_t wmi_handle,
 	}
 
 	for (j = 0; j < WLAN_MAX_ML_BSS_LINKS; j++) {
-		/*
-		 * Pairwise keys maybe copied for all the WLAN_MAX_ML_BSS_LINKS
-		 * but firmware might have roamed to AP with number of links
-		 * less than WLAN_MAX_ML_BSS_LINKS. So free the memory for those
-		 * links
-		 */
-		if (key_entry[j].link_id != MLO_INVALID_LINK_IDX) {
+		if (key_entry[j].link_id != MLO_INVALID_LINK_IDX)
 			total_links++;
-		} else {
-			wmi_err_rl("Free keys for invalid entry at index:%d",
-				   j);
-			wlan_crypto_free_key(&key_entry[j].keys);
-		}
 	}
 
 	*num_entries = total_links;
@@ -4163,7 +4145,7 @@ free_keys:
 		if (!key_alloc_buf[k])
 			continue;
 
-		wmi_err_rl("flush keybuf :%d, key is valid %d", flush_keybuf,
+		wmi_err_rl("flush keybuf :%d, key is valid", flush_keybuf,
 			   key_alloc_buf[k]->valid);
 		if (!flush_keybuf && key_alloc_buf[k]->valid)
 			continue;
@@ -4176,103 +4158,10 @@ free_keys:
 	return status;
 }
 
-static enum reg_wifi_band
-wmi_convert_mlo_to_reg_band(enum wmi_mlo_band_info wmi_band)
-{
-	switch (wmi_band) {
-	case WMI_MLO_BAND_2GHZ_MLO:
-		return REG_BAND_2G;
-	case WMI_MLO_BAND_5GHZ_MLO:
-		return REG_BAND_5G;
-	case WMI_MLO_BAND_6GHZ_MLO:
-		return REG_BAND_6G;
-	case WMI_MLO_BAND_NO_MLO:
-		fallthrough;
-	default:
-		return REG_BAND_UNKNOWN;
-	}
-
-	return REG_BAND_UNKNOWN;
-}
-
-static QDF_STATUS
-extract_roam_ml_info_tlv(wmi_unified_t wmi_handle, void *evt_buf,
-			 struct roam_mlo_link_info *dst,
-			 uint64_t timestamp, uint8_t id)
-{
-	WMI_ROAM_STATS_EVENTID_param_tlvs *param_buf;
-	wmi_mlo_link_info *src_link_info;
-	uint8_t parsed_tlv_count = 0;
-	enum wmi_mlo_band_info wmi_band;
-
-	param_buf = (WMI_ROAM_STATS_EVENTID_param_tlvs *)evt_buf;
-	if (!param_buf)
-		return QDF_STATUS_E_INVAL;
-
-	if (!param_buf->mlo_link_info ||
-	    !param_buf->num_mlo_link_info) {
-		wmi_debug("Empty roam ml info param buf :%d",
-			  param_buf->num_mlo_link_info);
-		return QDF_STATUS_E_INVAL;
-	}
-
-	qdf_mem_zero(dst, sizeof(*dst));
-
-	src_link_info = param_buf->mlo_link_info;
-	while (src_link_info) {
-		if (parsed_tlv_count >= param_buf->num_mlo_link_info)
-			break;
-
-		/*
-		 * Fill the destination link info for the given map ID.
-		 * Map Id would be sent over the roam frame ext TLV by
-		 * the firmware.
-		 */
-		if (WMI_MLO_LINK_INFO_GET_MAP_ID(src_link_info->link_info) !=
-		    id) {
-			src_link_info++;
-			parsed_tlv_count++;
-			continue;
-		}
-
-		dst->present = true;
-
-		/* Self Link ID */
-		dst->ml_info[dst->num_links].link_id =
-			WMI_MLO_LINK_INFO_GET_IEEE_LINK_ID(src_link_info->link_info);
-
-		/* Reg Band */
-		wmi_band = WMI_MLO_LINK_INFO_GET_BAND(src_link_info->link_info);
-		dst->ml_info[dst->num_links].link_band =
-				wmi_convert_mlo_to_reg_band(wmi_band);
-
-		/* is Link Accepted or rejected */
-		dst->ml_info[dst->num_links].link_accepted =
-			WMI_MLO_LINK_INFO_GET_STATUS(src_link_info->link_info) ? true : false;
-
-		/* Self Link mac address */
-		WMI_MAC_ADDR_TO_CHAR_ARRAY(&src_link_info->link_addr,
-					   dst->ml_info[dst->num_links].link_addr.bytes);
-
-		dst->ml_info[dst->num_links].freq =
-					WMI_MLO_LINK_INFO_GET_FREQ(src_link_info->link_info);
-
-		dst->ml_info[dst->num_links].timestamp = timestamp;
-
-		dst->num_links++;
-
-		src_link_info++;
-		parsed_tlv_count++;
-	}
-
-	return QDF_STATUS_SUCCESS;
-}
-
 static void
 wmi_roam_offload_attach_mlo_tlv(struct wmi_ops *ops)
 {
 	ops->extract_roam_synch_key_event = extract_roam_synch_key_event_tlv;
-	ops->extract_roam_ml_info = extract_roam_ml_info_tlv;
 }
 #else
 static inline void
@@ -6109,15 +5998,13 @@ send_roam_bss_load_config_tlv(wmi_unified_t wmi_handle,
 
 	cmd->vdev_id = params->vdev_id;
 	cmd->bss_load_threshold = params->bss_load_threshold;
-	cmd->bss_load_alpha_pct = params->bss_load_alpha;
 	cmd->monitor_time_window = params->bss_load_sample_time;
 	cmd->rssi_2g_threshold = params->rssi_threshold_24ghz;
 	cmd->rssi_5g_threshold = params->rssi_threshold_5ghz;
 	cmd->rssi_6g_threshold = params->rssi_threshold_6ghz;
 
-	wmi_debug("RSO_CFG: vdev:%d bss_load_thres:%d bss_alpha:%d monitor_time:%d rssi_2g:%d rssi_5g:%d, rssi_6g:%d",
+	wmi_debug("RSO_CFG: vdev:%d bss_load_thres:%d monitor_time:%d rssi_2g:%d rssi_5g:%d, rssi_6g:%d",
 		  cmd->vdev_id, cmd->bss_load_threshold,
-		  cmd->bss_load_alpha_pct,
 		  cmd->monitor_time_window, cmd->rssi_2g_threshold,
 		  cmd->rssi_5g_threshold, cmd->rssi_6g_threshold);
 

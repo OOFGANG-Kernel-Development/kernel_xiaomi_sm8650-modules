@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/of.h>
@@ -1287,31 +1287,6 @@ static int cam_soc_util_get_clk_level_to_apply(
 	return 0;
 }
 
-unsigned long cam_soc_util_get_clk_rate_applied(
-	struct cam_hw_soc_info *soc_info, int32_t index, bool is_src,
-	enum cam_vote_level clk_level)
-{
-	unsigned long clk_rate = 0;
-	struct clk *clk = NULL;
-	int rc = 0;
-	enum cam_vote_level apply_level;
-
-	if (is_src) {
-		clk = soc_info->clk[index];
-		clk_rate = cam_wrapper_clk_get_rate(clk);
-	} else {
-		rc = cam_soc_util_get_clk_level_to_apply(soc_info, clk_level,
-			&apply_level);
-		if (rc)
-			return rc;
-		if (soc_info->clk_rate[apply_level][index] > 0) {
-			clk = soc_info->clk[index];
-			clk_rate = cam_wrapper_clk_get_rate(clk);
-		}
-	}
-	return clk_rate;
-}
-
 int cam_soc_util_irq_enable(struct cam_hw_soc_info *soc_info)
 {
 	int i, rc = 0;
@@ -1480,7 +1455,7 @@ static int cam_soc_util_set_clk_rate(struct cam_hw_soc_info *soc_info,
 		}
 	}
 
-	if (applied_clk_rate && set_rate)
+	if (applied_clk_rate)
 		*applied_clk_rate = clk_rate_round;
 
 	return rc;
@@ -3848,8 +3823,7 @@ static int cam_soc_util_dump_dmi_reg_range_user_buf(
 		goto end;
 	}
 	remain_len = buf_len - dump_args->offset;
-	min_len = sizeof(struct cam_hw_soc_dump_header) +
-		(dmi_read->num_pre_writes * 2 * sizeof(uint32_t)) +
+	min_len = (dmi_read->num_pre_writes * 2 * sizeof(uint32_t)) +
 		(dmi_read->dmi_data_read.num_values * 2 * sizeof(uint32_t)) +
 		sizeof(uint32_t);
 	if (remain_len < min_len) {
@@ -4054,14 +4028,15 @@ int cam_soc_util_reg_dump_to_cmd_buf(void *ctx,
 	struct cam_cmd_buf_desc *cmd_desc, uint64_t req_id,
 	cam_soc_util_regspace_data_cb reg_data_cb,
 	struct cam_hw_soc_dump_args *soc_dump_args,
-	bool user_triggered_dump, uintptr_t cpu_addr, size_t buf_size)
+	bool user_triggered_dump)
 {
 	int                               rc = 0, i, j;
+	uintptr_t                         cpu_addr = 0;
 	uintptr_t                         cmd_buf_start = 0;
 	uintptr_t                         cmd_in_data_end = 0;
 	uintptr_t                         cmd_buf_end = 0;
 	uint32_t                          reg_base_type = 0;
-	size_t                            remain_len = 0;
+	size_t                            buf_size = 0, remain_len = 0;
 	struct cam_reg_dump_input_info   *reg_input_info = NULL;
 	struct cam_reg_dump_desc         *reg_dump_desc = NULL;
 	struct cam_reg_dump_out_buffer   *dump_out_buf = NULL;
@@ -4079,6 +4054,15 @@ int cam_soc_util_reg_dump_to_cmd_buf(void *ctx,
 		CAM_ERR(CAM_UTIL, "Invalid cmd buf size %d %d",
 			cmd_desc->length, cmd_desc->size);
 		return -EINVAL;
+	}
+
+	rc = cam_mem_get_cpu_buf(cmd_desc->mem_handle, &cpu_addr, &buf_size);
+	if (rc || !cpu_addr || (buf_size == 0)) {
+		CAM_ERR(CAM_UTIL, "Failed in Get cpu addr, rc=%d, cpu_addr=%pK",
+			rc, (void *)cpu_addr);
+		if (rc)
+			return rc;
+		goto end;
 	}
 
 	CAM_DBG(CAM_UTIL, "Get cpu buf success req_id: %llu buf_size: %zu",
@@ -4279,6 +4263,7 @@ int cam_soc_util_reg_dump_to_cmd_buf(void *ctx,
 	}
 
 end:
+	cam_mem_put_cpu_buf(cmd_desc->mem_handle);
 	return rc;
 }
 

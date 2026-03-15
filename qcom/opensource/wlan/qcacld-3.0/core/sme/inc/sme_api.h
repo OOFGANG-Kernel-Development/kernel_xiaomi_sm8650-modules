@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -541,15 +541,6 @@ QDF_STATUS sme_roam_ndi_stop(mac_handle_t mac_handle, uint8_t vdev_id);
 
 void sme_dhcp_done_ind(mac_handle_t mac_handle, uint8_t session_id);
 
-/**
- * sme_get_dhcp_status() - API to check if dhcp is in progress
- * @mac_handle: Opaque handle to the global MAC context
- * @session_id: session id
- *
- * Return: True if dhcp in progress, else False
- */
-bool sme_get_dhcp_status(mac_handle_t mac_handle, uint8_t session_id);
-
 /*
  * sme_roam_stop_bss() - To stop BSS for Soft AP. This is an asynchronous API.
  * @mac_handle - Global structure
@@ -770,63 +761,15 @@ QDF_STATUS sme_neighbor_report_request(mac_handle_t mac_handle,
 		tpRrmNeighborReq pRrmNeighborReq,
 		tpRrmNeighborRspCallbackInfo callbackInfo);
 
-#ifdef FEATURE_WLAN_APF
-
-/*
- * sme_enable_active_apf_mode_ind() -
- * API to signal the FW about active APF enablement.
- *
- * mac_handle: Opaque handle to the global MAC context.
- * device_mode - mode(AP,SAP etc) of the device.
- * macAddr - MAC address of the adapter.
- * sessionId - session ID.
- * Return QDF_STATUS  SUCCESS.
- * FAILURE or RESOURCES  The API finished and failed.
- */
-
-QDF_STATUS sme_enable_active_apf_mode_ind(mac_handle_t mac_handle,
-					  uint8_t device_mode,
-					  uint8_t *macAddr, uint8_t sessionId);
-
-/*
- * sme_disable_active_apf_mode_ind() -
- * API to signal the FW about active APF disablement.
- *
- * mac_handle: Opaque handle to the global MAC context.
- * device_mode - mode(AP,SAP etc) of the device.
- * macAddr - MAC address of the adapter.
- * sessionId - session ID.
- * Return QDF_STATUS  SUCCESS.
- * FAILURE or RESOURCES  The API finished and failed.
- */
-QDF_STATUS sme_disable_active_apf_mode_ind(mac_handle_t mac_handle,
-					   uint8_t device_mode,
-					   uint8_t *macAddr, uint8_t sessionId);
-#else
-QDF_STATUS sme_enable_active_apf_mode_ind(mac_handle_t mac_handle,
-					  uint8_t device_mode,
-					  uint8_t *macAddr, uint8_t sessionId)
-{
-}
-
-QDF_STATUS sme_disable_active_apf_mode_ind(mac_handle_t mac_handle,
-					   uint8_t device_mode,
-					   uint8_t *macAddr, uint8_t sessionId)
-{
-}
-#endif
-
 /**
- * sme_register_pagefault_cb() - Register cb to handle host action on pagefault
+ * sme_register_ssr_on_pagefault_cb() - Register cb to trigger SSR on pagefault
  * @mac_handle: Opaque handle to the global MAC context.
- * @hdd_pagefault_action_cb: Callback which needs to be registered
+ * @hdd_ssr_on_pagefault_cb: Callback which needs to be registered
  *
  * Return: None
  */
-void
-sme_register_pagefault_cb(mac_handle_t mac_handle,
-			  QDF_STATUS (*hdd_pagefault_action_cb)(void *buf,
-								uint32_t buf_len));
+void sme_register_ssr_on_pagefault_cb(mac_handle_t mac_handle,
+				      void (*hdd_ssr_on_pagefault_cb)(void));
 
 /**
  * sme_deregister_ssr_on_pagefault_cb() - Deregister cb to trigger SSR on
@@ -2012,6 +1955,10 @@ QDF_STATUS sme_reset_tsfcb(mac_handle_t mac_handle);
 QDF_STATUS sme_set_tsf_gpio(mac_handle_t mac_handle, uint32_t pinvalue);
 #endif
 
+QDF_STATUS sme_update_mimo_power_save(mac_handle_t mac_handle,
+				      uint8_t is_ht_smps_enabled,
+				      uint8_t ht_smps_mode,
+				      bool send_smps_action);
 #ifdef WLAN_BCN_RECV_FEATURE
 /**
  * sme_handle_bcn_recv_start() - Enable fw to start sending
@@ -4723,10 +4670,22 @@ enum csr_cfgdot11mode sme_phy_mode_to_dot11mode(enum wlan_phymode phy_mode);
  * Return: Max EHT channel width supported by FW (eg. 80, 160, 320)
  */
 uint32_t sme_get_eht_ch_width(void);
+
+/**
+ * sme_is_11be_capable() - Check if 11 be is supported or not
+ *
+ * Return: True if 11be is supported
+ */
+bool sme_is_11be_capable(void);
 #else /* !WLAN_FEATURE_11BE */
 static inline uint32_t sme_get_eht_ch_width(void)
 {
 	return 0;
+}
+
+static inline bool sme_is_11be_capable(void)
+{
+	return false;
 }
 #endif /* WLAN_FEATURE_11BE */
 

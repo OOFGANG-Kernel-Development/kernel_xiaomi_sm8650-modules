@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -355,29 +355,11 @@ wlan_mlme_get_wlm_multi_client_ll_caps(struct wlan_objmgr_psoc *psoc)
  *
  * Return: coex_unsafe_chan_nb_user_prefer
  */
-uint32_t wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(
-		struct wlan_objmgr_psoc *psoc);
-bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_p2p_go(
-		struct wlan_objmgr_psoc *psoc);
-bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(
+bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(
 		struct wlan_objmgr_psoc *psoc);
 #else
 static inline
-uint32_t wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(
-		struct wlan_objmgr_psoc *psoc)
-{
-	return false;
-}
-
-static inline
-bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(
-		struct wlan_objmgr_psoc *psoc)
-{
-	return false;
-}
-
-static inline
-bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_p2p_go(
+bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(
 		struct wlan_objmgr_psoc *psoc)
 {
 	return false;
@@ -1971,14 +1953,6 @@ wlan_mlme_get_wmm_sba_ac_vo(struct wlan_objmgr_psoc *psoc, uint16_t *value);
  */
 QDF_STATUS wlan_mlme_set_enable_bcast_probe_rsp(struct wlan_objmgr_psoc *psoc,
 						bool value);
-
-/*
- * wlan_mlme_get_enable_bcast_probe_rsp() - Get enable bcast probe resp info
- * @psoc: pointer to psoc object
- *
- * Return: Bcast probe response info
- */
-bool wlan_mlme_get_enable_bcast_probe_rsp(struct wlan_objmgr_psoc *psoc);
 
 /**
  * wlan_mlme_get_wmm_uapsd_vo_srv_intv() - Get Uapsd service
@@ -4031,17 +4005,6 @@ QDF_STATUS
 wlan_mlme_get_bss_load_threshold(struct wlan_objmgr_psoc *psoc, uint32_t *val);
 
 /**
- * wlan_mlme_get_bss_load_alpha() - Get bss load alpha multiplier factor
- * for bss load average calculation
- * @psoc: pointer to psoc object
- * @val:  Pointer to the value which will be filled for the caller
- *
- * Return: QDF Status
- */
-QDF_STATUS
-wlan_mlme_get_bss_load_alpha(struct wlan_objmgr_psoc *psoc, uint32_t *val);
-
-/**
  * wlan_mlme_get_bss_load_sample_time() - Get bss load sample time
  * @psoc: pointer to psoc object
  * @val:  Pointer to the value which will be filled for the caller
@@ -4922,18 +4885,16 @@ enum phy_ch_width wlan_mlme_get_max_bw(void);
 
 /**
  * wlan_mlme_get_sta_ch_width() - Get current operating
- * channel width and phymode for STA / P2P-CLI mode
+ * channel width for STA / P2P-CLI mode
  *
  * @vdev: STA / P2P-CLI vdev
  * @ch_width: Returned channel width
- * @phy_mode: Returned phy mode
  *
  * Return: QDF_STATUS_SUCCESS for success otherwise QDF_STATUS_E_INVAL
  *
  */
 QDF_STATUS wlan_mlme_get_sta_ch_width(struct wlan_objmgr_vdev *vdev,
-				      enum phy_ch_width *ch_width,
-				      enum wlan_phymode *phy_mode);
+				      enum phy_ch_width *ch_width);
 
 /**
  * wlan_mlme_set_ul_mu_config() - set ul mu config
@@ -4995,77 +4956,4 @@ wlan_mlme_get_ap_oper_ch_width(struct wlan_objmgr_vdev *vdev);
 QDF_STATUS
 wlan_mlme_send_csa_event_status_ind(struct wlan_objmgr_vdev *vdev,
 				    uint8_t csa_status);
-
-/**
- * wlan_mlme_is_hs_20_btm_offload_disabled() - Get BTM offload is enable/disable
- * @psoc: pointer to psoc object
- * @val:  Pointer to the value which will be filled for the caller
- *
- * Return: QDF Status
- */
-QDF_STATUS
-wlan_mlme_is_hs_20_btm_offload_disabled(struct wlan_objmgr_psoc *psoc,
-					bool *val);
-/**
- * wlan_mlme_set_keepalive_period() - Save keep alive period
- * @vdev: VDEV object
- * @keep_alive_period: Keep alive period
- *
- * Return: None
- */
-void wlan_mlme_set_keepalive_period(struct wlan_objmgr_vdev *vdev,
-				    uint16_t keep_alive_period);
-
-/**
- * wlan_mlme_get_keepalive_period() - Get keep alive period
- * @vdev: VDEV object
- *
- * Return: Keep alive period.
- */
-uint16_t wlan_mlme_get_keepalive_period(struct wlan_objmgr_vdev *vdev);
-
-/**
- * wlan_mlme_reset_sta_keepalive_period() - Reset keep alive period to default
- * cfg whether it is set by userspace or via assoc rsp
- * @psoc: pointer to psoc object
- * @vdev: VDEV object
- *
- * Return: None
- */
-void wlan_mlme_reset_sta_keepalive_period(struct wlan_objmgr_psoc *psoc,
-					  struct wlan_objmgr_vdev *vdev);
-
-/**
- * wlan_mlme_get_sta_keep_alive_period() - get keep alive period
- * @psoc: pointer to psoc object
- * @keep_alive_period: keep alive period
- *
- * Return: QDF STATUS
- */
-QDF_STATUS
-wlan_mlme_get_sta_keep_alive_period(struct wlan_objmgr_psoc *psoc,
-				    uint32_t *keep_alive_period);
-
-/* wlan_mlme_get_min_he_mcs_map() - get intersected HE MCS MAP between 2 HE MCS MAP
- * @he_mcs_map1: HE MCS MAP 1
- * @he_mcs_map2: HE MCS MAP 2
- *
- * Rx HE-MCS Map and Tx HE-MCS Map subfields format where 2-bit indicates
- * 0 indicates support for HE-MCS 0-7 for n spatial streams
- * 1 indicates support for HE-MCS 0-9 for n spatial streams
- * 2 indicates support for HE-MCS 0-11 for n spatial streams
- * 3 indicates that n spatial streams is not supported for HE PPDUs
- *
- */
-uint16_t
-wlan_mlme_get_min_he_mcs_map(uint16_t he_mcs_map1, uint16_t he_mcs_map2);
-
-/**
- * wlan_mlme_get_sap_he_rx_mcs_map_160 - Get sap rx mcs map 160 of he cap
- *
- * @psoc: pointer to psoc object
- *
- * Return: sap rx mcs map 160 of he cap
- */
-uint16_t wlan_mlme_get_sap_he_rx_mcs_map_160(struct wlan_objmgr_psoc *psoc);
 #endif /* _WLAN_MLME_API_H_ */

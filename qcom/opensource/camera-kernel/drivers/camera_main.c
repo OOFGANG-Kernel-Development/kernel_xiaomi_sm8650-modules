@@ -62,6 +62,10 @@
 #include "cam_csid_ppi100.h"
 #include "camera_main.h"
 
+#if IS_ENABLED(CONFIG_MIISP)
+#include "cam_ispv4_dev.h"
+#endif
+
 #ifndef CAMERA_COMPILE_BY
 #include "cam_generated_h"
 #endif
@@ -124,6 +128,9 @@ static const struct camera_submodule_component camera_sensor[] = {
 	{&cam_ois_driver_init, &cam_ois_driver_exit},
 	{&cam_aperture_driver_init, &cam_aperture_driver_exit},
 	{&cam_flash_init_module, &cam_flash_exit_module},
+#if IS_ENABLED(CONFIG_MIISP)
+	{&cam_ispv4_driver_init, &cam_ispv4_driver_exit},
+#endif
 #endif
 };
 

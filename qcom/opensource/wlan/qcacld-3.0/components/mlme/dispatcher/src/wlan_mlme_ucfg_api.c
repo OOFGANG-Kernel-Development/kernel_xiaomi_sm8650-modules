@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,7 +29,6 @@
 #include "wlan_mlme_vdev_mgr_interface.h"
 #include <include/wlan_pdev_mlme.h>
 #include "wlan_pdev_mlme_api.h"
-#include <wlan_psoc_mlme_api.h>
 #include "wlan_vdev_mgr_tgt_if_tx_api.h"
 #include "wlan_policy_mgr_public_struct.h"
 #include "spatial_reuse_api.h"
@@ -108,7 +107,6 @@ QDF_STATUS ucfg_mlme_psoc_open(struct wlan_objmgr_psoc *psoc)
 void ucfg_mlme_psoc_close(struct wlan_objmgr_psoc *psoc)
 {
 	/* Clear the MLME CFG Structure */
-	wlan_mlme_psoc_flush_peer_trans_history(psoc);
 }
 
 QDF_STATUS ucfg_mlme_pdev_open(struct wlan_objmgr_pdev *pdev)
@@ -251,7 +249,17 @@ QDF_STATUS
 ucfg_mlme_get_sta_keep_alive_period(struct wlan_objmgr_psoc *psoc,
 				    uint32_t *val)
 {
-	return wlan_mlme_get_sta_keep_alive_period(psoc, val);
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj) {
+		*val = cfg_default(CFG_INFRA_STA_KEEP_ALIVE_PERIOD);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	*val = mlme_obj->cfg.sta.sta_keep_alive_period;
+
+	return QDF_STATUS_SUCCESS;
 }
 
 QDF_STATUS
@@ -1949,13 +1957,7 @@ bool ucfg_mlme_validate_scan_period(struct wlan_objmgr_psoc *psoc,
 bool ucfg_mlme_get_coex_unsafe_chan_nb_user_prefer(
 		struct wlan_objmgr_psoc *psoc)
 {
-	return wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(psoc);
-}
-
-bool ucfg_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(
-		struct wlan_objmgr_psoc *psoc)
-{
-	return wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(psoc);
+	return wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(psoc);
 }
 
 bool ucfg_mlme_get_coex_unsafe_chan_reg_disable(
@@ -2121,21 +2123,3 @@ ucfg_mlme_get_valid_channels(struct wlan_objmgr_psoc *psoc,
 
 	return QDF_STATUS_SUCCESS;
 }
-
-QDF_STATUS
-ucfg_mlme_get_dfs_discard_mode(struct wlan_objmgr_psoc *psoc,
-			       uint8_t *val)
-{
-	struct wlan_mlme_psoc_ext_obj *mlme_obj;
-
-	mlme_obj = mlme_get_psoc_ext_obj(psoc);
-	if (!mlme_obj) {
-		*val = cfg_default(CFG_DISCARD_DFS_CHANNEL_FOR_MODE);
-		return QDF_STATUS_E_INVAL;
-	}
-
-	*val = mlme_obj->cfg.dfs_cfg.dfs_discard_mode;
-
-	return QDF_STATUS_SUCCESS;
-}
-

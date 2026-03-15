@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -864,8 +864,6 @@ QDF_STATUS mlme_init_connect_chan_info_config(struct vdev_mlme_obj *vdev_mlme)
 
 	mlme_priv->connect_info.assoc_chan_info.assoc_ch_width =
 							CH_WIDTH_INVALID;
-	mlme_priv->connect_info.assoc_chan_info.omn_ie_ch_width =
-							CH_WIDTH_INVALID;
 	mlme_priv->connect_info.assoc_chan_info.sec_2g_freq = 0;
 	mlme_priv->connect_info.assoc_chan_info.cen320_freq = 0;
 
@@ -1632,6 +1630,7 @@ mlme_init_qos_edca_params(struct wlan_objmgr_psoc *psoc,
 
 	edca_params->edca_param_type =
 			cfg_get(psoc, CFG_EDCA_PIFS_PARAM_TYPE);
+	edca_params->enable_edca_params = 0;
 }
 
 static void mlme_init_edca_params(struct wlan_objmgr_psoc *psoc,
@@ -1712,7 +1711,6 @@ static void mlme_init_ht_cap_in_cfg(struct wlan_objmgr_psoc *psoc,
 				cfg_get(psoc, CFG_SHORT_GI_20MHZ);
 	u1.ht_cap_info.short_gi_40_mhz =
 				cfg_get(psoc, CFG_SHORT_GI_40MHZ);
-	u1.ht_cap_info.mimo_power_save = cfg_get(psoc, CFG_HT_SMPS_MODE);
 	ht_caps->ht_cap_info = u1.ht_cap_info;
 
 	/* HT Capapabilties - AMPDU Params */
@@ -1960,9 +1958,6 @@ static void mlme_init_dfs_cfg(struct wlan_objmgr_psoc *psoc,
 		cfg_get(psoc, CFG_SAP_TX_LEAKAGE_THRESHOLD);
 	dfs_cfg->dfs_pri_multiplier =
 		cfg_get(psoc, CFG_DFS_RADAR_PRI_MULTIPLIER);
-	dfs_cfg->dfs_discard_mode =
-		cfg_get(psoc, CFG_DISCARD_DFS_CHANNEL_FOR_MODE);
-
 }
 
 static void mlme_init_feature_flag_in_cfg(
@@ -2017,11 +2012,12 @@ static void mlme_init_sap_protection_cfg(struct wlan_objmgr_psoc *psoc,
 #define HE_MCS12_13_24G_INDEX 0
 #define HE_MCS12_13_5G_INDEX 1
 #define HE_MCS12_13_BITS 16
+#define DISABLE_MCS_12_13_2G_40M 1
 
 static void mlme_init_he_cap_in_cfg(struct wlan_objmgr_psoc *psoc,
 				    struct wlan_mlme_cfg *mlme_cfg)
 {
-	uint32_t chan_width, mcs_12_13;
+	uint32_t chan_width, mcs_12_13, disable_mcs_12_13;
 	uint16_t value = 0;
 	struct wlan_mlme_he_caps *he_caps = &mlme_cfg->he_caps;
 	bool is_twt_enabled = false;
@@ -2220,6 +2216,12 @@ static void mlme_init_he_cap_in_cfg(struct wlan_objmgr_psoc *psoc,
 			     HE_MCS12_13_5G_INDEX * HE_MCS12_13_BITS,
 			     HE_MCS12_13_BITS);
 
+	disable_mcs_12_13 = cfg_get(psoc, CFG_DISABLE_MCS_12_13_SAP);
+
+	if (disable_mcs_12_13 & BIT(DISABLE_MCS_12_13_2G_40M))
+		mlme_cfg->he_caps.disable_sap_24g_40m_mcs_12_13 = true;
+	else
+		mlme_cfg->he_caps.disable_sap_24g_40m_mcs_12_13 = false;
 	mlme_cfg->he_caps.disable_sap_mcs_12_13 = cfg_get(psoc,
 						CFG_DISABLE_MCS_12_13_SAP);
 }
@@ -2410,8 +2412,6 @@ static void mlme_init_sap_cfg(struct wlan_objmgr_psoc *psoc,
 		cfg_get(psoc, CFG_DISABLE_SAP_BCN_PROT);
 	sap_cfg->sap_ps_with_twt_enable =
 		cfg_get(psoc, CFG_SAP_PS_WITH_TWT);
-	sap_cfg->sap_he_rx_mcs_map_160 =
-		cfg_get(psoc, CFG_SAP_HE_RX_MCS_MAP_160);
 }
 
 static void mlme_init_obss_ht40_cfg(struct wlan_objmgr_psoc *psoc,
@@ -2583,7 +2583,7 @@ static void mlme_init_sta_mlo_cfg(struct wlan_objmgr_psoc *psoc,
 	sta->mlo_support_link_num =
 		cfg_get(psoc, CFG_MLO_SUPPORT_LINK_NUM);
 	sta->mlo_support_link_band =
-		cfg_get(psoc, CFG_MLO_SUPPORT_LINK_BAND);
+		cfg_default(CFG_MLO_SUPPORT_LINK_BAND);
 	sta->mlo_max_simultaneous_links =
 		cfg_default(CFG_MLO_MAX_SIMULTANEOUS_LINKS);
 	sta->mlo_prefer_percentage =
@@ -2591,12 +2591,7 @@ static void mlme_init_sta_mlo_cfg(struct wlan_objmgr_psoc *psoc,
 	sta->mlo_same_link_mld_address =
 		cfg_default(CFG_MLO_SAME_LINK_MLD_ADDR);
 	sta->mlo_5gl_5gh_mlsr =
-		cfg_get(psoc, CFG_MLO_MLO_5GL_5GH_MLSR);
-	sta->epcs_capability =
-		cfg_get(psoc, CFG_MLO_EPCS_SUPPORT_ENABLE);
-
-	mlme_debug("mlo_support_link_num: %d, mlo_support_link_band: 0x%x",
-		   sta->mlo_support_link_num, sta->mlo_support_link_band);
+		cfg_default(CFG_MLO_MLO_5GL_5GH_MLSR);
 }
 
 static bool
@@ -2811,8 +2806,7 @@ static void mlme_init_sta_cfg(struct wlan_objmgr_psoc *psoc,
 		cfg_get(psoc, CFG_MAX_LI_MODULATED_DTIM_MS);
 
 	mlme_init_sta_mlo_cfg(psoc, sta);
-	wlan_mlme_set_epcs_capability(psoc,
-				      wlan_mlme_get_epcs_capability(psoc));
+	wlan_mlme_set_epcs_capability(psoc, false);
 	wlan_mlme_set_usr_disable_sta_eht(psoc, false);
 	wlan_mlme_set_eht_disable_punct_in_us_lpi(psoc,
 						  cfg_default(CFG_EHT_DISABLE_PUNCT_IN_US_LPI));
@@ -3028,7 +3022,6 @@ mlme_init_bss_load_trigger_params(struct wlan_objmgr_psoc *psoc,
 	bss_load_trig->enabled =
 		cfg_get(psoc, CFG_ENABLE_BSS_LOAD_TRIGGERED_ROAM);
 	bss_load_trig->threshold = cfg_get(psoc, CFG_BSS_LOAD_THRESHOLD);
-	bss_load_trig->bss_load_alpha = cfg_get(psoc, CFG_BSS_LOAD_ALPHA);
 
 	ucfg_mlme_get_connection_roaming_ini_present(psoc, &val);
 	if (val)
@@ -3276,8 +3269,6 @@ static void mlme_init_lfr_cfg(struct wlan_objmgr_psoc *psoc,
 	mlme_init_subnet_detection(psoc, lfr);
 	lfr->rso_user_config.cat_rssi_offset = DEFAULT_RSSI_DB_GAP;
 	mlme_init_bmiss_timeout(psoc, lfr);
-	lfr->hs20_btm_offload_disable = cfg_get(psoc,
-						CFG_HS_20_BTM_OFFLOAD_DISABLE);
 }
 
 static void mlme_init_power_cfg(struct wlan_objmgr_psoc *psoc,
@@ -4739,7 +4730,7 @@ wlan_get_op_chan_freq_info_vdev_id(struct wlan_objmgr_pdev *pdev,
 	 * If there is a failure or operating mode is not STA / P2P-CLI
 	 * then get channel width from wlan_channel.
 	 */
-	status = wlan_mlme_get_sta_ch_width(vdev, ch_width, NULL);
+	status = wlan_mlme_get_sta_ch_width(vdev, ch_width);
 	if (QDF_IS_STATUS_ERROR(status))
 		*ch_width = chan->ch_width;
 
@@ -5721,111 +5712,3 @@ wlan_mlme_send_csa_event_status_ind_cmd(struct wlan_objmgr_vdev *vdev,
 	return tx_ops->send_csa_event_status_ind(vdev, csa_status);
 }
 
-uint8_t
-wlan_mlme_get_sap_psd_for_20mhz(struct wlan_objmgr_vdev *vdev)
-{
-	struct mlme_legacy_priv *mlme_priv;
-	enum QDF_OPMODE opmode = QDF_MAX_NO_OF_MODE;
-
-	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
-	if (!mlme_priv) {
-		mlme_legacy_err("vdev legacy private object is NULL");
-		return 0;
-	}
-
-	opmode = wlan_vdev_mlme_get_opmode(vdev);
-	if (opmode != QDF_SAP_MODE) {
-		mlme_debug("Invalid opmode %d", opmode);
-		return 0;
-	}
-
-	return mlme_priv->mlme_ap.psd_20mhz;
-}
-
-QDF_STATUS
-wlan_mlme_set_sap_psd_for_20mhz(struct wlan_objmgr_vdev *vdev,
-				uint8_t psd_power)
-{
-	struct mlme_legacy_priv *mlme_priv;
-	enum QDF_OPMODE opmode = QDF_MAX_NO_OF_MODE;
-
-	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
-	if (!mlme_priv) {
-		mlme_legacy_err("vdev legacy private object is NULL");
-		return QDF_STATUS_E_INVAL;
-	}
-
-	opmode = wlan_vdev_mlme_get_opmode(vdev);
-	if (opmode != QDF_SAP_MODE) {
-		mlme_debug("Invalid opmode %d", opmode);
-		return QDF_STATUS_E_INVAL;
-	}
-
-	mlme_priv->mlme_ap.psd_20mhz = psd_power;
-	return QDF_STATUS_SUCCESS;
-}
-
-/**
- * wlan_peer_find_mld_peer_n_get_mac_info() - This API will find MLD peer from
- * peer list.
- * @psoc: Pointer to psoc object
- * @obj: Pointer to peer object
- * @args: Pointer to void * argument
- *
- * Return: void
- */
-static void
-wlan_peer_find_mld_peer_n_get_mac_info(struct wlan_objmgr_psoc *psoc,
-				       void *obj, void *args)
-{
-	struct wlan_objmgr_peer *peer = (struct wlan_objmgr_peer *)obj;
-	struct peer_mac_addresses *peer_mac_info =
-				(struct peer_mac_addresses *)args;
-	uint8_t *mld_mac, *peer_mac, *given_mac;
-
-	mld_mac = wlan_peer_mlme_get_mldaddr(peer);
-	peer_mac = wlan_peer_get_macaddr(peer);
-	given_mac = peer_mac_info->mac.bytes;
-
-	if (!mld_mac || WLAN_ADDR_EQ(mld_mac, given_mac) != QDF_STATUS_SUCCESS)
-		return;
-	qdf_copy_macaddr(&peer_mac_info->peer_mac,
-			 (struct qdf_mac_addr *)peer_mac);
-	qdf_copy_macaddr(&peer_mac_info->peer_mld,
-			 (struct qdf_mac_addr *)mld_mac);
-}
-
-QDF_STATUS wlan_find_peer_and_get_mac_and_mld_addr(
-				struct wlan_objmgr_psoc *psoc,
-				struct peer_mac_addresses *peer_mac_info)
-{
-	struct wlan_objmgr_peer *peer;
-	QDF_STATUS status = QDF_STATUS_SUCCESS;
-
-	peer = wlan_objmgr_get_peer_by_mac(psoc, peer_mac_info->mac.bytes,
-					   WLAN_LEGACY_MAC_ID);
-	if (peer) {
-		qdf_copy_macaddr(
-			&peer_mac_info->peer_mac,
-			(struct qdf_mac_addr *)wlan_peer_get_macaddr(peer));
-		if (wlan_peer_mlme_get_mldaddr(peer))
-			qdf_copy_macaddr(
-				&peer_mac_info->peer_mld,
-				(struct qdf_mac_addr *)
-				wlan_peer_mlme_get_mldaddr(peer));
-		wlan_objmgr_peer_release_ref(peer, WLAN_LEGACY_MAC_ID);
-		return status;
-	}
-
-	/* if not found with mac address try finding using MLD address */
-	wlan_objmgr_iterate_obj_list(psoc, WLAN_PEER_OP,
-				     wlan_peer_find_mld_peer_n_get_mac_info,
-				     peer_mac_info, 0, WLAN_LEGACY_MAC_ID);
-	if (qdf_is_macaddr_zero(&peer_mac_info->peer_mac)) {
-		mlme_err("peer is null for mac:" QDF_MAC_ADDR_FMT,
-			 QDF_MAC_ADDR_REF(peer_mac_info->mac.bytes));
-		return QDF_STATUS_E_EXISTS;
-	}
-
-	return status;
-}

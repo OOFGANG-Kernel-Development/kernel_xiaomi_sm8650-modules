@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1557,7 +1557,7 @@ struct scan_chan_list_params {
 	uint16_t nallchans;
 	bool append;
 	bool max_bw_support_present;
-	QDF_FLEX_ARRAY(struct channel_param, ch_param);
+	struct channel_param ch_param[1];
 };
 
 #ifdef QCA_SUPPORT_AGILE_DFS
@@ -1974,12 +1974,10 @@ struct mlo_prb_resp_tmpl_ml_info {
  * @prb_rsp_template_frm: pointer to template probe response template
  * @prb_rsp_template_len: length of probe response template
  * @cu_ml_info: Impacted link critical update information
- * @go_ignore_non_p2p_probe_req: go ignore non-p2p probe req
  */
 struct wmi_probe_resp_params {
 	uint8_t *prb_rsp_template_frm;
 	uint32_t prb_rsp_template_len;
-	bool go_ignore_non_p2p_probe_req;
 #ifdef WLAN_FEATURE_11BE_MLO
 	struct mlo_prb_resp_tmpl_ml_info cu_ml_info;
 #endif
@@ -4730,7 +4728,7 @@ typedef struct {
 	uint32_t flag;
 	uint32_t payload_len;
 	uint32_t buffer_len;
-	QDF_FLEX_ARRAY(uint8_t, buffer);
+	uint8_t buffer[1];
 } wmi_unit_test_event;
 
 
@@ -6520,9 +6518,6 @@ typedef enum {
 #endif
 	wmi_service_multiple_reorder_queue_setup_support,
 	wmi_service_p2p_device_update_mac_addr_support,
-#ifdef WLAN_CHIPSET_STATS
-	wmi_service_chipset_logging_support,
-#endif
 	wmi_services_max,
 } wmi_conv_service_ids;
 #define WMI_SERVICE_UNAVAILABLE 0xFFFF
@@ -7159,7 +7154,7 @@ typedef struct {
  */
 typedef struct {
 	uint32_t num_entry;
-	QDF_FLEX_ARRAY(wmi_host_mcast_ageout_entry, entry);
+	wmi_host_mcast_ageout_entry entry[1];
 } wmi_host_mcast_list_ageout_event;
 
 /**
@@ -7187,7 +7182,7 @@ typedef struct {
 	uint32_t frag_id;
 	uint32_t more_frag;
 	uint32_t buf_len;
-	QDF_FLEX_ARRAY(uint32_t, buf_info);
+	uint32_t buf_info[1];
 } wmi_host_pdev_generic_buffer_event;
 
 /**
@@ -9149,7 +9144,7 @@ struct wmi_roam_scan_stats_params {
  */
 struct wmi_roam_scan_stats_res {
 	uint32_t num_roam_scans;
-	struct wmi_roam_scan_stats_params roam_scan[];
+	struct wmi_roam_scan_stats_params roam_scan[0];
 };
 
 #define MAX_ROAM_CANDIDATE_AP    9
@@ -9450,7 +9445,6 @@ struct wmi_roam_scan_data {
  * @status:             0 - Roaming is success ; 1 - Roaming failed ;
  * 2 - No roam
  * @fail_reason:        One of WMI_ROAM_FAIL_REASON_ID
- * @roam_abort_reason:  Roam abort reason codes
  * @fail_bssid:         BSSID of the last attempted roam failed AP
  */
 struct wmi_roam_result {
@@ -9458,7 +9452,6 @@ struct wmi_roam_result {
 	uint32_t timestamp;
 	uint32_t status;
 	uint32_t fail_reason;
-	uint32_t roam_abort_reason;
 	struct qdf_mac_addr fail_bssid;
 };
 

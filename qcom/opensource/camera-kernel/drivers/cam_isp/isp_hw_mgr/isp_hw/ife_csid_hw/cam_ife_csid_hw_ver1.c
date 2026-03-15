@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/iopoll.h>
@@ -298,7 +298,7 @@ int cam_ife_csid_ver1_get_hw_caps(void *hw_priv,
 	hw_caps->minor_version = csid_reg->cmn_reg->minor_version;
 	hw_caps->version_incr = csid_reg->cmn_reg->version_incr;
 	hw_caps->global_reset_en = csid_reg->cmn_reg->global_reset;
-	hw_caps->rup_en = csid_reg->cmn_reg->rup_supported;
+	hw_caps->aup_rup_en = csid_reg->cmn_reg->aup_rup_supported;
 	hw_caps->is_lite = soc_private->is_ife_csid_lite;
 
 	CAM_DBG(CAM_ISP,
@@ -721,8 +721,8 @@ static int cam_ife_csid_ver1_deinit_rdi_path(
 	if (res->res_state != CAM_ISP_RESOURCE_STATE_INIT_HW ||
 			res->res_id > CAM_IFE_PIX_PATH_RES_RDI_4) {
 		CAM_ERR(CAM_ISP,
-			"CSID:%d %s path res_type:%d res_id:%d Invalid state:%d",
-			csid_hw->hw_intf->hw_idx, res->res_name,
+			"CSID:%d %s path res type:%d res_id:%d Invalid state%d",
+			csid_hw->hw_intf->hw_idx,
 			res->res_type, res->res_id, res->res_state);
 		return -EINVAL;
 	}
@@ -781,8 +781,8 @@ static int cam_ife_csid_ver1_deinit_udi_path(
 			(res->res_id < CAM_IFE_PIX_PATH_RES_UDI_0 ||
 			 res->res_id > CAM_IFE_PIX_PATH_RES_UDI_2)) {
 		CAM_ERR(CAM_ISP,
-			"CSID:%d %s path res_type:%d res_id:%d Invalid state:%d",
-			csid_hw->hw_intf->hw_idx, res->res_name,
+			"CSID:%d %s path res type:%d res_id:%d Invalid state%d",
+			csid_hw->hw_intf->hw_idx,
 			res->res_type, res->res_id, res->res_state);
 		return -EINVAL;
 	}
@@ -839,8 +839,8 @@ static int cam_ife_csid_ver1_deinit_pxl_path(
 
 	if (res->res_state != CAM_ISP_RESOURCE_STATE_INIT_HW) {
 		CAM_ERR(CAM_ISP,
-			"CSID:%d %s path res_type:%d res_id:%d Invalid state:%d",
-			csid_hw->hw_intf->hw_idx, res->res_name,
+			"CSID:%d %s path res type:%d res_id:%d Invalid state%d",
+			csid_hw->hw_intf->hw_idx,
 			res->res_type, res->res_id, res->res_state);
 		return -EINVAL;
 	}
@@ -900,8 +900,8 @@ static int cam_ife_csid_ver1_stop_pxl_path(
 
 	if (res->res_state != CAM_ISP_RESOURCE_STATE_STREAMING) {
 		CAM_ERR(CAM_ISP,
-			"CSID:%d %s path res_type:%d res_id:%d Invalid state:%d",
-			csid_hw->hw_intf->hw_idx, res->res_name,
+			"CSID:%d %s path res type:%d res_id:%d Invalid state%d",
+			csid_hw->hw_intf->hw_idx,
 			res->res_type, res->res_id, res->res_state);
 		return -EINVAL;
 	}
@@ -983,8 +983,8 @@ static int cam_ife_csid_ver1_stop_rdi_path(
 
 	if (res->res_state != CAM_ISP_RESOURCE_STATE_STREAMING) {
 		CAM_ERR(CAM_ISP,
-			"CSID:%d %s path res_type:%d res_id:%d Invalid state:%d",
-			csid_hw->hw_intf->hw_idx, res->res_name,
+			"CSID:%d %s path res type:%d res_id:%d Invalid state%d",
+			csid_hw->hw_intf->hw_idx,
 			res->res_type, res->res_id, res->res_state);
 		return -EINVAL;
 	}
@@ -1040,8 +1040,8 @@ static int cam_ife_csid_ver1_stop_udi_path(
 
 	if (res->res_state != CAM_ISP_RESOURCE_STATE_STREAMING) {
 		CAM_ERR(CAM_ISP,
-			"CSID:%d %s path res_type:%d res_id:%d Invalid state:%d",
-			csid_hw->hw_intf->hw_idx, res->res_name,
+			"CSID:%d %s path res type:%d res_id:%d Invalid state%d",
+			csid_hw->hw_intf->hw_idx,
 			res->res_type, res->res_id, res->res_state);
 		return -EINVAL;
 	}
@@ -1716,11 +1716,6 @@ int cam_ife_csid_ver1_reserve(void *hw_priv,
 	hw_info = (struct cam_hw_info *)hw_priv;
 	csid_hw = (struct cam_ife_csid_ver1_hw *)hw_info->core_info;
 
-	if (reserve->res_id >= CAM_IFE_PIX_PATH_RES_MAX) {
-		CAM_DBG(CAM_ISP, "CSID %d invalid Res_id %d",
-				csid_hw->hw_intf->hw_idx, reserve->res_id);
-		return -EINVAL;
-	}
 	res = &csid_hw->path_res[reserve->res_id];
 
 	if (res->res_state != CAM_ISP_RESOURCE_STATE_AVAILABLE) {
@@ -1826,14 +1821,6 @@ int cam_ife_csid_ver1_release(void *hw_priv,
 		csid_hw->hw_intf->hw_idx, res->res_type, res->res_id);
 
 	path_cfg = (struct cam_ife_csid_ver1_path_cfg *)res->res_priv;
-
-	if (path_cfg->cid >= CAM_IFE_CSID_CID_MAX) {
-		CAM_ERR(CAM_ISP, "CSID:%d Invalid cid:%d",
-				csid_hw->hw_intf->hw_idx, path_cfg->cid);
-		rc = -EINVAL;
-		goto end;
-	}
-
 	cam_ife_csid_cid_release(&csid_hw->cid_data[path_cfg->cid],
 		csid_hw->hw_intf->hw_idx,
 		path_cfg->cid);
@@ -1876,8 +1863,8 @@ static int cam_ife_csid_ver1_start_rdi_path(
 	if (res->res_state != CAM_ISP_RESOURCE_STATE_INIT_HW ||
 		res->res_id > CAM_IFE_PIX_PATH_RES_RDI_4) {
 		CAM_ERR(CAM_ISP,
-			"CSID:%d %s path res_type:%d res_id:%d Invalid state:%d",
-			csid_hw->hw_intf->hw_idx, res->res_name,
+			"CSID:%d %s path res type:%d res_id:%d Invalid state%d",
+			csid_hw->hw_intf->hw_idx,
 			res->res_type, res->res_id, res->res_state);
 		return -EINVAL;
 	}
@@ -1927,8 +1914,8 @@ static int cam_ife_csid_ver1_start_udi_path(
 		(res->res_id < CAM_IFE_PIX_PATH_RES_UDI_0 ||
 		 res->res_id > CAM_IFE_PIX_PATH_RES_UDI_2)) {
 		CAM_ERR(CAM_ISP,
-			"CSID:%d %s path res_type:%d res_id:%d Invalid state:%d",
-			csid_hw->hw_intf->hw_idx, res->res_name,
+			"CSID:%d %s path res type:%d res_id:%d Invalid state%d",
+			csid_hw->hw_intf->hw_idx,
 			res->res_type, res->res_id, res->res_state);
 		return -EINVAL;
 	}
@@ -1979,8 +1966,8 @@ static int cam_ife_csid_ver1_start_pix_path(
 
 	if (res->res_state != CAM_ISP_RESOURCE_STATE_INIT_HW) {
 		CAM_ERR(CAM_ISP,
-			"CSID:%d %s path res_type:%d res_id:%d Invalid state:%d",
-			csid_hw->hw_intf->hw_idx, res->res_name,
+			"CSID:%d %s path res type:%d res_id:%d Invalid state%d",
+			csid_hw->hw_intf->hw_idx,
 			res->res_type, res->res_id, res->res_state);
 		return -EINVAL;
 	}
@@ -2724,6 +2711,7 @@ static int cam_ife_csid_ver1_enable_hw(struct cam_ife_csid_ver1_hw *csid_hw)
 	csid_hw->flags.fatal_err_detected = false;
 	csid_hw->flags.device_enabled = true;
 	spin_unlock_irqrestore(&csid_hw->lock_state, flags);
+	cam_tasklet_start(csid_hw->tasklet);
 
 	return rc;
 
@@ -2745,14 +2733,14 @@ int cam_ife_csid_ver1_init_hw(void *hw_priv,
 	struct cam_hw_info *hw_info;
 	int rc = 0;
 
+	hw_info = (struct cam_hw_info *)hw_priv;
+	csid_hw = (struct cam_ife_csid_ver1_hw *)hw_info->core_info;
+
 	if (!hw_priv || !init_args ||
 		(arg_size != sizeof(struct cam_isp_resource_node))) {
 		CAM_ERR(CAM_ISP, "CSID: Invalid args");
 		return -EINVAL;
 	}
-
-	hw_info = (struct cam_hw_info *)hw_priv;
-	csid_hw = (struct cam_ife_csid_ver1_hw *)hw_info->core_info;
 
 	rc = cam_ife_csid_ver1_enable_hw(csid_hw);
 
@@ -2902,6 +2890,7 @@ static int cam_ife_csid_ver1_disable_hw(
 	cam_io_w_mb(0, soc_info->reg_map[0].mem_base +
 		csid_reg->cmn_reg->top_irq_mask_addr);
 
+	cam_tasklet_stop(csid_hw->tasklet);
 	rc = cam_ife_csid_disable_soc_resources(soc_info);
 	if (rc)
 		CAM_ERR(CAM_ISP, "CSID:%d Disable CSID SOC failed",
@@ -4019,6 +4008,7 @@ static int cam_ife_csid_ver1_rx_bottom_half_handler(
 			CAM_ERR_BUF(CAM_ISP, log_buf, CAM_IFE_CSID_LOG_BUF_LEN, &len,
 				"RX_ERROR_LANE0_FIFO_OVERFLOW: Skew/Less Data on lanes/ Slow csid clock:%luHz\n",
 				soc_info->applied_src_clk_rates.sw_client);
+			count_mipi_error(csid_hw->res_type);//add by xiaomi
 		}
 
 		if (irq_status & IFE_CSID_VER1_RX_LANE1_FIFO_OVERFLOW) {
@@ -4026,6 +4016,7 @@ static int cam_ife_csid_ver1_rx_bottom_half_handler(
 			CAM_ERR_BUF(CAM_ISP, log_buf, CAM_IFE_CSID_LOG_BUF_LEN, &len,
 				"RX_ERROR_LANE1_FIFO_OVERFLOW: Skew/Less Data on lanes/ Slow csid clock:%luHz\n",
 				soc_info->applied_src_clk_rates.sw_client);
+			count_mipi_error(csid_hw->res_type);//add by xiaomi
 		}
 
 		if (irq_status & IFE_CSID_VER1_RX_LANE2_FIFO_OVERFLOW) {
@@ -4033,6 +4024,7 @@ static int cam_ife_csid_ver1_rx_bottom_half_handler(
 			CAM_ERR_BUF(CAM_ISP, log_buf, CAM_IFE_CSID_LOG_BUF_LEN, &len,
 				"RX_ERROR_LANE2_FIFO_OVERFLOW: Skew/Less Data on lanes/ Slow csid clock:%luHz\n",
 				soc_info->applied_src_clk_rates.sw_client);
+			count_mipi_error(csid_hw->res_type);//add by xiaomi
 		}
 
 		if (irq_status & IFE_CSID_VER1_RX_LANE3_FIFO_OVERFLOW) {
@@ -4040,18 +4032,21 @@ static int cam_ife_csid_ver1_rx_bottom_half_handler(
 			CAM_ERR_BUF(CAM_ISP, log_buf, CAM_IFE_CSID_LOG_BUF_LEN, &len,
 				"RX_ERROR_LANE3_FIFO_OVERFLOW: Skew/Less Data on lanes/ Slow csid clock:%luHz\n",
 				soc_info->applied_src_clk_rates.sw_client);
+			count_mipi_error(csid_hw->res_type);//add by xiaomi
 		}
 
 		if (irq_status & IFE_CSID_VER1_RX_TG_FIFO_OVERFLOW) {
 			event_type |= CAM_ISP_HW_ERROR_CSID_OUTPUT_FIFO_OVERFLOW;
 			CAM_ERR_BUF(CAM_ISP, log_buf, CAM_IFE_CSID_LOG_BUF_LEN, &len,
 				"RX_ERROR_TPG_FIFO_OVERFLOW: Backpressure from IFE\n");
+			count_mipi_error(csid_hw->res_type);//add by xiaomi
 		}
 
 		if (irq_status & IFE_CSID_VER1_RX_CPHY_PH_CRC) {
 			event_type |= CAM_ISP_HW_ERROR_CSID_PKT_HDR_CORRUPTED;
 			CAM_ERR_BUF(CAM_ISP, log_buf, CAM_IFE_CSID_LOG_BUF_LEN, &len,
 				"CPHY_PH_CRC: Pkt Hdr CRC mismatch\n");
+			count_mipi_error(csid_hw->res_type);//add by xiaomi
 		}
 
 		if (irq_status & IFE_CSID_VER1_RX_STREAM_UNDERFLOW) {
@@ -4062,18 +4057,21 @@ static int cam_ife_csid_ver1_rx_bottom_half_handler(
 			CAM_ERR_BUF(CAM_ISP, log_buf, CAM_IFE_CSID_LOG_BUF_LEN, &len,
 				"ERROR_STREAM_UNDERFLOW: Fewer bytes rcvd than WC:%d in pkt hdr\n",
 				val & 0xFFFF);
+			count_mipi_error(csid_hw->res_type);//add by xiaomi
 		}
 
 		if (irq_status & IFE_CSID_VER1_RX_ERROR_ECC) {
 			event_type |= CAM_ISP_HW_ERROR_CSID_PKT_HDR_CORRUPTED;
 			CAM_ERR_BUF(CAM_ISP, log_buf, CAM_IFE_CSID_LOG_BUF_LEN, &len,
 				"DPHY_ERROR_ECC: Pkt hdr errors unrecoverable\n");
+			count_mipi_error(csid_hw->res_type);//add by xiaomi
 		}
 
 		if (irq_status & IFE_CSID_VER1_RX_UNBOUNDED_FRAME) {
 			event_type |= CAM_ISP_HW_ERROR_CSID_UNBOUNDED_FRAME;
 			CAM_ERR_BUF(CAM_ISP, log_buf, CAM_IFE_CSID_LOG_BUF_LEN, &len,
 				"UNBOUNDED_FRAME: Frame started with EOF or No EOF\n");
+			count_mipi_error(csid_hw->res_type);//add by xiaomi
 		}
 
 		if (irq_status & IFE_CSID_VER1_RX_CPHY_EOT_RECEPTION) {
@@ -4083,12 +4081,14 @@ static int cam_ife_csid_ver1_rx_bottom_half_handler(
 				csid_hw->rx_cfg.epd_supported,
 				(csid_hw->rx_cfg.lane_type) ? "cphy" : "dphy",
 				csid_hw->rx_cfg.lane_type);
+			count_mipi_error(csid_hw->res_type);//add by xiaomi
 		}
 
 		if (irq_status & IFE_CSID_VER1_RX_ERROR_CRC) {
 			event_type |= CAM_ISP_HW_ERROR_CSID_PKT_PAYLOAD_CORRUPTED;
 			CAM_ERR_BUF(CAM_ISP, log_buf, CAM_IFE_CSID_LOG_BUF_LEN, &len,
 				"CPHY_ERROR_CRC: Long pkt payload CRC mismatch\n");
+			count_mipi_error(csid_hw->res_type);//add by xiaomi
 		}
 	}
 
@@ -4102,6 +4102,7 @@ static int cam_ife_csid_ver1_rx_bottom_half_handler(
 		if (irq_status & IFE_CSID_VER1_RX_CPHY_SOT_RECEPTION) {
 			CAM_ERR_BUF(CAM_ISP, log_buf, CAM_IFE_CSID_LOG_BUF_LEN, &len,
 				"CPHY_SOT_RECEPTION: Less SOTs on lane/s\n");
+			count_mipi_error(csid_hw->res_type);//add by xiaomi
 		}
 	}
 
@@ -4118,6 +4119,7 @@ static int cam_ife_csid_ver1_rx_bottom_half_handler(
 			CAM_ERR_BUF(CAM_ISP, log_buf, CAM_IFE_CSID_LOG_BUF_LEN, &len,
 				"MMAPPED_VC_DT: VC:%d DT:%d mapped to more than 1 csid paths\n",
 				(val >> 22), ((val >> 16) & 0x3F));
+			count_mipi_error(csid_hw->res_type);//add by xiaomi
 		}
 	}
 

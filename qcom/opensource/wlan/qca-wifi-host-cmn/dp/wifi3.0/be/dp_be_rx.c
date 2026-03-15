@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -39,6 +39,9 @@
 #endif
 #include "dp_hist.h"
 #include "dp_rx_buffer_pool.h"
+#ifdef WLAN_FEATURE_OSRTP
+#include "xdp_sock_drv.h"
+#endif
 
 #ifdef WLAN_SUPPORT_RX_FLOW_TAG
 static inline void
@@ -336,6 +339,12 @@ uint32_t dp_rx_process_be(struct dp_intr *int_ctx,
 	uint32_t l3_pad;
 	uint8_t link_id = 0;
 	uint16_t buf_size;
+#ifdef WLAN_FEATURE_OSRTP
+	struct bpf_prog *prog = NULL;
+	qdf_nbuf_t deliver_xlist_head;
+	qdf_nbuf_t deliver_xlist_tail;
+	struct xsk_buff_pool *xsk_pool = NULL;
+#endif
 
 	DP_HIST_INIT();
 
@@ -362,6 +371,10 @@ more_data:
 	ebuf_tail = NULL;
 	ring_near_full = 0;
 	max_reap_limit = dp_rx_get_loop_pkt_limit(soc);
+#ifdef WLAN_FEATURE_OSRTP
+	deliver_xlist_head = NULL;
+	deliver_xlist_tail = NULL;
+#endif
 
 	qdf_mem_zero(rx_bufs_reaped, sizeof(rx_bufs_reaped));
 	qdf_mem_zero(head, sizeof(head));
@@ -567,6 +580,7 @@ more_data:
 		 * in case double skb unmap happened.
 		 */
 		dp_rx_nbuf_unmap(soc, rx_desc, reo_ring_num);
+		rx_desc->unmapped = 1;
 		DP_RX_PROCESS_NBUF(soc, nbuf_head, nbuf_tail, ebuf_head,
 				   ebuf_tail, rx_desc);
 
@@ -628,6 +642,16 @@ done:
 	if (qdf_likely(txrx_peer))
 		vdev = NULL;
 
+#ifdef WLAN_FEATURE_OSRTP
+	rcu_read_lock();
+	xsk_pool = rcu_dereference(soc->osrtp_info.xsk_pool);
+	if (xsk_pool)
+		mi_xp_get_pool(xsk_pool);
+
+	prog = rcu_dereference(soc->osrtp_info.prog);
+	rcu_read_unlock();
+#endif
+
 	/*
 	 * BIG loop where each nbuf is dequeued from global queue,
 	 * processed and queued back on a per vdev basis. These nbufs
@@ -641,7 +665,6 @@ done:
 		dp_rx_prefetch_nbuf_data_be(nbuf, next);
 		if (qdf_unlikely(dp_rx_is_raw_frame_dropped(nbuf))) {
 			nbuf = next;
-			dp_verbose_debug("drop raw frame");
 			DP_STATS_INC(soc, rx.err.raw_frm_drop, 1);
 			continue;
 		}
@@ -650,6 +673,14 @@ done:
 		vdev_id = QDF_NBUF_CB_RX_VDEV_ID(nbuf);
 		peer_id = dp_rx_get_peer_id_be(nbuf);
 		dp_rx_set_mpdu_seq_number_be(nbuf, rx_tlv_hdr);
+
+#ifdef WLAN_FEATURE_OSRTP
+		if (dp_rx_is_list_ready(deliver_xlist_head, vdev, txrx_peer, peer_id, vdev_id)) {
+			dp_rx_deliver_osrtp_to_stack(soc, vdev, xsk_pool, deliver_xlist_head, deliver_xlist_tail);
+			deliver_xlist_head = NULL;
+			deliver_xlist_tail = NULL;
+		}
+#endif
 
 		if (dp_rx_is_list_ready(deliver_list_head, vdev, txrx_peer,
 					peer_id, vdev_id)) {
@@ -664,7 +695,6 @@ done:
 		tid = qdf_nbuf_get_tid_val(nbuf);
 		if (qdf_unlikely(tid >= CDP_MAX_DATA_TIDS)) {
 			DP_STATS_INC(soc, rx.err.rx_invalid_tid_err, 1);
-			dp_verbose_debug("drop invalid tid");
 			dp_rx_nbuf_free(nbuf);
 			nbuf = next;
 			continue;
@@ -679,7 +709,6 @@ done:
 								 &rx_pdev, &dsf,
 								 &old_tid);
 			if (qdf_unlikely(!txrx_peer) || qdf_unlikely(!vdev)) {
-				dp_verbose_debug("drop no peer frame");
 				nbuf = next;
 				continue;
 			}
@@ -696,7 +725,6 @@ done:
 								 &rx_pdev, &dsf,
 								 &old_tid);
 			if (qdf_unlikely(!txrx_peer) || qdf_unlikely(!vdev)) {
-				dp_verbose_debug("drop by unmatch peer_id");
 				nbuf = next;
 				continue;
 			}
@@ -863,7 +891,6 @@ done:
 				DP_PEER_PER_PKT_STATS_INC(txrx_peer,
 							  rx.peer_unauth_rx_pkt_drop,
 							  1, link_id);
-				dp_verbose_debug("drop by unauthorized peer");
 				dp_rx_nbuf_free(nbuf);
 				nbuf = next;
 				continue;
@@ -884,7 +911,6 @@ done:
 						(txrx_peer,
 						 rx.multipass_rx_pkt_drop,
 						 1, link_id);
-					dp_verbose_debug("drop multi pass");
 					dp_rx_nbuf_free(nbuf);
 					nbuf = next;
 					continue;
@@ -899,7 +925,6 @@ done:
 				DP_PEER_PER_PKT_STATS_INC(txrx_peer,
 							  rx.nawds_mcast_drop,
 							  1, link_id);
-				dp_verbose_debug("drop nawds");
 				dp_rx_nbuf_free(nbuf);
 				nbuf = next;
 				continue;
@@ -970,6 +995,12 @@ done:
 		dp_pkt_add_timestamp(txrx_peer->vdev, QDF_PKT_RX_DRIVER_ENTRY,
 				     current_time, nbuf);
 
+#ifdef WLAN_FEATURE_OSRTP
+		if (dp_rx_osrtp_check(soc, nbuf, xsk_pool, prog))
+			DP_RX_LIST_APPEND(deliver_xlist_head, deliver_xlist_tail, nbuf);
+		else
+#endif
+
 		DP_RX_LIST_APPEND(deliver_list_head,
 				  deliver_list_tail,
 				  nbuf);
@@ -991,6 +1022,25 @@ done:
 		tid_stats->delivered_to_stack++;
 		nbuf = next;
 	}
+
+#ifdef WLAN_FEATURE_OSRTP
+	if (deliver_xlist_head) {
+		if (qdf_likely(txrx_peer)) {
+			dp_rx_deliver_osrtp_to_stack(soc, vdev, xsk_pool, deliver_xlist_head, deliver_xlist_tail);
+		} else {
+			nbuf = deliver_xlist_head;
+			while (nbuf) {
+				next = nbuf->next;
+				nbuf->next = NULL;
+				dp_rx_deliver_to_stack_no_peer(soc, nbuf);
+				nbuf = next;
+			}
+		}
+	}
+
+	if (xsk_pool)
+		mi_xp_put_pool(xsk_pool);
+#endif
 
 	DP_RX_DELIVER_TO_STACK(soc, vdev, txrx_peer, peer_id,
 			       pkt_capture_offload,
@@ -1682,9 +1732,8 @@ dp_rx_intrabss_ucast_check_be(qdf_nbuf_t nbuf,
 						params->dest_soc,
 						msdu_metadata->da_idx);
 
-	da_peer = dp_tgt_txrx_peer_get_ref_by_id(params->dest_soc, da_peer_id,
-						 &txrx_ref_handle,
-						 DP_MOD_ID_RX);
+	da_peer = dp_txrx_peer_get_ref_by_id(params->dest_soc, da_peer_id,
+					     &txrx_ref_handle, DP_MOD_ID_RX);
 	if (!da_peer)
 		return false;
 

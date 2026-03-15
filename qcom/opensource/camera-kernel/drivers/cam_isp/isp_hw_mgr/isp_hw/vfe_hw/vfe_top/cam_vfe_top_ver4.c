@@ -2034,9 +2034,7 @@ skip_core_cfg:
 		!rsrc_data->handle_camif_irq))
 		goto skip_frame_irq_subscribe;
 
-	irq_mask[rsrc_data->common_reg->frame_timing_irq_reg_idx] =
-		rsrc_data->reg_data->sof_irq_mask | rsrc_data->reg_data->epoch0_irq_mask |
-		rsrc_data->reg_data->eof_irq_mask;
+	irq_mask[rsrc_data->common_reg->frame_timing_irq_reg_idx] = rsrc_data->reg_data->epoch0_irq_mask;
 
 	rsrc_data->n_frame_irqs =
 		hweight32(irq_mask[rsrc_data->common_reg->frame_timing_irq_reg_idx]);

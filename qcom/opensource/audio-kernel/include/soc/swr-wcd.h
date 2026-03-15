@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2015, 2017-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _LINUX_SWR_WCD_H
@@ -35,7 +34,6 @@ struct swr_mstr_port {
 #define MCLK_FREQ		9600000
 #define MCLK_FREQ_LP		600000
 #define MCLK_FREQ_NATIVE	11289600
-#define MCLK_FREQ_12288		12288000
 
 #if (IS_ENABLED(CONFIG_SOUNDWIRE_WCD_CTRL) || \
 	IS_ENABLED(CONFIG_SOUNDWIRE_MSTR_CTRL))
