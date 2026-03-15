@@ -55,7 +55,7 @@
 #endif
 
 #if defined(CONFIG_ARM64) || defined(CONFIG_ARM_LPAE)
-#define KGSL_DMA_BIT_MASK	DMA_BIT_MASK(64)
+#define KGSL_DMA_BIT_MASK	(~0ULL)
 #else
 #define KGSL_DMA_BIT_MASK	DMA_BIT_MASK(32)
 #endif
@@ -2943,7 +2943,7 @@ static int memdesc_sg_virt(struct kgsl_device *device, struct kgsl_memdesc *memd
 		goto out;
 	}
 
-	npages = get_user_pages(useraddr, sglen, write, pages);
+	npages = get_user_pages(useraddr, sglen, write, pages, NULL);
 	mmap_read_unlock(current->mm);
 
 	ret = (npages < 0) ? (int)npages : 0;
@@ -5060,7 +5060,7 @@ static struct kobj_type kgsl_gpu_sysfs_ktype = {
 
 static int _register_device(struct kgsl_device *device)
 {
-	static u64 dma_mask = DMA_BIT_MASK(64);
+	static u64 dma_mask = ~0ULL;
 	static struct device_dma_parameters dma_parms;
 	int minor, ret;
 	dev_t dev;
@@ -5100,7 +5100,7 @@ static int _register_device(struct kgsl_device *device)
 	device->dev->dma_mask = &dma_mask;
 	device->dev->dma_parms = &dma_parms;
 
-	dma_set_max_seg_size(device->dev, DMA_BIT_MASK(32));
+	dma_set_max_seg_size(device->dev, 0xFFFFFFFFu);
 
 	set_dma_ops(device->dev, NULL);
 
