@@ -93,7 +93,7 @@ def external_deps(target, variant):
     defconfigs = []
 
     # Add msm_hw_fence in the dependency and defconfig lists for targets that use it
-    if target in [ "pineapple" ]:
+    if target in [ "pineapple", "peridot" ]:
         deplist = deplist + [
             "//vendor/qcom/opensource/mm-drivers/hw_fence:{}_msm_hw_fence".format(tv)
             ]
@@ -137,10 +137,10 @@ def define_target_variant_module(target, variant):
             "CONFIG_QCOM_KGSL_USE_SHMEM": { False: [ "kgsl_pool.c" ] },
             "CONFIG_SYNC_FILE": { True: [ "kgsl_sync.c" ] },
         },
-        deps = [ "//msm-kernel:all_headers" ] + ext_deps,
+        deps = [ "//msm-kernel:all_headers", "//msm-kernel:all_headers_unsafe" ] + ext_deps,
         includes = ["include", "."],
         kernel_build = kernel_build,
-        visibility = ["//visibility:private"]
+        visibility = ["//visibility:public"]
     )
 
     copy_to_dist_dir(
